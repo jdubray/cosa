@@ -37,7 +37,23 @@
       "autoRefresh": false,
       "fullRebuild": false
     },
-    "promptRepetition": true
+    "promptRepetition": true,
+    "enabled": true,
+    "codeModelPath": ".puffin/cre",
+    "maxPlanIterations": 5,
+    "risMaxLength": 5000,
+    "introspection": {
+      "autoAfterMerge": true,
+      "excludePatterns": [
+        "node_modules/**",
+        "dist/**",
+        ".git/**"
+      ]
+    },
+    "schema": {
+      "allowAutoExtension": true,
+      "extensionApprovalRequired": false
+    }
   },
   "tools": {
     "snip": {

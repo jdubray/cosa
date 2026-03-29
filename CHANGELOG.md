@@ -70,6 +70,37 @@ Phase 1 — Foundation. Initial implementation of the COSA agent core, all three
 - `db_query` — read-only `SELECT` over SSH via `sqlite3 -json -readonly`; validates query, enforces 100-row limit, prevents shell injection via stdin
 - `db_integrity` — `PRAGMA integrity_check` and optional `PRAGMA wal_checkpoint(PASSIVE)` over SSH
 
+**Setup wizard (`setup.js`)**
+- Interactive first-time setup: `npm run setup`
+- Auto-discovers Baanbaan via `baanbaan.local` (mDNS) or manual IP entry
+- Generates an ED25519 SSH key pair and registers it with Baanbaan using a 6-digit setup PIN
+- Verifies SSH connectivity before proceeding
+- Collects operator email, COSA Gmail address + App Password (with length validation), and Anthropic API key (live API verification)
+- Operator mode selection (simple / advanced) with plain-language description
+- Writes `.env`, `config/appliance.yaml`, and `config/APPLIANCE.md` automatically
+- Runs a final health check against Baanbaan before declaring setup complete
+- Uses only Node.js built-in modules — no extra dependencies
+
+**Baanbaan setup API spec (`docs/baanbaan-setup-api-spec.md`)**
+- Defines the three endpoints Baanbaan must implement: `GET /setup/info`, `POST /setup/register-ssh-key`, `GET /setup/status`
+- PIN security model: 6-digit, 24-hour expiry, single-use
+- `GET /setup/info` response shape (all fields COSA reads for auto-config)
+- Error codes for `POST /setup/register-ssh-key`: `401` wrong PIN, `410` expired, `409` already registered, `503` setup inactive
+- CLI commands: `baanbaan generate-setup-pin`, `baanbaan reset-cosa`
+- mDNS/Avahi configuration for `baanbaan.local` auto-discovery
+- Summary table of all required Baanbaan-side changes
+
+**Weather Station mock appliance (`dev/tools/weather-station/`)**
+- Local development appliance for testing COSA without a real Baanbaan device
+- Implements the full Phase 1 protocol: health API (`/health`, `/health/ready`), setup API (`/setup/info`, `/setup/register-ssh-key`, `/setup/status`), SSH interface, and SQLite database
+- Fetches live hourly weather readings from Open-Meteo (free, no API key) and stores them in `data/weather.db` — gives COSA real data to query during development
+- SSH mock accepts only the specific command patterns COSA tools send; all other commands return exit code 127
+- Generates an ED25519 SSH host key on first start and prints a 6-digit setup PIN + `appliance.yaml` config snippet
+- Works with `npm run setup` (Option A) or manual `appliance.yaml` config (Option B)
+- `npm run reset` clears all state (keys, PIN, database) for a clean restart
+- Configured via `config/station.yaml` (location, HTTP port 3000, SSH port 2222)
+- No extra dependencies beyond what COSA already uses; `data/` directory gitignored
+
 **Operator communication modes**
 - `COSA_OPERATOR_MODE=simple` (default) — plain business language; no technical jargon in emails; focuses on business impact
 - `COSA_OPERATOR_MODE=advanced` — full technical detail in emails (HTTP status codes, systemd states, SSH connectivity, raw metrics); intended for technically savvy operators or developer-assisted troubleshooting
@@ -93,6 +124,7 @@ Phase 1 — Foundation. Initial implementation of the COSA agent core, all three
 
 ### Security
 
+- Upgraded `nodemailer` from `^6.9.0` to `^8.0.4` to fix three CVEs: SMTP command injection via unsanitized `envelope.size` (GHSA-c7w3-x93f-qmm8), address parser DoS via recursive calls (GHSA-rcmh-qjqh-p98v), and email routing to unintended domain (GHSA-mm7p-fcc7-pg87). API usage (`createTransport` + `sendMail` with plain-text STARTTLS) is unchanged.
 - SQL passed via stdin to `sqlite3` process, eliminating shell injection surface (no SQL in command arguments)
 - SSH host key fingerprint verification via `hostVerifier` callback; SHA-256 format matching OpenSSH `ssh-keygen -l -E sha256`
 - `known_hosts_path` removed from `appliance.yaml` (field was never read; its presence created a false sense of security — actual protection is via `host_key_fingerprint`)

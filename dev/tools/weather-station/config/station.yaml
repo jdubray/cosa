@@ -1,0 +1,27 @@
+# COSA Weather Station Mock — configuration
+# Edit latitude/longitude to your location.
+
+station:
+  name: "WeatherStation Dev Mock"
+  version: "1.0.0"
+  timezone: "America/New_York"
+
+# Weather data source — Open-Meteo (free, no API key)
+weather:
+  provider: "open-meteo"
+  latitude: 40.7128
+  longitude: -74.0060
+  location_name: "New York, NY"
+  # Fetch at 5 minutes past each hour (offset avoids API stampede on the hour)
+  fetch_cron: "5 * * * *"
+
+# HTTP server (COSA /health + /health/ready + /setup/* endpoints)
+http:
+  port: 3000
+  host: "0.0.0.0"
+
+# SSH mock server (COSA db_query, db_integrity, health_check systemd checks)
+ssh:
+  port: 2222
+  host: "0.0.0.0"
+  user: "weather"

@@ -71,8 +71,27 @@ async function boot() {
 
   // 5. Wire email gateway to create orchestrator sessions from inbound email.
   emailGateway.setNewSessionHandler(async (message) => {
+    // Build a readable string for the agent from the email envelope.
+    // saveTurn / Anthropic messages.create both require content to be a string.
+    const parts = [];
+    if (message.subject) parts.push(`Subject: ${message.subject}`);
+    parts.push(message.body || '(empty message)');
+    const messageText = parts.join('\n\n');
+
     try {
-      await runSession({ type: 'email', source: 'operator', message });
+      const { response } = await runSession({
+        type:    'email',
+        source:  message.from,
+        message: messageText,
+      });
+
+      await emailGateway.sendEmail({
+        to:         message.from,
+        subject:    message.subject ? `Re: ${message.subject}` : 'COSA',
+        text:       response,
+        inReplyTo:  message.messageId ?? undefined,
+        references: message.messageId ?? undefined,
+      });
     } catch (err) {
       log.error(`Email session error: ${err.message}`);
     }

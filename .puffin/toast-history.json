@@ -371,6 +371,13 @@
       "message": "Orchestration complete! Fixed 6/6 issues.",
       "type": "success",
       "source": "app"
+    },
+    {
+      "id": "toast-1774794115796-07h6iem",
+      "timestamp": 1774794115796,
+      "message": "Sprint closed successfully",
+      "type": "success",
+      "source": "app"
     }
   ]
 }

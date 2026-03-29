@@ -10,6 +10,25 @@ You don't need to be technical to use COSA. You don't log in anywhere. You don't
 
 ---
 
+## First-Time Setup
+
+Before COSA can work, it needs to be connected to your Baanbaan system and configured with your email. Your system administrator handles this by running the setup wizard:
+
+```
+npm run setup
+```
+
+The wizard walks through everything in about 5 minutes — finding your Baanbaan device on the network, creating a secure connection, and connecting to your email. You'll be asked for:
+
+- The **6-digit setup PIN** shown on the Baanbaan device screen (or in your Baanbaan welcome email)
+- Your **email address** — where COSA will send alerts
+- A **dedicated Gmail address** for COSA to send from
+- An **Anthropic API key** (the AI that powers COSA)
+
+Once setup is complete, COSA starts watching your system immediately.
+
+---
+
 ## Your COSA Email Address
 
 Your system administrator set up a dedicated email address for COSA (something like `cosa.baanbaan@gmail.com`). COSA sends and receives through this address.

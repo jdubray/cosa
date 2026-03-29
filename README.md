@@ -90,6 +90,31 @@ COSA has no inbound ports. It makes outbound connections only: SSH to the applia
 
 ## Setup
 
+### The fast way (recommended)
+
+After installing dependencies, run the interactive setup wizard:
+
+```bash
+npm install
+npm run setup
+```
+
+The wizard walks you through connecting to Baanbaan, configuring email, and verifying everything works — no manual file editing required. It takes about 5 minutes.
+
+**What you'll need before starting:**
+- Your Baanbaan device powered on and connected to your network
+- The 6-digit setup PIN from the Baanbaan device screen (or setup email)
+- A dedicated Gmail account for COSA, with IMAP enabled and an App Password generated (see [Gmail setup](#gmail-setup-step-by-step) below)
+- An Anthropic API key from `console.anthropic.com`
+
+After the wizard completes, skip to [Start COSA](#5-start-cosa).
+
+---
+
+### The manual way
+
+If you prefer to configure by hand, follow the steps below.
+
 ### 1. Install dependencies
 
 ```bash
@@ -136,10 +161,44 @@ COSA_EMAIL_USERNAME=cosa.baanbaan@gmail.com
 COSA_EMAIL_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
 ```
 
-**Gmail setup:**
-1. Enable IMAP: Gmail Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP
-2. Enable 2-Step Verification on the account
-3. Generate an App Password: Google Account → Security → 2-Step Verification → App Passwords
+#### Gmail setup (step by step)
+
+COSA uses a Gmail App Password — a 16-character code that lets COSA connect to Gmail without knowing your Google account password. You generate it once and paste it into `.env`.
+
+**Step 1 — Enable IMAP in Gmail**
+
+IMAP is how COSA reads incoming email. It's off by default in new Gmail accounts.
+
+1. Open Gmail and click the gear icon (top right) → **See all settings**
+2. Click the **Forwarding and POP/IMAP** tab
+3. Under "IMAP access", select **Enable IMAP**
+4. Click **Save Changes**
+
+**Step 2 — Enable 2-Step Verification on the Google account**
+
+App Passwords require 2-Step Verification to be on first. If you already have it enabled, skip to Step 3.
+
+1. Go to your Google Account: click your profile picture (top right in Gmail) → **Manage your Google Account**
+2. Click the **Security** tab
+3. Under "How you sign in to Google", click **2-Step Verification**
+4. Follow the prompts to turn it on (usually takes 2–3 minutes)
+
+**Step 3 — Generate an App Password**
+
+1. Go back to your Google Account → **Security** tab
+2. Under "How you sign in to Google", click **2-Step Verification**
+3. Scroll to the bottom and click **App passwords**
+   - If you don't see "App passwords", make sure 2-Step Verification is fully enabled
+4. In the "App name" box, type something like `COSA` so you remember what it's for
+5. Click **Create**
+6. Google will show a 16-character password like `abcd efgh ijkl mnop`
+7. Copy it — **this is the only time Google shows it**
+8. Paste it into `.env` as `COSA_EMAIL_APP_PASSWORD`, removing the spaces:
+   ```
+   COSA_EMAIL_APP_PASSWORD=abcdefghijklmnop
+   ```
+
+> If you lose the App Password, just go back to App passwords and create a new one. Delete the old one from the list to keep things tidy.
 
 ### 4. Configure the appliance context
 
@@ -150,6 +209,7 @@ Edit `config/APPLIANCE.md` to match your deployment — LAN IPs, operator contac
 ```bash
 npm start
 ```
+
 
 On first run, `data/session.db` is created automatically with the full schema.
 
