@@ -1,0 +1,32 @@
+[
+  {
+    "id": "c2b834d1-eef9-4f24-8321-6241de67f608",
+    "title": "Code Review Request",
+    "content": "Please review this code for potential issues, best practices, and improvements:\n\n```\n[Paste your code here]\n```\n\nFocus on:\n- Code correctness and potential bugs\n- Performance considerations\n- Security vulnerabilities\n- Readability and maintainability\n- Adherence to best practices",
+    "lastEdited": "2026-03-28T21:33:40.255Z"
+  },
+  {
+    "id": "a809873a-4017-4938-a299-907a670de7d6",
+    "title": "Bug Fix Request",
+    "content": "I'm encountering a bug that I need help fixing.\n\n**Current Behavior:**\n[Describe what is happening]\n\n**Expected Behavior:**\n[Describe what should happen]\n\n**Steps to Reproduce:**\n1. [Step 1]\n2. [Step 2]\n3. [Step 3]\n\n**Relevant Code:**\n```\n[Paste relevant code here]\n```\n\n**Error Messages (if any):**\n```\n[Paste error messages here]\n```",
+    "lastEdited": "2026-03-28T21:33:40.255Z"
+  },
+  {
+    "id": "529a150a-58bc-48cb-b283-8c2545b8eff4",
+    "title": "Feature Implementation",
+    "content": "I need to implement a new feature with the following requirements:\n\n**Feature Description:**\n[Describe the feature]\n\n**Requirements:**\n- [Requirement 1]\n- [Requirement 2]\n- [Requirement 3]\n\n**Technical Constraints:**\n- [Any technical constraints or existing architecture to consider]\n\n**Acceptance Criteria:**\n- [Criteria 1]\n- [Criteria 2]\n\nPlease suggest an implementation approach and provide the code.",
+    "lastEdited": "2026-03-28T21:33:40.255Z"
+  },
+  {
+    "id": "c3132cc9-8d92-4b3d-a111-ea6f9dbcd8b4",
+    "title": "Refactoring Request",
+    "content": "Please help me refactor this code to improve its quality.\n\n**Current Code:**\n```\n[Paste code to refactor]\n```\n\n**Goals:**\n- [ ] Improve readability\n- [ ] Improve performance\n- [ ] Reduce complexity\n- [ ] Better separation of concerns\n- [ ] Add proper error handling\n- [ ] Other: [specify]\n\n**Constraints:**\n- [Any constraints on the refactoring, e.g., maintain backward compatibility]",
+    "lastEdited": "2026-03-28T21:33:40.255Z"
+  },
+  {
+    "id": "0a9fc0ff-6f21-410b-b217-d66f404db562",
+    "title": "Documentation Request",
+    "content": "Please write documentation for the following code:\n\n```\n[Paste code to document]\n```\n\n**Documentation Type:**\n- [ ] JSDoc/TSDoc comments\n- [ ] README section\n- [ ] API documentation\n- [ ] Usage examples\n- [ ] Architecture overview\n\n**Audience:**\n[Who will read this documentation? e.g., other developers, API consumers, end users]\n\n**Additional Context:**\n[Any additional context about the code or project]",
+    "lastEdited": "2026-03-28T21:33:40.255Z"
+  }
+]

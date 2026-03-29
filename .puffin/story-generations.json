@@ -1,0 +1,317 @@
+{
+  "generations": [
+    {
+      "id": "mnb9ts4kl6m2qj0dx",
+      "user_prompt": "Let's prepare for implementing phase 1 using the cosa_phase1_spect.md file",
+      "project_context": null,
+      "generated_stories": [
+        {
+          "id": "bcb32788-1a62-4e61-beda-5c8975086870",
+          "title": "Project Bootstrap and Configuration Loading",
+          "description": "As a developer, I want COSA to load and validate configuration from appliance.yaml and .env on startup so that the agent has all required parameters before starting any services.",
+          "acceptance_criteria": [
+            "main.js reads appliance.yaml and .env on startup",
+            "All required fields (SSH config, email credentials, ANTHROPIC_API_KEY, operator email) are validated at startup",
+            "Process exits with a descriptive error if any required field is missing",
+            "Config is exposed as a singleton accessible by all modules",
+            "Database migrations run automatically after config is loaded"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "7997f4fd-3b2a-4f09-92e3-4b1846476506",
+          "title": "session.db Schema and Migration",
+          "description": "As a developer, I want the SQLite session database to be created and migrated automatically so that all agent activity can be persisted from the first run.",
+          "acceptance_criteria": [
+            "session.db is created at data/session.db if it does not exist",
+            "WAL mode is enabled on the database",
+            "All five tables are created: sessions, turns, tool_calls, approvals, alerts",
+            "FTS5 virtual table turns_fts is created and linked to turns",
+            "All indexes defined in the spec are created",
+            "Migrations are idempotent (safe to run multiple times)"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "fa61fbc2-c231-4f23-8af7-29457672cfdb",
+          "title": "Session Store CRUD Operations",
+          "description": "As a developer, I want a session-store module that encapsulates all reads and writes to session.db so that other modules never interact with the database directly.",
+          "acceptance_criteria": [
+            "createSession(sessionId, trigger) inserts a row into sessions",
+            "saveTurn(sessionId, role, content, tokensIn, tokensOut) inserts a row into turns",
+            "saveToolCall(sessionId, toolCall, result, status) inserts a row into tool_calls",
+            "recordBlockedToolCall(sessionId, toolCall, reason) inserts a blocked tool_calls row",
+            "createApproval(approvalData) inserts a row into approvals",
+            "findApprovalByToken(token) returns the matching approval row",
+            "updateApprovalStatus(approvalId, status, resolvedBy, note) updates the approval row",
+            "closeSession(sessionId, summary) sets status=complete and summary on the session row",
+            "All writes use parameterized queries (no SQL injection risk)"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "92ad5a2e-5aca-4281-b258-abf93318a5ad",
+          "title": "SSH Backend with Connection Pool and Reconnect",
+          "description": "As a developer, I want an SSH backend module that maintains a persistent connection to the Baanbaan Pi and reconnects automatically on failure so that tools can reliably execute remote commands.",
+          "acceptance_criteria": [
+            "exec(command) runs a shell command on the Baanbaan Pi and returns { stdout, stderr, exitCode }",
+            "isConnected() returns the current connection state",
+            "Reconnect attempts use exponential backoff: 1s, 2s, 4s, max 30s",
+            "Command timeout is enforced using the value from appliance.yaml (default 30s)",
+            "Connection parameters (host, port, user, key_path) are read from appliance.yaml",
+            "command argument is never constructed from user input or LLM output — enforced by module contract",
+            "SSH connectivity is tested at startup; failure is logged as a warning but does not crash the process"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "4769b5e3-83ff-4bbb-bf06-9184351a70c6",
+          "title": "Security Gate — Dangerous Command Detection and Output Sanitization",
+          "description": "As a developer, I want a security gate module that blocks dangerous tool calls and strips credentials from tool output so that destructive or sensitive operations never reach the appliance or the LLM conversation.",
+          "acceptance_criteria": [
+            "check(toolCall) tests the stringified tool input against all patterns in appliance.yaml security.dangerous_commands",
+            "Returns { blocked: true, reason, pattern } when a pattern matches",
+            "Returns { blocked: false } when no pattern matches",
+            "Pattern matching is case-insensitive",
+            "sanitizeOutput(output) replaces Anthropic API keys, generic secrets, password=, and token= patterns with [REDACTED]",
+            "Each dangerous command pattern has both a positive test case (should block) and a negative test case (should not block)",
+            "100% unit test coverage"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "efccf5c1-681d-4434-8f3e-5bb1827b38be",
+          "title": "Tool Registry — Registration, Schema Validation, and Dispatch",
+          "description": "As a developer, I want a tool registry that registers tools by name, validates inputs against their JSON schema, and dispatches calls to the correct handler so that the orchestrator has a single, consistent interface for all tool invocations.",
+          "acceptance_criteria": [
+            "register(name, schema, handler) adds a tool to the registry",
+            "getSchemas() returns tool definitions in the Anthropic API tool_use format",
+            "dispatch(name, input) validates input against the tool's JSON schema before calling the handler",
+            "dispatch throws a structured error if the tool name is unknown",
+            "dispatch throws a structured error if input fails schema validation",
+            "Only tools with enabled: true in appliance.yaml are registered and returned by getSchemas()",
+            "90% unit test coverage"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "9f8d0cd9-42f6-4b01-90d0-6e6c123147aa",
+          "title": "health_check Tool",
+          "description": "As COSA, I want to run a comprehensive health check against the Baanbaan appliance so that I can report its status to the operator or trigger an alert.",
+          "acceptance_criteria": [
+            "Performs SSH connectivity check first; all subsequent steps depend on it",
+            "Makes direct LAN HTTP GET to {appliance_api.base_url}/health with 10s timeout",
+            "Makes direct LAN HTTP GET to {appliance_api.base_url}/health/ready with 10s timeout",
+            "Runs systemctl show baanbaan --property=ActiveState,SubState,ExecMainStartTimestamp,NRestarts via SSH",
+            "Parses key=value output from systemctl and computes uptime_seconds from ExecMainStartTimestamp",
+            "Returns overall_status: 'healthy' only when SSH connected, both HTTP checks return 200 with ok status, and systemd unit is active/running with 0 restarts",
+            "Returns overall_status: 'degraded' for partial failures (non-ok HTTP body, recent restarts)",
+            "Returns overall_status: 'unreachable' when SSH fails or HTTP completely fails",
+            "Output matches the defined JSON schema",
+            "Risk level is 'read' — no approval required"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "cdeba860-62b9-44f4-bb1e-1a2bb2c42cbb",
+          "title": "db_query Tool",
+          "description": "As COSA, I want to execute read-only SQL SELECT queries against the Baanbaan SQLite database via SSH so that I can answer operational questions about orders, revenue, and application state.",
+          "acceptance_criteria": [
+            "Accepts a query string and optional limit (default 50, max 100)",
+            "Rejects queries that do not start with SELECT",
+            "Rejects queries containing DROP, DELETE, UPDATE, INSERT, CREATE, ALTER, or ATTACH",
+            "Appends LIMIT {limit} if not already present in the query",
+            "Executes via SSH: sqlite3 -json -readonly {database.path} \"{query}\"",
+            "Returns { rows, row_count, truncated, query_time_ms }",
+            "Sets truncated: true when row_count equals the limit",
+            "Risk level is 'read' — no approval required",
+            "Query timeout enforced per appliance.yaml (default 15s)"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "53697764-cefc-48fb-a838-c195b91c4de7",
+          "title": "db_integrity Tool",
+          "description": "As COSA, I want to run SQLite integrity and WAL checkpoint checks on the Baanbaan database via SSH so that I can detect corruption early and report database health.",
+          "acceptance_criteria": [
+            "Runs PRAGMA integrity_check via SSH on the Baanbaan database path",
+            "Sets is_healthy: true only when integrity result is exactly 'ok'",
+            "Runs PRAGMA wal_checkpoint(PASSIVE) when run_wal_checkpoint is true (default)",
+            "Parses WAL checkpoint output into { ran, busy, log, checkpointed }",
+            "Returns errors array for any failures during execution",
+            "Includes checked_at timestamp in output",
+            "Risk level is 'read' — no approval required"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "ddf9bbff-174a-4c5c-a7f5-76b2079df756",
+          "title": "Approval Engine — Token Generation, FSM, and Expiry",
+          "description": "As COSA, I want an approval engine that generates secure tokens, tracks approval state, and enforces timeouts so that high-impact actions are never executed without operator consent.",
+          "acceptance_criteria": [
+            "requiresApproval(toolCall) returns 'auto' for read-risk tools and 'once' for medium/high/critical",
+            "requestApproval(sessionId, toolCall, policy) creates an approval record in session.db and sends an approval request email",
+            "Token format is APPROVE-{8 uppercase hex chars} generated via crypto.randomBytes(4)",
+            "Tokens are single-use and unique",
+            "Default approval timeout is 30 minutes; urgent timeout is 5 minutes",
+            "processInboundReply(msg) handles APPROVE-TOKEN, DENY, and ambiguous replies",
+            "Approved token executes the waiting action and sends confirmation email",
+            "Denied approval logs the operator note and sends cancellation email",
+            "Background expiry check runs every 5 minutes; expired approvals trigger notification email",
+            "All FSM state transitions (pending → approved/denied/expired) are logged to session.db",
+            "100% unit test coverage for all FSM transitions"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "66226ed1-d80f-42d2-93fd-b09ca583ff28",
+          "title": "Email Gateway — IMAP Polling and SMTP Sending",
+          "description": "As COSA, I want an email gateway that polls Gmail for inbound messages and sends plain-text SMTP replies so that the operator can interact with COSA via email.",
+          "acceptance_criteria": [
+            "IMAP polls the COSA inbox every 60 seconds",
+            "Only processes messages from the configured operator email address; others are silently ignored and logged",
+            "Detects approval replies (APPROVE-TOKEN or DENY pattern) and routes to approvalEngine.processInboundReply",
+            "Non-approval messages trigger a new orchestrator session",
+            "SMTP send supports to, subject, text, inReplyTo, and references fields",
+            "All outbound emails are plain text — no HTML",
+            "Email threading headers (In-Reply-To, References) are set correctly on replies",
+            "Processed messages are marked as READ in the IMAP inbox",
+            "Gmail App Password authentication used (IMAP host: imap.gmail.com:993, SMTP host: smtp.gmail.com:587)",
+            "80% unit test coverage with mocked IMAP/SMTP"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "e0b0390e-7c34-4a13-9fb6-60ea8dec1c6e",
+          "title": "Cron Scheduler — Health Check Task",
+          "description": "As COSA, I want a cron scheduler that fires a full orchestrator session on a defined schedule so that health checks run autonomously every hour without operator intervention.",
+          "acceptance_criteria": [
+            "Registers the health-check task with cron expression 0 * * * * from appliance.yaml",
+            "Each cron tick invokes the orchestrator with the structured health check trigger message defined in §11.2",
+            "If overall_status is 'healthy', no email is sent and the result is logged to session.db",
+            "If overall_status is 'degraded' or 'unreachable', an alert email is sent to the operator",
+            "Alert deduplication: a new alert for the same category is suppressed if an alert was sent less than 60 minutes ago at the same severity",
+            "Alert is recorded in the alerts table with severity, category, title, body, sent_at, and email_to"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "6df93778-3de5-4493-a3ff-636757cabd6a",
+          "title": "Orchestrator Core Loop",
+          "description": "As COSA, I want a core orchestration loop that receives triggers, calls the Claude API, dispatches tool calls through the security and approval gates, and routes the final response back to the caller so that the full agent workflow runs end-to-end.",
+          "acceptance_criteria": [
+            "runSession(trigger) creates a session record, builds the system prompt, and calls the Claude API",
+            "Tool calls are dispatched through securityGate.check before execution",
+            "Blocked tool calls are logged and an error is returned to the LLM conversation",
+            "Tool calls at medium/high/critical risk are routed through approvalEngine before execution",
+            "Tool output is sanitized via securityGate.sanitizeOutput before being appended to conversation history",
+            "Loop terminates on stop_reason: end_turn and returns the final text response",
+            "Loop terminates after 20 iterations maximum and returns a graceful message to the caller",
+            "All turns and tool calls are logged to session.db",
+            "Session is closed with a summary on completion or error",
+            "Uses claude-sonnet-4-6 model for all Phase 1 sessions"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "85166206-04c0-49ff-b400-ffbfc69636b8",
+          "title": "Context Builder — System Prompt Assembly",
+          "description": "As a developer, I want a context builder that assembles the layered system prompt for each session so that COSA always has the correct identity, appliance context, and tool schemas when calling the Claude API.",
+          "acceptance_criteria": [
+            "build() returns a single string composed of: COSA identity, APPLIANCE.md content, filtered tool schemas, and current ISO timestamp",
+            "Sections are separated by a consistent delimiter (--- or similar)",
+            "APPLIANCE.md is read from config/APPLIANCE.md",
+            "Only tools with enabled: true in appliance.yaml are included in tool schemas",
+            "COSA identity text matches the specification in §12.2 exactly",
+            "build() is deterministic for the same config and tool registry state"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "7662d0e2-8231-44cc-8870-c7e588a3d7e7",
+          "title": "Structured JSON Logging",
+          "description": "As a developer, I want all COSA modules to emit structured JSON logs to stdout so that operational issues can be diagnosed from log output.",
+          "acceptance_criteria": [
+            "Every log line is valid JSON with ts, level, module, and msg fields",
+            "Log levels are debug, info, warn, error",
+            "Log level is configured via COSA_LOG_LEVEL in .env",
+            "All modules include their module name in log output",
+            "No plaintext log lines are emitted — all output is structured JSON"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "f686bf68-7a29-43a3-b536-ea495f9163b2",
+          "title": "End-to-End Staging Test: All 8 Functional Scenarios",
+          "description": "As a developer, I want all 8 functional scenarios from the Phase 1 spec to pass in a staging environment so that Phase 1 exit criteria are verified before declaring the implementation complete.",
+          "acceptance_criteria": [
+            "F-1: Operator email query returns accurate health status within 2 minutes",
+            "F-2: Cron health check on healthy appliance produces no outbound email and one session.db row",
+            "F-3: Cron health check on unreachable appliance sends alert email within 5 minutes",
+            "F-4: Cron health check on degraded appliance sends degraded alert email with specific warning details",
+            "F-5: Operator replies with APPROVE-TOKEN — approval status updated and confirmation email sent",
+            "F-6: Operator replies with DENY — approval status set to denied and cancellation email sent",
+            "F-7: No operator reply within timeout — approval status set to expired and notification email sent",
+            "F-8: Dangerous command (DROP TABLE) in tool input is blocked before execution and logged with status=blocked",
+            "All scenarios verified against a real or simulated Baanbaan Pi exposing the §18.1 health endpoints",
+            "NODE_ENV=staging uses 2-minute approval timeout"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        }
+      ],
+      "timestamp": "2026-03-29T04:40:37.796Z",
+      "model_used": "sonnet"
+    }
+  ],
+  "implementation_journeys": [],
+  "createdAt": "2026-03-28T21:33:40.813Z",
+  "updatedAt": "2026-03-29T04:40:37.809Z"
+}

@@ -1,0 +1,86 @@
+# config/appliance.yaml
+# Baanbaan-specific adapter config. Changing this file swaps the target appliance.
+appliance:
+  name: "Baanbaan POS"
+  timezone: "America/New_York"
+
+ssh:
+  host: "192.168.1.10"          # Baanbaan Pi LAN IP
+  port: 22
+  user: "baanbaan"
+  key_path: "/home/cosa/.ssh/id_ed25519_baanbaan"
+  # SHA-256 fingerprint of the appliance's SSH host key.
+  # COSA refuses the connection if the server presents a different key,
+  # protecting against MITM attacks on the local network.
+  #
+  # Obtain the value with (run from any machine that has SSH access):
+  #   ssh-keyscan -t ed25519 192.168.1.10 | ssh-keygen -l -E sha256 -f -
+  # The output looks like:
+  #   256 SHA256:AbCdEf...= root@hostname (ED25519)
+  # Copy the SHA256:... portion (including the "SHA256:" prefix).
+  #
+  # STRONGLY RECOMMENDED — omitting this field disables host key verification
+  # and logs a security warning on every startup.
+  host_key_fingerprint: ""      # e.g. "SHA256:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AAAA="
+  connect_timeout_ms: 5000
+  command_timeout_ms: 30000
+
+appliance_api:
+  base_url: "http://192.168.1.10:3000"  # direct LAN call — no SSH tunnel needed
+  health_endpoint: "/health"
+  health_ready_endpoint: "/health/ready"
+  request_timeout_ms: 10000
+
+database:
+  path: "/home/baanbaan/app/data/baanbaan.db"  # path on Baanbaan Pi
+  read_only: true
+
+process_supervisor:
+  type: "systemd"               # 'systemd' confirmed for Baanbaan
+  service_name: "baanbaan"
+
+operator:
+  email: "owner@restaurant.com"
+  name: "Restaurant Manager"
+  approval_timeout_minutes: 30  # default approval window
+  urgent_approval_timeout_minutes: 5
+
+cron:
+  health_check: "0 * * * *"    # every hour on the hour (Phase 1 only)
+
+tools:
+  health_check:
+    enabled: true
+    http_check: true
+    process_check: true
+    ssh_connectivity_check: true
+  db_query:
+    enabled: true
+    max_row_return: 100
+    query_timeout_ms: 15000
+  db_integrity:
+    enabled: true
+    run_wal_checkpoint: true
+
+security:
+  dangerous_commands:
+    - pattern: "rm\\s+-rf"
+      reason: "Recursive delete"
+    - pattern: "DROP\\s+TABLE"
+      reason: "Destructive SQL"
+    - pattern: "DROP\\s+DATABASE"
+      reason: "Destructive SQL"
+    - pattern: "DELETE\\s+FROM\\s+\\w+\\s*;"
+      reason: "Unscoped delete (no WHERE clause)"
+    - pattern: "killall|pkill|kill\\s+-9"
+      reason: "Process kill"
+    - pattern: "systemctl\\s+(stop|disable|mask)"
+      reason: "Service stop"
+    - pattern: "dd\\s+if="
+      reason: "Raw disk operation"
+    - pattern: "chmod\\s+777"
+      reason: "Insecure permission set"
+    - pattern: "curl.*\\|\\s*(bash|sh)"
+      reason: "Remote code execution via pipe"
+    - pattern: "(AWS_SECRET|API_KEY|PASSWORD|TOKEN)\\s*="
+      reason: "Potential credential exposure"

@@ -1,0 +1,57 @@
+{
+  "name": "cosa",
+  "description": "",
+  "assumptions": [],
+  "technicalArchitecture": "",
+  "dataModel": "",
+  "options": {
+    "programmingStyle": "HYBRID",
+    "testingApproach": "TDD",
+    "documentationLevel": "STANDARD",
+    "errorHandling": "EXCEPTIONS",
+    "codeStyle": {
+      "naming": "CAMEL",
+      "comments": "JSDoc"
+    }
+  },
+  "uxStyle": {
+    "alignment": "left",
+    "fontFamily": "system-ui, -apple-system, sans-serif",
+    "fontSize": "16px",
+    "baselineCss": "",
+    "colorPalette": {
+      "primary": "#6c63ff",
+      "secondary": "#16213e",
+      "accent": "#48bb78",
+      "background": "#ffffff",
+      "text": "#1a1a2e",
+      "error": "#f56565"
+    }
+  },
+  "codingStandard": {
+    "language": "none",
+    "content": ""
+  },
+  "cre": {
+    "sprintEnd": {
+      "autoRefresh": false,
+      "fullRebuild": false
+    },
+    "promptRepetition": true
+  },
+  "tools": {
+    "snip": {
+      "enabled": false
+    }
+  },
+  "createdAt": "2026-03-28T21:33:40.809Z",
+  "updatedAt": "2026-03-29T04:18:17.728Z",
+  "defaultModel": "sonnet",
+  "websiteEdition": false,
+  "websitePort": 5000,
+  "websiteServePath": "dist",
+  "speechApiKey": "",
+  "speechModel": "gpt-4o-mini-transcribe",
+  "speechApiUrl": "",
+  "debugMode": false
+}

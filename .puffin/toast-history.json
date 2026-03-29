@@ -1,0 +1,376 @@
+{
+  "version": 1,
+  "toasts": [
+    {
+      "id": "toast-1774760049363-8qg9in6",
+      "timestamp": 1774760049363,
+      "message": "Failed to create branch: fatal: not a git repository (or any of the parent directories): .git",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774762328318-get29kk",
+      "timestamp": 1774762328318,
+      "message": "CRE: Plan approved, RIS generated, and assertions ready",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774762441364-3ei34o7",
+      "timestamp": 1774762441364,
+      "message": "Implementing: Project Bootstrap and Configuration Loading",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774762693732-zt7y7dj",
+      "timestamp": 1774762693732,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774762693776-mqy1xk8",
+      "timestamp": 1774762693777,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774762694760-90243z2",
+      "timestamp": 1774762694760,
+      "message": "Implementing: session.db Schema and Migration",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774762749964-3qdf7ny",
+      "timestamp": 1774762749964,
+      "message": "Implementing: Session Store CRUD Operations",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774762866626-ms1bgtk",
+      "timestamp": 1774762866626,
+      "message": "Implementing: SSH Backend with Connection Pool and Reconnect",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763178556-h6l85so",
+      "timestamp": 1774763178556,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763178603-8ind7v2",
+      "timestamp": 1774763178603,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763179584-8zf4uid",
+      "timestamp": 1774763179584,
+      "message": "Implementing: Security Gate — Dangerous Command Detection and Output Sanitization",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763415298-vw2gc8v",
+      "timestamp": 1774763415298,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763415346-eq91mi8",
+      "timestamp": 1774763415346,
+      "message": "⚠️ Assertions: 0/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763416326-dk7x87h",
+      "timestamp": 1774763416326,
+      "message": "Implementing: Tool Registry — Registration, Schema Validation, and Dispatch",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763572460-80g1gsx",
+      "timestamp": 1774763572460,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763572511-bqh4jy5",
+      "timestamp": 1774763572511,
+      "message": "⚠️ Assertions: 0/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763573499-jtfnffg",
+      "timestamp": 1774763573499,
+      "message": "Implementing: health_check Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763849357-x0t4cv6",
+      "timestamp": 1774763849357,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763849423-79rziii",
+      "timestamp": 1774763849423,
+      "message": "⚠️ Assertions: 0/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774763850391-m2vwk7c",
+      "timestamp": 1774763850391,
+      "message": "Implementing: db_query Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764011997-717d1e2",
+      "timestamp": 1774764011997,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764012070-fu0ll16",
+      "timestamp": 1774764012070,
+      "message": "⚠️ Assertions: 0/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764013057-ea9iy1m",
+      "timestamp": 1774764013057,
+      "message": "Implementing: db_integrity Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764197248-ztuy7il",
+      "timestamp": 1774764197248,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764197315-xwovegf",
+      "timestamp": 1774764197315,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764198286-pynvytt",
+      "timestamp": 1774764198286,
+      "message": "Implementing: Approval Engine — Token Generation, FSM, and Expiry",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764698306-97sce0g",
+      "timestamp": 1774764698306,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764698365-fcup1au",
+      "timestamp": 1774764698365,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774764699346-g67ux43",
+      "timestamp": 1774764699346,
+      "message": "Implementing: Email Gateway — IMAP Polling and SMTP Sending",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774765092813-2xitgci",
+      "timestamp": 1774765092813,
+      "message": "Implementing: Cron Scheduler — Health Check Task",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774765486270-1r2a9kh",
+      "timestamp": 1774765486270,
+      "message": "Implementing: Orchestrator Core Loop",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766005914-x5rrrcl",
+      "timestamp": 1774766005914,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766005987-1u3ala6",
+      "timestamp": 1774766005987,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766006962-uljf012",
+      "timestamp": 1774766006962,
+      "message": "Implementing: Context Builder — System Prompt Assembly",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766186547-l6wiept",
+      "timestamp": 1774766186547,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766186611-zanswj3",
+      "timestamp": 1774766186611,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766187595-hi2x0px",
+      "timestamp": 1774766187595,
+      "message": "Implementing: Structured JSON Logging",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766401931-de2w1gh",
+      "timestamp": 1774766401931,
+      "message": "Continuing story (1/5)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766442483-sk5k9ie",
+      "timestamp": 1774766442483,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766442570-i5b7s3m",
+      "timestamp": 1774766442570,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774766443554-j502vvu",
+      "timestamp": 1774766443554,
+      "message": "Implementing: End-to-End Staging Test: All 8 Functional Scenarios",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774767271582-ls1usag",
+      "timestamp": 1774767271582,
+      "message": "Continuing story (1/5)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774767752685-wbp67e0",
+      "timestamp": 1774767752685,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774767752757-twzg6yj",
+      "timestamp": 1774767752757,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774767753747-2c2dpi3",
+      "timestamp": 1774767753747,
+      "message": "All stories completed! Starting code review...",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774768198418-rj21gmk",
+      "timestamp": 1774768198418,
+      "message": "Code review complete: 6 findings. Starting bug fixes...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774768200455-3aemfil",
+      "timestamp": 1774768200455,
+      "message": "Fixing: Shell metacharacter injection: buildCommand() only...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774768337774-0zgpejr",
+      "timestamp": 1774768337774,
+      "message": "Fixing: SSH host key not verified. `buildSshOptions()` omi...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774768572267-i2qvxf6",
+      "timestamp": 1774768572267,
+      "message": "Fixing: Multi-statement SQL is not blocked. `validateQuery...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774768688737-j8a1qhr",
+      "timestamp": 1774768688737,
+      "message": "Fixing: `let process = null` inside `handler()` shadows th...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774768853745-wf7bpye",
+      "timestamp": 1774768853745,
+      "message": "Fixing: `appliance.ssh.known_hosts_path` is declared in `a...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774768883374-w4qsycx",
+      "timestamp": 1774768883374,
+      "message": "Fixing: `fs.readFileSync(APPLIANCE_MD_PATH, 'utf8')` is ca...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774768910593-1vwuvr9",
+      "timestamp": 1774768910594,
+      "message": "Orchestration complete! Fixed 6/6 issues.",
+      "type": "success",
+      "source": "app"
+    }
+  ]
+}

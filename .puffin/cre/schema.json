@@ -1,0 +1,231 @@
+{
+  "version": "1.0.0",
+  "m3Version": "2.0",
+  "elementTypes": {
+    "module": {
+      "m3Type": "SLOT",
+      "fields": {
+        "path": {
+          "m3Type": "TERM",
+          "required": true
+        },
+        "kind": {
+          "m3Type": "TERM",
+          "required": true,
+          "enum": [
+            "module",
+            "service",
+            "component",
+            "utility",
+            "config",
+            "middleware",
+            "controller",
+            "model",
+            "test",
+            "entry",
+            "plugin",
+            "hook"
+          ]
+        },
+        "summary": {
+          "m3Type": "PROSE",
+          "required": true
+        },
+        "intent": {
+          "m3Type": "PROSE",
+          "required": false
+        },
+        "exports": {
+          "m3Type": "TERM",
+          "array": true
+        },
+        "tags": {
+          "m3Type": "TERM",
+          "array": true
+        },
+        "size": {
+          "m3Type": "TERM",
+          "required": false
+        },
+        "children": {
+          "m3Type": "SLOT",
+          "array": true,
+          "required": false,
+          "fields": {
+            "name": {
+              "m3Type": "TERM",
+              "required": true
+            },
+            "kind": {
+              "m3Type": "TERM",
+              "enum": [
+                "function",
+                "class"
+              ]
+            },
+            "signature": {
+              "m3Type": "TERM",
+              "required": false
+            },
+            "summary": {
+              "m3Type": "PROSE",
+              "required": false
+            },
+            "intent": {
+              "m3Type": "PROSE",
+              "required": false
+            },
+            "line": {
+              "m3Type": "TERM",
+              "required": false
+            },
+            "endLine": {
+              "m3Type": "TERM",
+              "required": false
+            },
+            "params": {
+              "m3Type": "TERM",
+              "array": true
+            },
+            "async": {
+              "m3Type": "TERM",
+              "required": false
+            },
+            "superClass": {
+              "m3Type": "TERM",
+              "required": false
+            },
+            "methods": {
+              "m3Type": "SLOT",
+              "array": true,
+              "required": false,
+              "fields": {
+                "name": {
+                  "m3Type": "TERM"
+                },
+                "params": {
+                  "m3Type": "TERM",
+                  "array": true
+                },
+                "summary": {
+                  "m3Type": "PROSE",
+                  "required": false
+                },
+                "line": {
+                  "m3Type": "TERM"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "function": {
+      "m3Type": "SLOT",
+      "fields": {
+        "path": {
+          "m3Type": "TERM",
+          "required": true
+        },
+        "signature": {
+          "m3Type": "TERM",
+          "required": false
+        },
+        "summary": {
+          "m3Type": "PROSE",
+          "required": true
+        },
+        "intent": {
+          "m3Type": "PROSE",
+          "required": false
+        },
+        "behavior": {
+          "fields": {
+            "pre": {
+              "m3Type": "PROSE"
+            },
+            "post": {
+              "m3Type": "PROSE"
+            },
+            "err": {
+              "m3Type": "PROSE"
+            }
+          }
+        },
+        "tags": {
+          "m3Type": "TERM",
+          "array": true
+        }
+      }
+    },
+    "dependency": {
+      "m3Type": "RELATION",
+      "fields": {
+        "from": {
+          "m3Type": "TERM",
+          "required": true
+        },
+        "to": {
+          "m3Type": "TERM",
+          "required": true
+        },
+        "kind": {
+          "m3Type": "TERM",
+          "required": true,
+          "enum": [
+            "imports",
+            "calls",
+            "extends",
+            "implements",
+            "configures",
+            "tests"
+          ]
+        },
+        "weight": {
+          "m3Type": "TERM",
+          "enum": [
+            "critical",
+            "normal",
+            "weak"
+          ]
+        },
+        "intent": {
+          "m3Type": "PROSE",
+          "required": false
+        }
+      }
+    },
+    "flow": {
+      "m3Type": "SLOT",
+      "fields": {
+        "name": {
+          "m3Type": "TERM",
+          "required": true
+        },
+        "summary": {
+          "m3Type": "PROSE",
+          "required": true
+        },
+        "steps": {
+          "array": true,
+          "fields": {
+            "order": {
+              "m3Type": "TERM"
+            },
+            "artifact": {
+              "m3Type": "TERM"
+            },
+            "intent": {
+              "m3Type": "PROSE"
+            }
+          }
+        },
+        "tags": {
+          "m3Type": "TERM",
+          "array": true
+        }
+      }
+    }
+  },
+  "extensionLog": []
+}

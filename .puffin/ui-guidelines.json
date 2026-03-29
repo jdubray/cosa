@@ -1,0 +1,207 @@
+{
+  "guidelines": {
+    "layout": "# Layout Guidelines\n\n## Grid System\n- Use consistent spacing and grid structure\n- Maintain proper visual hierarchy\n- Consider responsive design principles\n\n## Alignment\n- Align elements consistently\n- Use proper margins and padding\n- Follow established layout patterns",
+    "typography": "# Typography Guidelines\n\n## Font Selection\n- Primary font for headings\n- Secondary font for body text\n- Monospace font for code\n\n## Font Sizing\n- Establish a type scale\n- Use consistent line heights\n- Maintain readable font sizes across devices",
+    "colors": "# Color Guidelines\n\n## Color Palette\n- Primary colors for branding\n- Secondary colors for accents\n- Neutral colors for text and backgrounds\n\n## Accessibility\n- Maintain adequate contrast ratios\n- Consider color blindness\n- Test in different lighting conditions",
+    "components": "# Component Guidelines\n\n## Consistency\n- Reusable component patterns\n- Consistent interaction patterns\n- Standard component variants\n\n## States\n- Default, hover, focus, disabled states\n- Loading and error states\n- Active and selected states",
+    "interactions": "# Interaction Guidelines\n\n## User Feedback\n- Provide clear feedback for user actions\n- Use appropriate animations and transitions\n- Indicate loading and processing states\n\n## Accessibility\n- Keyboard navigation support\n- Screen reader compatibility\n- Touch-friendly targets for mobile"
+  },
+  "stylesheets": [],
+  "designTokens": {
+    "colors": {
+      "primary": {
+        "name": "Primary",
+        "value": "#6c63ff",
+        "description": "Main brand color"
+      },
+      "secondary": {
+        "name": "Secondary",
+        "value": "#16213e",
+        "description": "Secondary accent color"
+      },
+      "success": {
+        "name": "Success",
+        "value": "#48bb78",
+        "description": "Success state color"
+      },
+      "warning": {
+        "name": "Warning",
+        "value": "#ecc94b",
+        "description": "Warning state color"
+      },
+      "error": {
+        "name": "Error",
+        "value": "#f56565",
+        "description": "Error state color"
+      },
+      "neutral": {
+        "name": "Neutral",
+        "value": "#e6e6e6",
+        "description": "Neutral text color"
+      }
+    },
+    "typography": {
+      "fontFamilies": [
+        {
+          "name": "Primary",
+          "value": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "description": "Main UI font"
+        },
+        {
+          "name": "Monospace",
+          "value": "\"SF Mono\", \"Fira Code\", Consolas, monospace",
+          "description": "Code and technical content"
+        }
+      ],
+      "fontSizes": [
+        {
+          "name": "Small",
+          "value": "0.875rem",
+          "description": "Small text, captions"
+        },
+        {
+          "name": "Base",
+          "value": "1rem",
+          "description": "Body text default"
+        },
+        {
+          "name": "Large",
+          "value": "1.125rem",
+          "description": "Large body text"
+        },
+        {
+          "name": "H3",
+          "value": "1.25rem",
+          "description": "Heading 3"
+        },
+        {
+          "name": "H2",
+          "value": "1.5rem",
+          "description": "Heading 2"
+        },
+        {
+          "name": "H1",
+          "value": "1.75rem",
+          "description": "Heading 1"
+        }
+      ],
+      "fontWeights": [
+        {
+          "name": "Normal",
+          "value": "400",
+          "description": "Regular text"
+        },
+        {
+          "name": "Medium",
+          "value": "500",
+          "description": "Medium emphasis"
+        },
+        {
+          "name": "Semibold",
+          "value": "600",
+          "description": "Headings, labels"
+        },
+        {
+          "name": "Bold",
+          "value": "700",
+          "description": "Strong emphasis"
+        }
+      ]
+    },
+    "spacing": [
+      {
+        "name": "XS",
+        "value": "0.25rem",
+        "description": "Extra small spacing"
+      },
+      {
+        "name": "SM",
+        "value": "0.5rem",
+        "description": "Small spacing"
+      },
+      {
+        "name": "MD",
+        "value": "0.75rem",
+        "description": "Medium spacing"
+      },
+      {
+        "name": "LG",
+        "value": "1rem",
+        "description": "Large spacing"
+      },
+      {
+        "name": "XL",
+        "value": "1.5rem",
+        "description": "Extra large spacing"
+      },
+      {
+        "name": "2XL",
+        "value": "2rem",
+        "description": "Double extra large spacing"
+      }
+    ],
+    "radii": [
+      {
+        "name": "None",
+        "value": "0",
+        "description": "No border radius"
+      },
+      {
+        "name": "Small",
+        "value": "4px",
+        "description": "Small border radius"
+      },
+      {
+        "name": "Medium",
+        "value": "8px",
+        "description": "Medium border radius"
+      },
+      {
+        "name": "Large",
+        "value": "12px",
+        "description": "Large border radius"
+      },
+      {
+        "name": "Full",
+        "value": "50%",
+        "description": "Fully rounded (circles)"
+      }
+    ],
+    "shadows": [
+      {
+        "name": "None",
+        "value": "none",
+        "description": "No shadow"
+      },
+      {
+        "name": "Small",
+        "value": "0 1px 2px rgba(0, 0, 0, 0.2)",
+        "description": "Subtle shadow"
+      },
+      {
+        "name": "Medium",
+        "value": "0 2px 8px rgba(0, 0, 0, 0.3)",
+        "description": "Standard shadow"
+      },
+      {
+        "name": "Large",
+        "value": "0 4px 16px rgba(0, 0, 0, 0.4)",
+        "description": "Prominent shadow"
+      }
+    ]
+  },
+  "componentPatterns": [
+    {
+      "id": "button-primary",
+      "name": "Primary Button",
+      "description": "Main call-to-action button with primary styling",
+      "htmlTemplate": "<button class=\"btn btn-primary\">Button Text</button>",
+      "cssRules": ".btn-primary {\n  background: var(--color-primary);\n  color: white;\n  border: none;\n  border-radius: var(--radius-small);\n  padding: var(--spacing-md) var(--spacing-lg);\n  font-weight: var(--font-weight-medium);\n  cursor: pointer;\n  transition: all 0.15s ease;\n}\n\n.btn-primary:hover {\n  background: var(--color-primary-dark);\n  transform: translateY(-1px);\n}",
+      "guidelines": "Use for primary actions like \"Save\", \"Submit\", \"Create\". Limit to one per page section.",
+      "createdAt": "2026-03-28T21:33:40.815Z",
+      "updatedAt": "2026-03-28T21:33:40.815Z"
+    }
+  ],
+  "createdAt": "2026-03-28T21:33:40.815Z",
+  "updatedAt": "2026-03-28T21:33:40.815Z"
+}

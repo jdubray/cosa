@@ -1,0 +1,80 @@
+{
+  "id": "047dfc7e-5b63-460e-ac0f-a67abd92490c",
+  "sprintId": "mnbab106vsqqpc6a3",
+  "status": "approved",
+  "iteration": 1,
+  "stories": [
+    {
+      "id": "bcb32788-1a62-4e61-beda-5c8975086870",
+      "title": "Project Bootstrap and Configuration Loading"
+    },
+    {
+      "id": "7997f4fd-3b2a-4f09-92e3-4b1846476506",
+      "title": "session.db Schema and Migration"
+    },
+    {
+      "id": "fa61fbc2-c231-4f23-8af7-29457672cfdb",
+      "title": "Session Store CRUD Operations"
+    },
+    {
+      "id": "92ad5a2e-5aca-4281-b258-abf93318a5ad",
+      "title": "SSH Backend with Connection Pool and Reconnect"
+    },
+    {
+      "id": "4769b5e3-83ff-4bbb-bf06-9184351a70c6",
+      "title": "Security Gate — Dangerous Command Detection and Output Sanitization"
+    },
+    {
+      "id": "efccf5c1-681d-4434-8f3e-5bb1827b38be",
+      "title": "Tool Registry — Registration, Schema Validation, and Dispatch"
+    },
+    {
+      "id": "9f8d0cd9-42f6-4b01-90d0-6e6c123147aa",
+      "title": "health_check Tool"
+    },
+    {
+      "id": "cdeba860-62b9-44f4-bb1e-1a2bb2c42cbb",
+      "title": "db_query Tool"
+    },
+    {
+      "id": "53697764-cefc-48fb-a838-c195b91c4de7",
+      "title": "db_integrity Tool"
+    },
+    {
+      "id": "ddf9bbff-174a-4c5c-a7f5-76b2079df756",
+      "title": "Approval Engine — Token Generation, FSM, and Expiry"
+    },
+    {
+      "id": "66226ed1-d80f-42d2-93fd-b09ca583ff28",
+      "title": "Email Gateway — IMAP Polling and SMTP Sending"
+    },
+    {
+      "id": "e0b0390e-7c34-4a13-9fb6-60ea8dec1c6e",
+      "title": "Cron Scheduler — Health Check Task"
+    },
+    {
+      "id": "6df93778-3de5-4493-a3ff-636757cabd6a",
+      "title": "Orchestrator Core Loop"
+    },
+    {
+      "id": "85166206-04c0-49ff-b400-ffbfc69636b8",
+      "title": "Context Builder — System Prompt Assembly"
+    },
+    {
+      "id": "7662d0e2-8231-44cc-8870-c7e588a3d7e7",
+      "title": "Structured JSON Logging"
+    },
+    {
+      "id": "f686bf68-7a29-43a3-b536-ea495f9163b2",
+      "title": "End-to-End Staging Test: All 8 Functional Scenarios"
+    }
+  ],
+  "planItems": [],
+  "sharedComponents": [],
+  "risks": [],
+  "aiError": "Request timed out",
+  "clarificationHistory": [],
+  "createdAt": "2026-03-29T04:57:19.154Z",
+  "updatedAt": "2026-03-29T04:57:25.515Z",
+  "approvedAt": "2026-03-29T04:57:25.515Z"
+}

@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Runtime data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+coverage/
+
+# Local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Puffin runtime artifacts
+.puffin/*.db
+.puffin/*.db-shm
+.puffin/*.db-wal
