@@ -20,6 +20,7 @@ const contextBuilder = require('./context-builder');
 const memoryManager      = require('./memory-manager');
 const skillStore         = require('./skill-store');
 const contextCompressor  = require('./context-compressor');
+const { makeReactor }    = require('./session-fsm');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -392,11 +393,14 @@ async function runSession(trigger) {
     });
 
     // ── Acceptors ────────────────────────────────────────────────────────────
+    // makeReactor() creates a fresh FSM instance per session, so parallel
+    // sessions each get their own independent state machine.
     samApi.addAcceptors([
       iterationGuardAcceptor,
       compressionAcceptor,
       claudeResponseAcceptor,
       toolResultAcceptor,
+      makeReactor(),
     ]);
 
     // ── Wire up intents before NAPs reference them ───────────────────────────

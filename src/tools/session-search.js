@@ -92,7 +92,7 @@ function excerpt(text, maxLen) {
  *     excerpt:      string,
  *     created_at:   string,
  *   }>,
- *   total_found: number,
+ *   total_found: number,  // count of rows returned — may be less than total matches
  * }}
  */
 function handler({ query, limit = DEFAULT_LIMIT, role }) {

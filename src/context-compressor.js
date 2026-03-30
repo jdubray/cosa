@@ -60,11 +60,15 @@ function _getConfig() {
  * @returns {string}
  */
 function _buildCompressionPrompt(middleTurns) {
+  // Encode the turns as base64 so that tool output containing XML-like strings
+  // (e.g. </turns>) cannot escape the delimiter boundary.
+  const encoded = Buffer.from(JSON.stringify(middleTurns)).toString('base64');
   return [
-    'Summarize the following COSA agent session turns.',
+    'The following is a base64-encoded JSON array of COSA agent session turns.',
+    'Decode and summarize the turns.',
     'Preserve: decisions made, tools called, outcomes, open questions.',
     'Be concise. Target: 300 words or less.',
-    `<turns>${JSON.stringify(middleTurns)}</turns>`,
+    `<turns_b64>${encoded}</turns_b64>`,
   ].join('\n');
 }
 
@@ -154,41 +158,10 @@ function needsCompression(messages) {
  * @returns {Promise<Array>} New compressed message array.
  */
 async function compress(messages, sessionId) {
+  const { enabled } = _getConfig();
+  if (!enabled) return messages;
   const { env } = getConfig();
   return _runCompression(messages, sessionId, env.anthropicApiKey);
-}
-
-// ---------------------------------------------------------------------------
-// SAM action / acceptor pair  (Phase 2 §19.3)
-// ---------------------------------------------------------------------------
-
-/**
- * SAM action — propose context compression for the current message array.
- *
- * If {@link needsCompression} is false the action short-circuits and returns
- * `{ compressionNeeded: false }` so the acceptor has nothing to accept.
- * If compression IS needed, Haiku is called here (async work belongs in the
- * action per SAM convention) and the compressed array is returned in the
- * proposal.
- *
- * @param {{ messages: Array, sessionId: string, apiKey: string }} data
- * @returns {Promise<{
- *   compressionNeeded: boolean,
- *   compressedMessages?: Array,
- *   originalCount?: number
- * }>}
- */
-async function proposeCompressionAction({ messages, sessionId, apiKey }) {
-  if (!needsCompression(messages)) {
-    return { compressionNeeded: false };
-  }
-
-  const compressedMessages = await _runCompression(messages, sessionId, apiKey);
-  return {
-    compressionNeeded:  true,
-    compressedMessages,
-    originalCount:      messages.length,
-  };
 }
 
 /**
@@ -228,6 +201,5 @@ function makeCompressionAcceptor() {
 module.exports = {
   needsCompression,
   compress,
-  proposeCompressionAction,
   makeCompressionAcceptor,
 };

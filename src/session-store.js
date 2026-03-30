@@ -82,6 +82,12 @@ const MIGRATIONS = [
     created_at    TEXT NOT NULL
   )`,
 
+  // Add is_compressed column if it does not already exist.
+  // Uses try/catch instead of "IF NOT EXISTS" for compatibility with SQLite < 3.37.
+  // This replaces the earlier pattern of setting parent_id = session_id as a
+  // compression marker, which was semantically misleading.
+  `ALTER TABLE sessions ADD COLUMN is_compressed INTEGER NOT NULL DEFAULT 0`,
+
   `CREATE INDEX IF NOT EXISTS idx_tool_calls_session_id ON tool_calls(session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tool_calls_tool_name  ON tool_calls(tool_name)`,
   `CREATE INDEX IF NOT EXISTS idx_tool_calls_status     ON tool_calls(status)`,
@@ -150,7 +156,14 @@ function runMigrations() {
   const db = getDb();
   const migrate = db.transaction(() => {
     for (const sql of MIGRATIONS) {
-      db.exec(sql);
+      try {
+        db.exec(sql);
+      } catch (err) {
+        // ALTER TABLE ADD COLUMN throws "duplicate column name" if the column
+        // already exists (SQLite < 3.37 lacks IF NOT EXISTS support).
+        if (err.message && err.message.includes('duplicate column name')) continue;
+        throw err;
+      }
     }
   });
   migrate();
@@ -222,7 +235,9 @@ function closeSession(sessionId, summary) {
  * `turn_index` is derived automatically as max(existing) + 1 for the session.
  *
  * @param {string} sessionId
- * @param {'user'|'assistant'|'tool'} role
+ * @param {'user'|'assistant'|'tool'|'system'} role
+ *   Use `'system'` only for internal COSA events (e.g. context compression
+ *   log entries) that should not surface in operator-facing role filters.
  * @param {string} content - Message text or JSON tool result.
  * @param {number|null} tokensIn
  * @param {number|null} tokensOut
@@ -543,15 +558,15 @@ function findRecentAlert(category, severity, sinceIso) {
 }
 
 /**
- * Set a session's `parent_id` to its own `session_id` as a self-referential
- * marker that context compression has occurred for this session.
+ * Mark a session as having had context compression applied.
+ * Sets `is_compressed = 1` on the sessions row.
  *
  * @param {string} sessionId
  */
 function markSessionCompressed(sessionId) {
   getDb()
-    .prepare(`UPDATE sessions SET parent_id = ? WHERE session_id = ?`)
-    .run(sessionId, sessionId);
+    .prepare(`UPDATE sessions SET is_compressed = 1 WHERE session_id = ?`)
+    .run(sessionId);
 }
 
 /**

@@ -854,6 +854,20 @@
       "message": "Code review complete: No issues found!",
       "type": "success",
       "source": "app"
+    },
+    {
+      "id": "toast-1774843669392-xbcklv8",
+      "timestamp": 1774843669392,
+      "message": "Sprint closed and committed: e43b211",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774843682180-7hc7e26",
+      "timestamp": 1774843682180,
+      "message": "Code review started on Code Reviews branch",
+      "type": "info",
+      "source": "app"
     }
   ]
 }

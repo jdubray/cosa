@@ -2,9 +2,10 @@
 
 const Anthropic    = require('@anthropic-ai/sdk');
 const yaml         = require('js-yaml');
-const { getConfig }  = require('../config/cosa.config');
-const memoryManager  = require('./memory-manager');
-const skillStore     = require('./skill-store');
+const { getConfig }           = require('../config/cosa.config');
+const memoryManager           = require('./memory-manager');
+const skillStore              = require('./skill-store');
+const { createSkillCreationFSM } = require('./skill-creation-fsm');
 const { createLogger } = require('./logger');
 
 const log = createLogger('post-session-hook');
@@ -143,27 +144,15 @@ function _buildSkillSearchQuery(toolCalls) {
 }
 
 /**
- * Call Claude Sonnet to generate an agentskills.io skill document.
- *
- * The returned object contains the frontmatter fields extracted from the
- * generated YAML header plus the full markdown `content`.
+ * Build the Claude prompt for skill generation.
  *
  * @param {Array<{ tool_name: string }>} toolCalls
- * @param {string} finalText - Agent's final response text from the session.
- * @param {string} apiKey
- * @returns {Promise<{
- *   name:        string,
- *   title:       string,
- *   description: string,
- *   domain:      string,
- *   content:     string,
- * }|null>}  null on generation or parse failure.
+ * @param {string} finalText
+ * @returns {string}
  */
-async function _generateSkillDocument(toolCalls, finalText, apiKey) {
+function _buildSkillGenPrompt(toolCalls, finalText) {
   const toolNames = [...new Set(toolCalls.map(tc => tc.tool_name))].join(', ');
-  const truncatedResponse = finalText.slice(0, 800);
-
-  const prompt = [
+  return [
     'You are a technical documentation writer for the COSA appliance agent framework.',
     'Generate a new reusable skill document in agentskills.io format based on the',
     'session summary below.',
@@ -171,7 +160,7 @@ async function _generateSkillDocument(toolCalls, finalText, apiKey) {
     `Tools used in this session: ${toolNames}`,
     '',
     "Agent's final response (truncated):",
-    truncatedResponse,
+    finalText.slice(0, 800),
     '',
     'Output ONLY a Markdown document with the following structure — no preamble, no trailing text:',
     '',
@@ -189,7 +178,22 @@ async function _generateSkillDocument(toolCalls, finalText, apiKey) {
     '## Experience',
     '',
   ].join('\n');
+}
 
+/**
+ * Call Claude Sonnet to generate a raw skill document string.
+ * Returns the raw markdown text, or null on API failure.
+ *
+ * This is the **generation** step.  Parsing / validation is a separate step
+ * so that the SkillCreationFSM can properly transition generating→validating.
+ *
+ * @param {Array<{ tool_name: string }>} toolCalls
+ * @param {string} finalText
+ * @param {string} apiKey
+ * @returns {Promise<string|null>}
+ */
+async function _callClaudeForSkillRaw(toolCalls, finalText, apiKey) {
+  const prompt = _buildSkillGenPrompt(toolCalls, finalText);
   try {
     const client   = new Anthropic({ apiKey });
     const response = await client.messages.create({
@@ -197,11 +201,9 @@ async function _generateSkillDocument(toolCalls, finalText, apiKey) {
       max_tokens: SKILL_GEN_MAX_TOKENS,
       messages:   [{ role: 'user', content: prompt }],
     });
-
-    const rawText = response.content.find(b => b.type === 'text')?.text ?? '';
-    return _parseSkillDocument(rawText);
+    return response.content.find(b => b.type === 'text')?.text ?? null;
   } catch (err) {
-    log.error(`Skill generation failed: ${err.message}`);
+    log.error(`Skill generation API call failed: ${err.message}`);
     return null;
   }
 }
@@ -219,7 +221,7 @@ async function _generateSkillDocument(toolCalls, finalText, apiKey) {
  * }|null}  null if frontmatter is missing or required fields are absent.
  */
 function _parseSkillDocument(raw) {
-  const match = raw.match(/^---\n([\s\S]+?)\n---\n([\s\S]*)$/);
+  const match = raw.match(/^---\r?\n([\s\S]+?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) {
     log.warn('Skill generation response missing frontmatter block');
     return null;
@@ -272,37 +274,90 @@ async function postSessionHook({ sessionId, trigger, toolCalls, finalText, statu
     log.error(`Memory update failed for session ${sessionId}: ${err.message}`);
   }
 
-  // ── AC6–8: Skill creation gate ───────────────────────────────────────────
-  if (!shouldCreateSkill(trigger.type, toolCalls.length, status)) {
-    return;
-  }
+  // ── AC6–8: Skill creation via SkillCreationFSM ──────────────────────────
+  // Each attempt gets its own FSM instance — no shared state between sessions.
+  const fsm = createSkillCreationFSM();
 
   try {
-    const { env } = getConfig();
+    // idle → evaluating
+    fsm.send('post_session_hook');
 
-    // AC7: Search skills_fts; skip if a matching skill already exists.
+    if (!shouldCreateSkill(trigger.type, toolCalls.length, status)) {
+      fsm.send('not_novel'); // evaluating → idle
+      return;
+    }
+
+    // evaluating → searching
+    fsm.send('novel_detected');
+    const { env }     = getConfig();
     const searchQuery = _buildSkillSearchQuery(toolCalls);
     const existing    = searchQuery ? skillStore.searchSkills(searchQuery, 1) : [];
 
     if (existing.length > 0) {
       log.info(`Skill already exists for pattern '${searchQuery}' — skipping creation`);
+      fsm.send('match_found'); // searching → idle (existing skill; flag for improvement)
       return;
     }
 
-    // AC8: Generate skill document via Claude Sonnet.
+    // searching → generating
+    fsm.send('no_match');
     log.info(`Generating new skill for session ${sessionId} (tools: ${searchQuery})`);
-    const skillDoc = await _generateSkillDocument(toolCalls, finalText, env.anthropicApiKey);
 
-    if (!skillDoc) return;
+    // Retry loop: up to 2 validation attempts (AC5/AC6 of Story 16).
+    const MAX_RETRIES = 2;
+    let   retries     = 0;
 
-    // Guard against duplicate name race or prior run creating the same skill.
-    if (skillStore.get(skillDoc.name)) {
-      log.info(`Skill '${skillDoc.name}' already exists — skipping insert`);
-      return;
+    while (retries < MAX_RETRIES) {
+      // ── Generation step (generating state) ─────────────────────────────────
+      const rawText = await _callClaudeForSkillRaw(toolCalls, finalText, env.anthropicApiKey);
+
+      if (!rawText) {
+        // API failure — treat as a failed validation attempt so the retry
+        // logic runs, but do not advance FSM to 'validating' (generation did
+        // not complete).
+        retries++;
+        if (retries >= MAX_RETRIES) {
+          fsm.send('retry_exceeded'); // generating → idle
+          log.warn(`Skill creation for session ${sessionId}: max retries exceeded (API failure), no skill saved`);
+          return;
+        }
+        log.info(`Skill generation returned no text (attempt ${retries}/${MAX_RETRIES}), retrying`);
+        continue;
+      }
+
+      // generating → validating
+      fsm.send('generated');
+
+      // ── Validation step (validating state) ─────────────────────────────────
+      const skillDoc = _parseSkillDocument(rawText);
+
+      if (skillDoc) {
+        // validating → persisted
+        fsm.send('valid');
+
+        // Guard against a duplicate name created between search and insert.
+        if (!skillStore.get(skillDoc.name)) {
+          skillStore.create(skillDoc);
+          log.info(`New skill created: '${skillDoc.name}' (${skillDoc.domain})`);
+        } else {
+          log.info(`Skill '${skillDoc.name}' already exists — skipping insert`);
+        }
+
+        fsm.send('reset'); // persisted → idle
+        return;
+      }
+
+      // Validation failed.
+      retries++;
+      if (retries >= MAX_RETRIES) {
+        fsm.send('retry_exceeded'); // validating → idle
+        log.warn(`Skill creation for session ${sessionId}: max retries exceeded, no skill saved`);
+        return;
+      }
+
+      fsm.send('invalid'); // validating → generating (retry)
+      log.info(`Skill validation failed (attempt ${retries}/${MAX_RETRIES}), retrying generation`);
     }
-
-    skillStore.create(skillDoc);
-    log.info(`New skill created: '${skillDoc.name}' (${skillDoc.domain})`);
   } catch (err) {
     log.error(`Skill creation failed for session ${sessionId}: ${err.message}`);
   }

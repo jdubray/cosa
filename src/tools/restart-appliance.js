@@ -78,6 +78,7 @@ function uptimeMsFromTimestamp(timestamp) {
  * @returns {Promise<number|null>}
  */
 async function fetchUptimeMs(serviceName) {
+  if (!SAFE_SERVICE_NAME.test(serviceName)) return null;
   const cmd = `systemctl show ${serviceName} --property=ExecMainStartTimestamp`;
   try {
     const { stdout, exitCode } = await sshBackend.exec(cmd);
@@ -89,14 +90,22 @@ async function fetchUptimeMs(serviceName) {
   }
 }
 
+/** Allowable characters for a systemd service name (prevents command injection). */
+const SAFE_SERVICE_NAME = /^[a-zA-Z0-9_\-.]+$/;
+
 /**
  * Issue `systemctl restart <serviceName>` via SSH.
  *
  * @param {string} serviceName
  * @returns {Promise<void>}
- * @throws {Error} if the command exits non-zero.
+ * @throws {Error} if serviceName fails the safety check or the command exits non-zero.
  */
 async function issueRestart(serviceName) {
+  if (!SAFE_SERVICE_NAME.test(serviceName)) {
+    throw new Error(
+      `Invalid service name '${serviceName}': must match ${SAFE_SERVICE_NAME}`
+    );
+  }
   const { exitCode, stderr } = await sshBackend.exec(`systemctl restart ${serviceName}`);
   if (exitCode !== 0) {
     throw new Error(

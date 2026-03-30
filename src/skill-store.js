@@ -353,6 +353,8 @@ function improve(name, experience) {
 /**
  * Append `entry` to the `## Experience` section of `content`.
  * If the section is absent it is created at the end of the document.
+ * The entry is inserted at the end of the Experience section, before any
+ * subsequent `## ` heading, so that later sections are not displaced.
  * Trims to MAX_EXPERIENCE_ENTRIES if the result exceeds MAX_CONTENT_CHARS.
  *
  * @param {string} content
@@ -363,8 +365,22 @@ function _appendExperience(content, entry) {
   const sectionHeader = '## Experience';
 
   let updated;
-  if (content.includes(sectionHeader)) {
-    updated = content.trimEnd() + '\n' + entry + '\n';
+  const idx = content.indexOf(sectionHeader);
+  if (idx !== -1) {
+    // Find where the Experience section ends — i.e. the start of the next
+    // `## ` heading (if any) or the end of the document.
+    const afterHeader = idx + sectionHeader.length;
+    const nextSection = content.indexOf('\n## ', afterHeader);
+    if (nextSection !== -1) {
+      // Insert before the next heading, preserving sections that follow.
+      updated =
+        content.slice(0, nextSection).trimEnd() +
+        '\n' + entry + '\n' +
+        content.slice(nextSection);
+    } else {
+      // Experience is the last section — append to document end.
+      updated = content.trimEnd() + '\n' + entry + '\n';
+    }
   } else {
     updated = content.trimEnd() + '\n\n' + sectionHeader + '\n' + entry + '\n';
   }
@@ -460,21 +476,28 @@ function installSeedSkills() {
     return { installed, skipped };
   }
 
-  const insertSeed = getDb().transaction(skill => {
-    createSkill(skill);
-  });
-
+  // Parse all seed files first (outside the transaction) so a bad file
+  // does not leave the database in a partially-inserted state.
+  const parsed = [];
   for (const file of files) {
     const raw  = fs.readFileSync(path.join(SEED_DIR, file), 'utf8');
-    const seed = _parseSeedFile(raw);
-
-    if (findSkillByName(seed.name)) {
-      skipped.push(seed.name);
-    } else {
-      insertSeed(seed);
-      installed.push(seed.name);
-    }
+    parsed.push(_parseSeedFile(raw));
   }
+
+  // Wrap all inserts in a single transaction: all-or-nothing install,
+  // faster than one auto-commit per row.
+  const installAll = getDb().transaction(() => {
+    for (const seed of parsed) {
+      if (findSkillByName(seed.name)) {
+        skipped.push(seed.name);
+      } else {
+        createSkill(seed);
+        installed.push(seed.name);
+      }
+    }
+  });
+
+  installAll();
 
   return { installed, skipped };
 }

@@ -10,6 +10,7 @@ const emailGateway     = require('./email-gateway');
 const cronScheduler    = require('./cron-scheduler');
 const { runSession }   = require('./orchestrator');
 const { createLogger } = require('./logger');
+const { startCli }     = require('./cli');
 
 const log = createLogger('main');
 
@@ -123,6 +124,13 @@ async function boot() {
     sessionSearchTool.riskLevel
   );
   log.info(`Tools registered: ${toolRegistry.getSchemas().map(t => t.name).join(', ')}`);
+
+  // In CLI mode skip email polling and cron — use interactive REPL instead.
+  if (process.argv.includes('--cli')) {
+    log.info('COSA CLI ready.');
+    startCli();
+    return;
+  }
 
   // 5. Wire email gateway to create orchestrator sessions from inbound email.
   emailGateway.setNewSessionHandler(async (message) => {

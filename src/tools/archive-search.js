@@ -76,7 +76,7 @@ function excerpt(text, maxLen) {
  * @returns {{
  *   results:     Array<{ session_id: string, turn_index: number, role: string,
  *                        created_at: string, excerpt: string }>,
- *   total_found: number,
+ *   total_found: number,  // count of rows returned — may be less than total matches
  * }}
  */
 function handler({ query, limit = DEFAULT_LIMIT }) {

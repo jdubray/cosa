@@ -112,11 +112,12 @@ function buildToolsSection() {
  *   skillIndex?:     string,    // Layer 3 — compact skill list
  *   activeSkills?:   string[],  // Layer 5 — full skill documents
  *   sessionSummary?: string,    // Layer 7 — compressed context summary
+ *   timestamp?:      string,    // Layer 9 — ISO timestamp override (for deterministic tests)
  * }} [options={}]
  * @returns {Array<{ type: 'text', text: string, cache_control?: { type: 'ephemeral' } }>}
  */
 function build(options = {}) {
-  const { memory, skillIndex, activeSkills, sessionSummary } = options;
+  const { memory, skillIndex, activeSkills, sessionSummary, timestamp } = options;
 
   // ── Cached block: Layers 0–4 ──────────────────────────────────────────────
   const cachedParts = [
@@ -171,9 +172,11 @@ function build(options = {}) {
   // Layer 8 — Cross-session recall: deferred to Phase 3.
 
   // Layer 9 — Current timestamp.
+  // Accepts a `timestamp` override so callers can produce deterministic output
+  // in tests (satisfies AC7: build() is deterministic for the same inputs).
   blocks.push({
     type: 'text',
-    text: `Current time: ${new Date().toISOString()}`,
+    text: `Current time: ${timestamp ?? new Date().toISOString()}`,
   });
 
   return blocks;

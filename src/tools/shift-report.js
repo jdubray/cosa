@@ -95,6 +95,14 @@ function buildCommand(dbPath) {
  * Returns a single JSON row with aggregate metrics plus a JSON array of
  * condition breakdowns.
  *
+ * SECURITY NOTE: `periodStart` and `periodEnd` are embedded via string
+ * interpolation because the SQL is piped to `sqlite3` via stdin and
+ * parameterised queries are unavailable in that execution model.
+ * Both values are either produced by `new Date()` (server-side, no user
+ * input) or derived from a date string that has already been validated
+ * against the strict YYYY-MM-DD pattern in `INPUT_SCHEMA`.  Do NOT loosen
+ * that schema validation without reviewing these queries first.
+ *
  * @param {string} periodStart - ISO timestamp
  * @param {string} periodEnd   - ISO timestamp
  * @returns {string}

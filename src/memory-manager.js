@@ -184,10 +184,10 @@ function _truncateNotes(sections, maxChars) {
  *
  * Pass 1 — prune Recent Incidents to {@link INCIDENT_PRUNE_TARGET} entries.
  * Pass 2 — truncate Notes to {@link NOTES_TRUNCATE_CHARS} characters.
- *
- * The returned string is guaranteed to be ≤ {@link MAX_CHARS} after both
- * passes, unless a single section is pathologically large (in which case
- * Notes is forcibly truncated to zero).
+ * Pass 3 — clear Notes entirely if still over limit.
+ * Pass 4 — hard-slice the raw document as an absolute last resort so the
+ *           invariant `doc.length ≤ MAX_CHARS` is **always** satisfied,
+ *           even when other sections are pathologically large.
  *
  * @param {Record<string, string>} sections
  * @param {string} timestamp
@@ -202,10 +202,19 @@ function _enforceLimit(sections, timestamp) {
   doc = _buildDocument(sections, timestamp);
   if (doc.length <= MAX_CHARS) return doc;
 
-  // Pass 2: truncate Notes.
+  // Pass 2: truncate Notes to 100 chars.
   _truncateNotes(sections, NOTES_TRUNCATE_CHARS);
   doc = _buildDocument(sections, timestamp);
-  return doc;
+  if (doc.length <= MAX_CHARS) return doc;
+
+  // Pass 3: clear Notes entirely.
+  sections['Notes'] = '';
+  doc = _buildDocument(sections, timestamp);
+  if (doc.length <= MAX_CHARS) return doc;
+
+  // Pass 4: hard-slice — other sections are pathologically large.
+  // Truncate at MAX_CHARS so the file is never written over the limit.
+  return doc.slice(0, MAX_CHARS);
 }
 
 // ---------------------------------------------------------------------------

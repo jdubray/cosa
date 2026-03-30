@@ -12,8 +12,19 @@
       "details": {
         "checkout": true
       }
+    },
+    {
+      "id": "mnco3fylnznttwqzx",
+      "type": "commit",
+      "timestamp": "2026-03-30T04:07:49.389Z",
+      "branch": null,
+      "hash": "e43b211",
+      "message": "feat(ui): complete \"FTS5 Triggers for Session Turn Search (+21 more)\" (22/22 stories)\n\nCompleted:\n- FTS5 Triggers for Session Turn Search\n- skills.db Schema and Migration\n- Skill Store CRUD and Seed Install\n- Memory Manager — MEMORY.md Load, Update, and Limit Enforcement\n- Context Builder — 10-Layer Prompt Assembly with Cache Hints\n- Context Compressor — Summarize Middle Turns\n- shift_report Tool\n- archive_search Tool\n- backup_run Tool\n- settings_write Tool\n- restart_appliance Tool\n- session_search Tool\n- Orchestrator Post-Session Hook — Memory Update and Skill Creation\n- Orchestrator — Context Compression Integration\n- SessionFSM — Session Lifecycle State Machine\n- SkillCreationFSM — Skill Creation Lifecycle State Machine\n- Cron Scheduler — Full Phase 2 Schedule\n- CLI Interface — Interactive Local REPL\n- OPERATIONS.md Seed and Context Layer Integration\n- Daily Shift Report Email Delivery\n- Weekly Digest Email Delivery\n- Phase 2 End-to-End Staging Tests",
+      "sourceBranch": null,
+      "sessionId": null,
+      "details": {}
     }
   ],
   "createdAt": "2026-03-28T21:33:40.816Z",
-  "updatedAt": "2026-03-30T00:59:15.859Z"
+  "updatedAt": "2026-03-30T04:07:49.389Z"
 }
