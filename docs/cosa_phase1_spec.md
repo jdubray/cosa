@@ -1501,4 +1501,101 @@ All Phase 1 open questions are now resolved.
 
 ---
 
+## 20. SAM Pattern Integration
+
+COSA adopts the **State-Action-Model (SAM)** temporal programming pattern throughout its architecture. Two libraries are used:
+
+- **`@cognitive-fab/sam-pattern`** (`^1.6.1`) — Core SAM runtime: action dispatch, acceptors, reactors, and next-action predicates (NAPs). Provides async action retries, a model checker, and time-travel debugging.
+- **`@cognitive-fab/sam-fsm`** (`^1.0.0`) — FSM library built on top of `sam-pattern`. Supports deterministic and non-deterministic finite state machines, composite state machines, transition guards, and GraphViz diagram generation.
+
+Both packages are authored by Jean-Jacques Dubray and implement the TLA+-inspired SAM semantics: **Action → Acceptor(s) → Model mutation → Reactor(s) → NAP**.
+
+---
+
+### 20.1 Technology Stack Update
+
+Add the following entries to the Phase 1 dependency table:
+
+| Package | Version | Purpose |
+|---|---|---|
+| `@cognitive-fab/sam-pattern` | `^1.6.1` | SAM runtime: action/acceptor/reactor loop, NAPs |
+| `@cognitive-fab/sam-fsm` | `^1.0.0` | FSM definitions for approval engine and orchestrator lifecycle |
+
+---
+
+### 20.2 The COSA Orchestrator Loop as a SAM Model
+
+The orchestrator's per-turn execution maps directly onto SAM semantics:
+
+| SAM Role | COSA Equivalent |
+|---|---|
+| **Action** | Claude proposes a tool call (or responds with text). The action presents a proposed mutation: `{ tool_name, input }`. |
+| **Acceptor** | The security gate checks the proposed action against the dangerous-command denylist. The approval engine checks risk level and, if `once`, suspends execution pending operator email reply. Only if all acceptors pass is the model mutation allowed to proceed. |
+| **Model mutation** | The tool executes. Its result, the agent turn, and any errors are written to `session.db`. `APPLIANCE.md` is updated if health state changed. |
+| **Reactor** | After the model mutation, reactors fire: the context builder appends the tool result to the message array; the IMAP poller is ticked; any triggered alerts are enqueued. |
+| **NAP (Next-Action Predicate)** | If a cron trigger fired during the turn, the NAP re-enters the orchestrator loop with the trigger message. If no trigger is pending and the session type is `email`, the loop exits and the reply is sent. |
+
+This mapping means the orchestrator's main loop **is** the SAM step function. The `@cognitive-fab/sam-pattern` library should be used to instantiate this loop, replacing the ad-hoc `while (toolCalls.length > 0)` pattern currently in `orchestrator.js`.
+
+---
+
+### 20.3 Approval Engine FSM (`approval-engine.js`)
+
+The approval lifecycle is a four-state deterministic FSM. This FSM **must** be implemented using `@cognitive-fab/sam-fsm` rather than the hand-rolled `_pending` Map and callback-resolve pattern.
+
+#### States
+
+| State | Meaning |
+|---|---|
+| `pending` | Token sent to operator; awaiting email reply or timeout |
+| `approved` | Operator replied with the correct token; tool may execute |
+| `denied` | Operator replied with `DENY <token>`; tool blocked; note preserved |
+| `expired` | No reply before `expires_at`; tool blocked; operator notified |
+
+#### Transitions
+
+| From | Event | Guard | To | Side-effects |
+|---|---|---|---|---|
+| *(start)* | `submit` | — | `pending` | Persist approval record; send request email |
+| `pending` | `approve` | token matches, status = pending | `approved` | Persist status; send confirmation email; resolve pending Promise |
+| `pending` | `deny` | token matches, status = pending | `denied` | Persist status + note; send denial email; resolve pending Promise |
+| `pending` | `expire` | `now >= expires_at` | `expired` | Persist status; send expiry email; resolve pending Promise |
+
+`approved`, `denied`, and `expired` are terminal states (no outbound transitions).
+
+#### SAM-FSM Integration Mechanism
+
+Use the **FSM Acceptor** integration mechanism: the sam-fsm instance acts as an acceptor in the SAM model. When the orchestrator proposes a tool call, the approval-engine acceptor either passes (state = `approved` or risk = `read`) or holds the proposal until the FSM transitions out of `pending`.
+
+The `_runExpiryCheck` background task drives the `expire` event by calling the sam-fsm machine's `expire` action for each record where `now >= expires_at`.
+
+#### NAP: Post-Approval
+
+When the FSM transitions to `approved`, a NAP re-enters the orchestrator loop with `{ role: 'tool', content: '<approval confirmed>' }` so tool execution proceeds within the same session turn.
+
+---
+
+### 20.4 FSM Diagram
+
+```
+  ┌─────────┐
+  │ (start) │──submit──▶┌──────────┐
+  └─────────┘           │ PENDING  │
+                        └────┬─────┘
+               ┌─────────────┼──────────────┐
+           approve         deny           expire
+               │             │               │
+               ▼             ▼               ▼
+         ┌──────────┐  ┌──────────┐  ┌──────────┐
+         │ APPROVED │  │  DENIED  │  │ EXPIRED  │
+         └──────────┘  └──────────┘  └──────────┘
+              (terminal states — no outbound transitions)
+```
+
+---
+
+### 20.5 Test Coverage
+
+The `approval-engine.js` unit test suite must cover all four FSM states and all four transitions. Because `@cognitive-fab/sam-fsm` generates deterministic state machines, invalid transitions (e.g. `approve` when already `denied`) must throw a sam-fsm guard violation rather than silently succeeding. Tests must assert this behaviour.
+
 *Phase 1 spec complete. Phase 2 spec to follow after Phase 1 exit criteria are verified in staging.*

@@ -51,6 +51,24 @@ const MIGRATIONS = [
     content_rowid=id
   )`,
 
+  // FTS5 sync triggers — keep turns_fts up-to-date automatically.
+  `CREATE TRIGGER IF NOT EXISTS turns_fts_insert AFTER INSERT ON turns BEGIN
+     INSERT INTO turns_fts(rowid, content, session_id, turn_index, created_at)
+     VALUES (new.id, new.content, new.session_id, new.turn_index, new.created_at);
+   END`,
+
+  `CREATE TRIGGER IF NOT EXISTS turns_fts_delete AFTER DELETE ON turns BEGIN
+     INSERT INTO turns_fts(turns_fts, rowid, content, session_id, turn_index, created_at)
+     VALUES ('delete', old.id, old.content, old.session_id, old.turn_index, old.created_at);
+   END`,
+
+  `CREATE TRIGGER IF NOT EXISTS turns_fts_update AFTER UPDATE ON turns BEGIN
+     INSERT INTO turns_fts(turns_fts, rowid, content, session_id, turn_index, created_at)
+     VALUES ('delete', old.id, old.content, old.session_id, old.turn_index, old.created_at);
+     INSERT INTO turns_fts(rowid, content, session_id, turn_index, created_at)
+     VALUES (new.id, new.content, new.session_id, new.turn_index, new.created_at);
+   END`,
+
   `CREATE TABLE IF NOT EXISTS tool_calls (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id    TEXT NOT NULL REFERENCES sessions(session_id),
@@ -63,6 +81,12 @@ const MIGRATIONS = [
     duration_ms   INTEGER,
     created_at    TEXT NOT NULL
   )`,
+
+  // Add is_compressed column if it does not already exist.
+  // Uses try/catch instead of "IF NOT EXISTS" for compatibility with SQLite < 3.37.
+  // This replaces the earlier pattern of setting parent_id = session_id as a
+  // compression marker, which was semantically misleading.
+  `ALTER TABLE sessions ADD COLUMN is_compressed INTEGER NOT NULL DEFAULT 0`,
 
   `CREATE INDEX IF NOT EXISTS idx_tool_calls_session_id ON tool_calls(session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tool_calls_tool_name  ON tool_calls(tool_name)`,
@@ -132,7 +156,14 @@ function runMigrations() {
   const db = getDb();
   const migrate = db.transaction(() => {
     for (const sql of MIGRATIONS) {
-      db.exec(sql);
+      try {
+        db.exec(sql);
+      } catch (err) {
+        // ALTER TABLE ADD COLUMN throws "duplicate column name" if the column
+        // already exists (SQLite < 3.37 lacks IF NOT EXISTS support).
+        if (err.message && err.message.includes('duplicate column name')) continue;
+        throw err;
+      }
     }
   });
   migrate();
@@ -204,7 +235,9 @@ function closeSession(sessionId, summary) {
  * `turn_index` is derived automatically as max(existing) + 1 for the session.
  *
  * @param {string} sessionId
- * @param {'user'|'assistant'|'tool'} role
+ * @param {'user'|'assistant'|'tool'|'system'} role
+ *   Use `'system'` only for internal COSA events (e.g. context compression
+ *   log entries) that should not surface in operator-facing role filters.
  * @param {string} content - Message text or JSON tool result.
  * @param {number|null} tokensIn
  * @param {number|null} tokensOut
@@ -220,6 +253,87 @@ function saveTurn(sessionId, role, content, tokensIn, tokensOut) {
     `INSERT INTO turns (session_id, turn_index, role, content, tokens_in, tokens_out, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(sessionId, turnIndex, role, content, tokensIn ?? null, tokensOut ?? null, now());
+}
+
+// ---------------------------------------------------------------------------
+// FTS5 Search — Turns
+// ---------------------------------------------------------------------------
+
+/**
+ * Full-text search across all session turns.
+ *
+ * Uses the FTS5 `bm25` ranking function (lower = better match) so results are
+ * ordered with the most relevant turn first.  Joins back to `turns` to include
+ * `role`, which is not stored in the FTS index.
+ *
+ * @param {string} query - FTS5 MATCH expression (e.g. `"disk full"` or `disk AND full`).
+ * @param {number} [limit=20] - Maximum number of results to return.
+ * @returns {Array<{
+ *   session_id: string,
+ *   turn_index:  number,
+ *   role:        string,
+ *   content:     string,
+ *   created_at:  string
+ * }>}
+ */
+function searchTurns(query, limit = 20) {
+  return getDb()
+    .prepare(
+      `SELECT t.session_id,
+              t.turn_index,
+              t.role,
+              t.content,
+              t.created_at
+       FROM   turns_fts
+       JOIN   turns t ON t.id = turns_fts.rowid
+       WHERE  turns_fts MATCH ?
+       ORDER  BY bm25(turns_fts)
+       LIMIT  ?`
+    )
+    .all(query, limit);
+}
+
+/**
+ * Full-text search across session turns, joined to their parent session for
+ * metadata.  Optionally filters by role ('user', 'assistant', 'tool').
+ *
+ * Results are ranked by BM25 relevance (best match first).
+ *
+ * @param {string}      query - FTS5 query string.
+ * @param {number}      [limit=20] - Maximum rows to return.
+ * @param {string|null} [role=null] - Optional role filter.
+ * @returns {Array<{
+ *   session_id:   string,
+ *   started_at:   string,
+ *   trigger_type: string,
+ *   turn_index:   number,
+ *   role:         string,
+ *   content:      string,
+ *   created_at:   string,
+ * }>}
+ */
+function searchTurnsWithSession(query, limit = 20, role = null) {
+  const BASE_SQL =
+    `SELECT t.session_id,
+            s.started_at,
+            s.trigger_type,
+            t.turn_index,
+            t.role,
+            t.content,
+            t.created_at
+     FROM   turns_fts
+     JOIN   turns    t ON t.id = turns_fts.rowid
+     JOIN   sessions s ON s.session_id = t.session_id
+     WHERE  turns_fts MATCH ?`;
+
+  if (role) {
+    return getDb()
+      .prepare(`${BASE_SQL} AND t.role = ? ORDER BY bm25(turns_fts) LIMIT ?`)
+      .all(query, role, limit);
+  }
+  return getDb()
+    .prepare(`${BASE_SQL} ORDER BY bm25(turns_fts) LIMIT ?`)
+    .all(query, limit);
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +557,54 @@ function findRecentAlert(category, severity, sinceIso) {
     .get(category, severity, sinceIso);
 }
 
+/**
+ * Mark a session as having had context compression applied.
+ * Sets `is_compressed = 1` on the sessions row.
+ *
+ * @param {string} sessionId
+ */
+function markSessionCompressed(sessionId) {
+  getDb()
+    .prepare(`UPDATE sessions SET is_compressed = 1 WHERE session_id = ?`)
+    .run(sessionId);
+}
+
+/**
+ * Return all executed tool calls for a session with their parsed outputs.
+ * Results are ordered by execution time (ascending).
+ *
+ * @param {string} sessionId
+ * @returns {Array<{
+ *   tool_name:  string,
+ *   input:      object|null,
+ *   output:     object|null,
+ *   created_at: string,
+ * }>}
+ */
+function getSessionToolCalls(sessionId) {
+  const rows = getDb()
+    .prepare(
+      `SELECT tool_name, input, output, created_at
+       FROM   tool_calls
+       WHERE  session_id = ? AND status = 'executed'
+       ORDER  BY created_at ASC`
+    )
+    .all(sessionId);
+
+  return rows.map(row => ({
+    tool_name:  row.tool_name,
+    input:      safeParse(row.input),
+    output:     safeParse(row.output),
+    created_at: row.created_at,
+  }));
+}
+
+/** @param {string|null} s @returns {object|null} */
+function safeParse(s) {
+  if (s == null) return null;
+  try { return JSON.parse(s); } catch { return null; }
+}
+
 module.exports = {
   getDb,
   runMigrations,
@@ -450,8 +612,11 @@ module.exports = {
   // Sessions
   createSession,
   closeSession,
+  markSessionCompressed,
   // Turns
   saveTurn,
+  searchTurns,
+  searchTurnsWithSession,
   // Tool calls
   saveToolCall,
   recordBlockedToolCall,
@@ -462,6 +627,7 @@ module.exports = {
   findExpiredApprovals,
   // Tool-call lookup
   getLastToolOutput,
+  getSessionToolCalls,
   // Alerts
   createAlert,
   findRecentAlert,

@@ -2,6 +2,7 @@
 
 const { getConfig }    = require('../config/cosa.config');
 const { runMigrations } = require('./session-store');
+const skillStore       = require('./skill-store');
 const sshBackend       = require('./ssh-backend');
 const toolRegistry     = require('./tool-registry');
 const approvalEngine   = require('./approval-engine');
@@ -9,6 +10,7 @@ const emailGateway     = require('./email-gateway');
 const cronScheduler    = require('./cron-scheduler');
 const { runSession }   = require('./orchestrator');
 const { createLogger } = require('./logger');
+const { startCli }     = require('./cli');
 
 const log = createLogger('main');
 
@@ -16,6 +18,12 @@ const log = createLogger('main');
 const healthCheckTool  = require('./tools/health-check');
 const dbQueryTool      = require('./tools/db-query');
 const dbIntegrityTool  = require('./tools/db-integrity');
+const shiftReportTool  = require('./tools/shift-report');
+const archiveSearchTool = require('./tools/archive-search');
+const backupRunTool     = require('./tools/backup-run');
+const settingsWriteTool     = require('./tools/settings-write');
+const restartApplianceTool  = require('./tools/restart-appliance');
+const sessionSearchTool     = require('./tools/session-search');
 
 /**
  * Bootstrap COSA: load config, run migrations, test SSH connectivity,
@@ -45,6 +53,18 @@ async function boot() {
     process.exit(1);
   }
 
+  // 2b. Run skills.db migrations and install seed skills on first run.
+  try {
+    skillStore.runMigrations();
+    const { installed } = skillStore.installSeedSkills();
+    if (installed.length > 0) {
+      log.info(`Seed skills installed: ${installed.join(', ')}`);
+    }
+  } catch (err) {
+    log.error(`Skills setup failed: ${err.message}`);
+    process.exit(1);
+  }
+
   // 3. Test SSH connectivity. Failure is logged as a warning; does not crash.
   await sshBackend.init();
 
@@ -67,7 +87,50 @@ async function boot() {
     dbIntegrityTool.handler,
     dbIntegrityTool.riskLevel
   );
+  toolRegistry.register(
+    shiftReportTool.name,
+    shiftReportTool.schema,
+    shiftReportTool.handler,
+    shiftReportTool.riskLevel
+  );
+  toolRegistry.register(
+    archiveSearchTool.name,
+    archiveSearchTool.schema,
+    archiveSearchTool.handler,
+    archiveSearchTool.riskLevel
+  );
+  toolRegistry.register(
+    backupRunTool.name,
+    backupRunTool.schema,
+    backupRunTool.handler,
+    backupRunTool.riskLevel
+  );
+  toolRegistry.register(
+    settingsWriteTool.name,
+    settingsWriteTool.schema,
+    settingsWriteTool.handler,
+    settingsWriteTool.riskLevel
+  );
+  toolRegistry.register(
+    restartApplianceTool.name,
+    restartApplianceTool.schema,
+    restartApplianceTool.handler,
+    restartApplianceTool.riskLevel
+  );
+  toolRegistry.register(
+    sessionSearchTool.name,
+    sessionSearchTool.schema,
+    sessionSearchTool.handler,
+    sessionSearchTool.riskLevel
+  );
   log.info(`Tools registered: ${toolRegistry.getSchemas().map(t => t.name).join(', ')}`);
+
+  // In CLI mode skip email polling and cron — use interactive REPL instead.
+  if (process.argv.includes('--cli')) {
+    log.info('COSA CLI ready.');
+    startCli();
+    return;
+  }
 
   // 5. Wire email gateway to create orchestrator sessions from inbound email.
   emailGateway.setNewSessionHandler(async (message) => {
