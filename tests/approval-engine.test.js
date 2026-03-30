@@ -606,24 +606,23 @@ describe('AC9 — background expiry check', () => {
     );
   });
 
-  it('sends a notification email for each expired approval', async () => {
-    const EXPIRED = {
-      approval_id: 'appr-expired-002',
+  it('does NOT send a notification email for orphaned approvals (no live promise)', async () => {
+    // Orphaned = approval exists in DB but _pending has no matching intents.
+    // This happens when COSA restarts with leftover pending rows from a dead session.
+    const ORPHANED = {
+      approval_id: 'appr-orphaned-002',
       token:       'APPROVE-DEADBEEF',
       tool_name:   'run_migration',
       status:      'pending',
     };
-    mockFindExpiredApprovals.mockReturnValueOnce([EXPIRED]);
+    mockFindExpiredApprovals.mockReturnValueOnce([ORPHANED]);
 
     await _runExpiryCheck();
 
-    expect(mockSendEmail).toHaveBeenCalledTimes(1);
-    const [opts] = mockSendEmail.mock.calls[0];
-    expect(opts.subject).toContain('Expired');
-    expect(opts.subject).toContain(EXPIRED.tool_name);
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
-  it('resolves the pending callback with { approved: false, note: "expired" }', async () => {
+  it('sends a notification email and resolves the promise for live approvals', async () => {
     const handle = startApproval();
     await Promise.resolve();
 
@@ -639,21 +638,33 @@ describe('AC9 — background expiry check', () => {
 
     await _runExpiryCheck();
 
+    expect(mockSendEmail).toHaveBeenCalledTimes(2); // 1 from requestApproval + 1 from expiry
+    const expiredCall = mockSendEmail.mock.calls[1][0];
+    expect(expiredCall.subject).toContain('Expired');
+    expect(expiredCall.subject).toContain(MEDIUM_TOOL_CALL.tool_name);
+
     const result = await handle.promise;
     expect(result.approved).toBe(false);
     expect(result.note).toBe('expired');
   });
 
-  it('processes multiple expired approvals in one sweep', async () => {
+  it('processes multiple expired approvals — updates DB for all, emails only live ones', async () => {
+    const handle = startApproval();
+    await Promise.resolve();
+
     mockFindExpiredApprovals.mockReturnValueOnce([
-      { approval_id: 'a1', token: 'APPROVE-11111111', tool_name: 'tool_a', status: 'pending' },
+      // live approval (has in-memory intents)
+      { approval_id: handle.approvalId, token: handle.token, tool_name: MEDIUM_TOOL_CALL.tool_name, status: 'pending' },
+      // orphaned approval (no in-memory intents — from a dead session)
       { approval_id: 'a2', token: 'APPROVE-22222222', tool_name: 'tool_b', status: 'pending' },
     ]);
 
     await _runExpiryCheck();
 
+    // Both rows are marked expired in the DB.
     expect(mockUpdateApprovalStatus).toHaveBeenCalledTimes(2);
-    expect(mockSendEmail).toHaveBeenCalledTimes(2);
+    // Only the live one triggers an expiry notification (requestApproval already sent 1).
+    expect(mockSendEmail).toHaveBeenCalledTimes(2); // 1 request + 1 expiry
   });
 });
 

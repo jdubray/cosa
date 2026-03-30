@@ -8,7 +8,7 @@ const { getConfig } = require('../../config/cosa.config');
 // ---------------------------------------------------------------------------
 
 const NAME       = 'backup_run';
-const RISK_LEVEL = 'medium';
+const RISK_LEVEL = 'read';
 
 const DEFAULT_TIMEOUT_S  = 120;
 const DEFAULT_BACKUP_DIR = '/tmp/cosa-backups';

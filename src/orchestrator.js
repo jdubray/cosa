@@ -68,7 +68,7 @@ function extractFinalText(contentBlocks) {
  * @returns {Promise<{ type: 'tool_result', tool_use_id: string,
  *                     content: string, is_error?: boolean }>}
  */
-async function processToolUse(sessionId, toolUse) {
+async function processToolUse(sessionId, toolUse, triggerType) {
   const { name, id, input } = toolUse;
   const riskLevel           = toolRegistry.getRiskLevel(name);
   const toolCallRecord      = { tool_name: name, input };
@@ -86,7 +86,7 @@ async function processToolUse(sessionId, toolUse) {
   }
 
   // ── 2. Approval gate ────────────────────────────────────────────────────────
-  const policy = approvalEngine.requiresApproval({ tool_name: name, input, riskLevel });
+  const policy = approvalEngine.requiresApproval({ tool_name: name, input, riskLevel, triggerType });
 
   if (policy === 'once') {
     const approvalResult = await approvalEngine.requestApproval(
@@ -199,8 +199,8 @@ async function callClaudeAction({ messages, systemPrompt, tools, apiKey, session
  * @param {{ toolUse: object, sessionId: string }} data
  * @returns {Promise<object>} proposal containing `{ toolResult }`
  */
-async function processToolAction({ toolUse, sessionId }) {
-  const toolResult = await processToolUse(sessionId, toolUse);
+async function processToolAction({ toolUse, sessionId, triggerType }) {
+  const toolResult = await processToolUse(sessionId, toolUse, triggerType);
   return { toolResult };
 }
 
@@ -310,7 +310,7 @@ function makeProcessToolNap(processToolIntent) {
       model.processingIndex < model.pendingToolCalls.length
     ) {
       const toolUse = model.pendingToolCalls[model.processingIndex];
-      processToolIntent({ toolUse, sessionId: model.sessionId });
+      processToolIntent({ toolUse, sessionId: model.sessionId, triggerType: model.triggerType });
       return true; // suppress render
     }
   };
@@ -383,6 +383,7 @@ async function runSession(trigger) {
       systemPrompt,
       tools,
       apiKey:           env.anthropicApiKey,
+      triggerType:      trigger.type,
       messages:         [{ role: 'user', content: trigger.message }],
       iterations:       0,
       pendingToolCalls: [],

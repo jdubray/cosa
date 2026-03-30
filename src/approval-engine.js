@@ -160,13 +160,20 @@ function _buildApprovalMachine(approvalId, onTerminal) {
 /**
  * Determine whether a tool call requires manual operator approval.
  *
- * @param {{ riskLevel: string }} toolCall
+ * Policy:
+ *   - 'read'   → always auto (no approval needed)
+ *   - 'medium' → auto when the session was triggered by an operator email
+ *                (the email itself constitutes explicit operator consent);
+ *                'once' for cron/cli-triggered sessions
+ *   - 'high' / 'critical' → always 'once' regardless of trigger
+ *
+ * @param {{ riskLevel: string, triggerType?: string }} toolCall
  * @returns {'auto' | 'once'}
- *   `'auto'` means the tool may execute immediately;
- *   `'once'` means operator approval is required before execution.
  */
 function requiresApproval(toolCall) {
-  return toolCall.riskLevel === 'read' ? 'auto' : 'once';
+  if (toolCall.riskLevel === 'read') return 'auto';
+  if (toolCall.riskLevel === 'medium' && toolCall.triggerType === 'email') return 'auto';
+  return 'once';
 }
 
 /**
@@ -310,16 +317,21 @@ async function _runExpiryCheck() {
   for (const approval of expired) {
     updateApprovalStatus(approval.approval_id, 'expired', 'system', null);
 
+    const intents = _pending.get(approval.approval_id);
+    if (!intents) {
+      // Orphaned approval — the session that created it is no longer running
+      // (e.g. process was restarted).  Mark it expired in the DB but skip the
+      // operator notification: the request is already dead, so emailing is noise.
+      continue;
+    }
+
     await emailGateway.sendEmail({
       to:      appliance.operator.email,
       subject: `[COSA] Expired: ${approval.tool_name}`,
       text:    `The approval request for "${approval.tool_name}" (token: ${approval.token}) has expired without a response.`,
     });
 
-    const intents = _pending.get(approval.approval_id);
-    if (intents) {
-      await intents.expire();
-    }
+    await intents.expire();
   }
 }
 
