@@ -1,0 +1,104 @@
+{
+  "id": "78c9f8c2-8e5f-4543-a3eb-b5274cf143fc",
+  "sprintId": "mnchcwvgvycrfzkro",
+  "status": "approved",
+  "iteration": 1,
+  "stories": [
+    {
+      "id": "d4c4e3d7-6895-48c8-a9af-2d73e501b347",
+      "title": "FTS5 Triggers for Session Turn Search"
+    },
+    {
+      "id": "7f455725-f02a-49ba-a4f4-4c1f006db860",
+      "title": "skills.db Schema and Migration"
+    },
+    {
+      "id": "8c595301-573a-43f4-ab63-0686f330a423",
+      "title": "Skill Store CRUD and Seed Install"
+    },
+    {
+      "id": "1311482a-07c8-4ce8-824c-2b3162980fba",
+      "title": "Memory Manager — MEMORY.md Load, Update, and Limit Enforcement"
+    },
+    {
+      "id": "ef487849-c15b-4fc7-8021-9812586e3024",
+      "title": "Context Builder — 10-Layer Prompt Assembly with Cache Hints"
+    },
+    {
+      "id": "fe1d2400-87df-46be-8b59-dd3b8244318f",
+      "title": "Context Compressor — Summarize Middle Turns"
+    },
+    {
+      "id": "cc7fc2bf-4f94-461e-af89-6e77b64334b3",
+      "title": "shift_report Tool"
+    },
+    {
+      "id": "b40887f6-6aac-4d7a-b444-cdda2b20acb6",
+      "title": "archive_search Tool"
+    },
+    {
+      "id": "6326e96e-513b-4e10-b7d5-2d63bba66459",
+      "title": "backup_run Tool"
+    },
+    {
+      "id": "1e778e8b-df23-40b1-ace6-01a589845500",
+      "title": "settings_write Tool"
+    },
+    {
+      "id": "07b6a91e-177d-41dd-8b63-84d6203683b1",
+      "title": "restart_appliance Tool"
+    },
+    {
+      "id": "9f0238f0-f3d5-4839-ad39-a08d3a315b5b",
+      "title": "session_search Tool"
+    },
+    {
+      "id": "76fe6e30-996f-4548-bbeb-3de335462945",
+      "title": "Orchestrator Post-Session Hook — Memory Update and Skill Creation"
+    },
+    {
+      "id": "fcd86b2e-967f-4cf9-922c-81450fbf63fb",
+      "title": "Orchestrator — Context Compression Integration"
+    },
+    {
+      "id": "867e2704-56d6-4138-8d48-8419c028f965",
+      "title": "SessionFSM — Session Lifecycle State Machine"
+    },
+    {
+      "id": "089908dd-9b60-457b-b199-ad218e666b67",
+      "title": "SkillCreationFSM — Skill Creation Lifecycle State Machine"
+    },
+    {
+      "id": "38a89896-2250-4afa-a3d8-98a926c35ec6",
+      "title": "Cron Scheduler — Full Phase 2 Schedule"
+    },
+    {
+      "id": "baf7449b-96e6-451a-9eb9-9e5f9d1ac9ca",
+      "title": "CLI Interface — Interactive Local REPL"
+    },
+    {
+      "id": "21f7d238-d253-4cc6-9241-b1defb4ebefb",
+      "title": "OPERATIONS.md Seed and Context Layer Integration"
+    },
+    {
+      "id": "559af815-86f0-4fe9-9cfc-e196c12fd9f8",
+      "title": "Daily Shift Report Email Delivery"
+    },
+    {
+      "id": "aeee2331-74e1-48aa-84c8-28845a375779",
+      "title": "Weekly Digest Email Delivery"
+    },
+    {
+      "id": "429aa51d-62ff-4447-a6c8-71b3a8d65c26",
+      "title": "Phase 2 End-to-End Staging Tests"
+    }
+  ],
+  "planItems": [],
+  "sharedComponents": [],
+  "risks": [],
+  "aiError": "Request timed out",
+  "clarificationHistory": [],
+  "createdAt": "2026-03-30T01:02:20.779Z",
+  "updatedAt": "2026-03-30T01:02:25.836Z",
+  "approvedAt": "2026-03-30T01:02:25.836Z"
+}

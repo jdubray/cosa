@@ -1,7 +1,9 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getConfig } = require('../config/cosa.config');
+const { createInstance, api } = require('@cognitive-fab/sam-pattern');
+const { fsm }                 = require('@cognitive-fab/sam-fsm');
+const { getConfig }           = require('../config/cosa.config');
 const {
   createApproval,
   findApprovalByToken,
@@ -18,15 +20,29 @@ const emailGateway = require('./email-gateway');
 const EXPIRY_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
+// Approval FSM definition
+// ---------------------------------------------------------------------------
+
+/**
+ * Transitions for the per-approval state machine.
+ * Terminal states (approved, denied, expired) have no outbound edges.
+ */
+const APPROVAL_TRANSITIONS = [
+  { from: 'pending', to: 'approved', on: 'approve' },
+  { from: 'pending', to: 'denied',   on: 'deny'    },
+  { from: 'pending', to: 'expired',  on: 'expire'  },
+];
+
+// ---------------------------------------------------------------------------
 // Module-level state
 // ---------------------------------------------------------------------------
 
 /**
- * In-memory map from approvalId → pending resolve callback.
+ * In-memory map from approvalId → action intents { approve, deny, expire }.
  * Populated by requestApproval(); consumed by processInboundReply() and
  * _runExpiryCheck().
  *
- * @type {Map<string, { resolve: Function }>}
+ * @type {Map<string, { approve: Function, deny: Function, expire: Function }>}
  */
 const _pending = new Map();
 
@@ -73,6 +89,70 @@ function buildRequestEmailText(token, toolCall, timeoutMinutes) {
   ].join('\n');
 }
 
+/**
+ * Build a per-approval SAM FSM instance and return the three action intents.
+ *
+ * The `onTerminal` callback fires exactly once when the FSM reaches
+ * `approved`, `denied`, or `expired`.
+ *
+ * @param {string} approvalId
+ * @param {(state: 'approved'|'denied'|'expired', model: object) => void} onTerminal
+ * @returns {{ approve: Function, deny: Function, expire: Function }}
+ */
+function _buildApprovalMachine(approvalId, onTerminal) {
+  // Derive pc0 and the `actions` map required by sam-fsm so that
+  // machine.addAction() can validate action names.
+  const { pc0, actions: fsmActions } = fsm.actionsAndStatesFor(APPROVAL_TRANSITIONS);
+
+  const machine = fsm({
+    pc0,
+    actions:                  fsmActions,
+    transitions:              APPROVAL_TRANSITIONS,
+    deterministic:            true,
+    enforceAllowedTransitions: true,
+  });
+
+  const samInst = createInstance({ instanceName: `approval-${approvalId}` });
+  const samApi  = api(samInst);
+
+  // Seed the model with FSM initial state.
+  samApi.addInitialState(machine.initialState({}));
+
+  // FSM acceptors handle pc transitions; the extra acceptor captures denial note.
+  samApi.addAcceptors([
+    ...machine.acceptors,
+    model => proposal => {
+      if (proposal.__actionName === 'deny') {
+        model.note = proposal.note ?? null;
+      }
+    },
+  ]);
+
+  // State-machine reactor derives allowed actions from the current pc.
+  samApi.addReactors(machine.stateMachine);
+
+  // Wrap raw action functions with the FSM guard.
+  const wrappedApprove = machine.addAction(async ()              => ({}),                  'approve');
+  const wrappedDeny    = machine.addAction(async ({ note } = {}) => ({ note: note ?? null }), 'deny');
+  const wrappedExpire  = machine.addAction(async ()              => ({}),                  'expire');
+
+  const { intents: [approve, deny, expire] } = samApi.getIntents([
+    wrappedApprove,
+    wrappedDeny,
+    wrappedExpire,
+  ]);
+
+  // Render fires after every model cycle; resolve the outer Promise on terminal states.
+  samApi.setRender(model => {
+    const pc = model.pc;
+    if (pc === 'approved' || pc === 'denied' || pc === 'expired') {
+      onTerminal(pc, model);
+    }
+  });
+
+  return { approve, deny, expire };
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -91,7 +171,11 @@ function requiresApproval(toolCall) {
 
 /**
  * Create an approval record, email the operator, and return a Promise that
- * resolves when the operator approves or denies (or expires).
+ * resolves when the operator approves or denies (or the request expires).
+ *
+ * Internally builds a per-approval SAM FSM instance and stores the resulting
+ * action intents in `_pending` so that processInboundReply() and
+ * _runExpiryCheck() can drive the machine forward.
  *
  * @param {string} sessionId
  * @param {{ tool_name: string, input: object, riskLevel: string, action_summary?: string }} toolCall
@@ -130,17 +214,25 @@ async function requestApproval(sessionId, toolCall, policy = 'once') {
   });
 
   return new Promise((resolve) => {
-    _pending.set(approvalId, { resolve });
+    const intents = _buildApprovalMachine(approvalId, (state, model) => {
+      _pending.delete(approvalId);
+      resolve({
+        approved: state === 'approved',
+        note:     state === 'expired' ? 'expired' : (model.note ?? null),
+      });
+    });
+
+    _pending.set(approvalId, intents);
   });
 }
 
 /**
- * Process an inbound email reply from the operator and transition the FSM.
+ * Process an inbound email reply from the operator and drive the FSM.
  *
  * Recognised patterns (case-insensitive):
- * - `APPROVE-XXXXXXXX`           → approve the matching pending request
+ * - `APPROVE-XXXXXXXX`             → approve the matching pending request
  * - `DENY APPROVE-XXXXXXXX [note]` → deny the matching pending request
- * - anything else                 → ambiguous (no state change)
+ * - anything else                  → ambiguous (no state change)
  *
  * @param {{ subject?: string, body?: string, from: string }} msg
  * @returns {Promise<{ action: 'approved' | 'denied' | 'ambiguous', approvalId: string | null }>}
@@ -163,6 +255,11 @@ async function processInboundReply(msg) {
     return { action: 'ambiguous', approvalId: null };
   }
 
+  const intents = _pending.get(approval.approval_id);
+  if (!intents) {
+    return { action: 'ambiguous', approvalId: null };
+  }
+
   const isDeny = /\bDENY\b/.test(upperText);
 
   if (isDeny) {
@@ -179,11 +276,8 @@ async function processInboundReply(msg) {
       text:    `Your denial for "${approval.tool_name}" has been logged.${note ? `\n\nNote: ${note}` : ''}`,
     });
 
-    const cb = _pending.get(approval.approval_id);
-    if (cb) {
-      _pending.delete(approval.approval_id);
-      cb.resolve({ approved: false, note });
-    }
+    // Drive the FSM — this will trigger onTerminal → resolve the outer Promise.
+    await intents.deny({ note });
 
     return { action: 'denied', approvalId: approval.approval_id };
   }
@@ -197,11 +291,7 @@ async function processInboundReply(msg) {
     text:    `Your approval for "${approval.tool_name}" (token: ${token}) has been confirmed. The action will now execute.`,
   });
 
-  const cb = _pending.get(approval.approval_id);
-  if (cb) {
-    _pending.delete(approval.approval_id);
-    cb.resolve({ approved: true, note: null });
-  }
+  await intents.approve();
 
   return { action: 'approved', approvalId: approval.approval_id };
 }
@@ -226,10 +316,9 @@ async function _runExpiryCheck() {
       text:    `The approval request for "${approval.tool_name}" (token: ${approval.token}) has expired without a response.`,
     });
 
-    const cb = _pending.get(approval.approval_id);
-    if (cb) {
-      _pending.delete(approval.approval_id);
-      cb.resolve({ approved: false, note: 'expired' });
+    const intents = _pending.get(approval.approval_id);
+    if (intents) {
+      await intents.expire();
     }
   }
 }
@@ -256,7 +345,7 @@ function stopExpiryCheck() {
 }
 
 /**
- * Discard all in-memory pending callbacks.
+ * Discard all in-memory pending intents.
  * **For use in tests only.**
  */
 function _clearPending() {

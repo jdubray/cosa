@@ -1902,12 +1902,963 @@
             "timestamp": 1774817981173
           },
           "children": []
+        },
+        {
+          "id": "0b93cc72-2832-4708-8460-d1a5a6b3e772",
+          "parentId": null,
+          "content": "Let's created the implementation specification for phase 2 of the project based on the documents included. Phase 1 has been implemented successfully.\n\nAgain a key design goal is to layer COSA in such a way that there is a COSA core that any solution can rely on, including the protocol of interactions with the appliance it manages.\n\nWe will focus later on its full integration with Baanbaan's POS.",
+          "title": null,
+          "timestamp": 1774828090129,
+          "response": {
+            "content": "`docs/cosa_phase2_spec.md` written. Here's what the spec covers:\n\n**Structure** (follows the same format as `cosa_phase1_spec.md`):\n\n1. **7 new tools** with full input/output schemas — `shift_report`, `archive_search`, `backup_run`, `backup_verify`, `settings_write`, `restart_appliance`, `session_search` — all implemented against the WeatherStation mock with Baanbaan mappings in §6.4\n2. **3 new modules** with full contracts — `memory-manager.js`, `skill-store.js`, `context-compressor.js`\n3. **`skills.db` schema** — complete DDL with FTS5, triggers, `skill_uses` table; agentskills.io document format spec\n4. **8 seed skills** for WeatherStation (with the Baanbaan equivalents documented for easy swap)\n5. **Skill creation FSM** — post-session hook, matching logic, Haiku generation, improvement on reuse\n6. **10-layer prompt architecture** — exact layer definitions, cache boundary, `context-builder.js` updated API\n7. **Context compression** — partition logic, Haiku call, parent_id linkage, array splicing\n8. **Full cron schedule** — 6 tasks with exact trigger messages\n9. **Email report formats** — daily shift report and weekly digest, verbatim text templates\n10. **Core/adapter split** — explicit list of what lives in core vs. what's swapped per appliance; the 6-primitive protocol contract any appliance must satisfy\n11. **10 acceptance tests** (T-2.1 through T-2.10) — concrete, testable criteria\n12. **3 open questions** — backup approval scope, FTS5 trigger cost, OPERATIONS.md write discipline",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 1.526736,
+            "turns": 9,
+            "duration": 496168,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\appliance-architecture.md",
+                "action": "read",
+                "timestamp": 1774828226067
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\hermes_architecture.md",
+                "action": "read",
+                "timestamp": 1774828220541
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_spec.md",
+                "action": "read",
+                "timestamp": 1774828221139
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa-architecture-proposal.md",
+                "action": "read",
+                "timestamp": 1774828261753
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_functional_spec.md",
+                "action": "read",
+                "timestamp": 1774828221614
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\baanbaan-setup-api-spec.md",
+                "action": "read",
+                "timestamp": 1774828221997
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_phase1_spec.md",
+                "action": "read",
+                "timestamp": 1774828270199
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\approval-engine.js",
+                "action": "read",
+                "timestamp": 1774828225935
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\security-gate.js",
+                "action": "read",
+                "timestamp": 1774828226449
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tool-registry.js",
+                "action": "read",
+                "timestamp": 1774828226836
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\cron-scheduler.js",
+                "action": "read",
+                "timestamp": 1774828227210
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\cosa.config.js",
+                "action": "read",
+                "timestamp": 1774828228507
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "read",
+                "timestamp": 1774828228895
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\health-check.js",
+                "action": "read",
+                "timestamp": 1774828229270
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\db-query.js",
+                "action": "read",
+                "timestamp": 1774828229638
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\db-integrity.js",
+                "action": "read",
+                "timestamp": 1774828230000
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_phase2_spec.md",
+                "action": "write",
+                "timestamp": 1774828576077
+              }
+            ],
+            "timestamp": 1774828587580
+          },
+          "children": [
+            "df2baf25-82d9-4f0f-8190-3f0374af249f"
+          ]
+        },
+        {
+          "id": "df2baf25-82d9-4f0f-8190-3f0374af249f",
+          "parentId": "0b93cc72-2832-4708-8460-d1a5a6b3e772",
+          "content": "Can you make sure you use the SAM pattern, which I invented, where appropriate, I released two new libraries:\n\nhttps://www.npmjs.com/package/@cognitive-fab/sam-pattern\nhttps://www.npmjs.com/package/@cognitive-fab/sam-fsm",
+          "title": null,
+          "timestamp": 1774828648835,
+          "response": {
+            "content": "I need WebFetch permission to read the package docs. Could you approve it (it'll prompt you), or alternatively paste the README content from those two packages here? Once I have the API, I can identify exactly where SAM belongs in COSA and implement it properly.\n\nThe areas I've already identified as natural fits:\n\n1. **`approval-engine.js`** — the approval FSM (`pending → approved/denied/expired`) is hand-rolled today; `@cognitive-fab/sam-fsm` should replace it\n2. **`skill-store.js` (Phase 2)** — the skill creation FSM (session closes → evaluate → search → generate → insert) is another natural candidate\n3. **`context-compressor.js` (Phase 2)** — the compression decision workflow could use SAM's present/propose/accept loop\n\nThe architecture proposal already calls out \"Formal state machines — all multi-step agent workflows use FSM (mirroring SAM pattern in the appliance itself)\" — so this is an explicit design requirement, not just an optional improvement.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.7508800499999999,
+            "turns": 10,
+            "duration": 56174,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\approval-engine.js",
+                "action": "read",
+                "timestamp": 1774828667366
+              }
+            ],
+            "timestamp": 1774828707543
+          },
+          "children": [
+            "762a9849-38d7-4747-af43-457830de0e9e"
+          ]
+        },
+        {
+          "id": "762a9849-38d7-4747-af43-457830de0e9e",
+          "parentId": "df2baf25-82d9-4f0f-8190-3f0374af249f",
+          "content": "permission added, can you make sure for the phase 2 specification we include the use of these library and retrofit phase 1 if necessary. Again just at the specification level, we will implement shortly.",
+          "title": null,
+          "timestamp": 1774828823785,
+          "response": {
+            "content": "Both sections are in place. Here's what was added:\n\n**`cosa_phase1_spec.md` — §20 SAM Pattern Integration**\n- Technology stack table update (`@cognitive-fab/sam-pattern` + `@cognitive-fab/sam-fsm` with versions)\n- COSA orchestrator loop mapped to SAM semantics: tool proposal = Action, security/approval gates = Acceptors, tool execution + DB write = model mutation, cron NAP = next-action predicate\n- Approval Engine FSM specified for `@cognitive-fab/sam-fsm`: four states (`pending`, `approved`, `denied`, `expired`), four transitions with guards and side-effects, **FSM Acceptor** integration mechanism, post-approval NAP\n- ASCII FSM diagram\n- Test coverage requirement: guard violations on invalid transitions must throw, not silently pass\n\n**`cosa_phase2_spec.md` — §19 SAM Pattern Integration**\n- `SessionFSM` (7 states, all key transitions, **State Machine Reactor** integration mechanism)\n- `SkillCreationFSM` (6 states, happy path + short-circuit + retry-exceeded, **Action Binding** integration mechanism)\n- Context compression as a SAM present/accept/mutate/react cycle — replaces the ad-hoc `if (tokens > threshold)` branch\n- Memory update as a SAM acceptor enforcing the ≤2200 char invariant at model level before any disk write\n- `package.json` dependency block\n- Per-FSM test coverage matrix",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 1.39534375,
+            "turns": 24,
+            "duration": 269277,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_phase2_spec.md",
+                "action": "write",
+                "timestamp": 1774829082529
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_phase1_spec.md",
+                "action": "write",
+                "timestamp": 1774829031183
+              }
+            ],
+            "timestamp": 1774829095539
+          },
+          "children": []
+        },
+        {
+          "id": "2ae473d7-5059-4419-9011-b7a1f94b7984",
+          "parentId": null,
+          "content": "We have slightly updated the phase 1 spec to use the SAM pattern can you complete that task? Again use the new versions of the SAM pattern libraries here:\n\nhttps://www.npmjs.com/package/@cognitive-fab/sam-pattern\nhttps://www.npmjs.com/package/@cognitive-fab/sam-fsm",
+          "title": null,
+          "timestamp": 1774829347170,
+          "response": {
+            "content": "The npm install requires your approval. Once you approve it, the packages will be available for the runtime.\n\nHere's a summary of what was done:\n\n**`package.json`** — added both SAM libraries to `dependencies`.\n\n**`src/approval-engine.js`** — full rewrite:\n- `_buildApprovalMachine(approvalId, onTerminal)` creates a per-approval SAM FSM instance using `@cognitive-fab/sam-fsm` with the 4-state `pending → approved | denied | expired` machine\n- `_pending` Map now stores action intents `{ approve, deny, expire }` instead of raw Promise callbacks\n- `requestApproval` builds the machine inside the Promise constructor; the `onTerminal` render callback captures and calls `resolve`\n- `processInboundReply` calls `intents.deny({ note })` or `intents.approve()` to drive the FSM\n- `_runExpiryCheck` calls `intents.expire()` for each expired approval\n\n**`src/orchestrator.js`** — `while` loop replaced with SAM:\n- Per-session `createInstance` keeps state isolated\n- Three acceptors: `iterationGuardAcceptor`, `claudeResponseAcceptor`, `toolResultAcceptor`\n- Two NAPs: `makeProcessToolNap` (dispatches next queued tool, suppresses render) and `makeCallClaudeNap` (fires next Claude call, suppresses render) — `processingIndex` ensures strictly sequential tool dispatch\n- `setRender` resolves/rejects the outer Promise when `model.status` reaches `'complete'` or `'error'`",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 2.4636530500000005,
+            "turns": 33,
+            "duration": 1170663,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\approval-engine.js",
+                "action": "write",
+                "timestamp": 1774830453517
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\orchestrator.js",
+                "action": "write",
+                "timestamp": 1774830505785
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\package.json",
+                "action": "write",
+                "timestamp": 1774830404398
+              }
+            ],
+            "timestamp": 1774830520422
+          },
+          "children": []
+        },
+        {
+          "id": "mnchb812ged0zogu0",
+          "content": "Let's now prepare to implement phase 2",
+          "parentId": null,
+          "timestamp": 1774832275046,
+          "response": {
+            "content": "Derived 23 user stories and added to backlog:\n\n- FTS5 Triggers for Session Turn Search\n- skills.db Schema and Migration\n- Skill Store CRUD and Seed Install\n- Memory Manager — MEMORY.md Load, Update, and Limit Enforcement\n- Context Builder — 10-Layer Prompt Assembly with Cache Hints\n- Context Compressor — Summarize Middle Turns\n- shift_report Tool\n- archive_search Tool\n- backup_run Tool\n- backup_verify Tool\n- settings_write Tool\n- restart_appliance Tool\n- session_search Tool\n- Orchestrator Post-Session Hook — Memory Update and Skill Creation\n- Orchestrator — Context Compression Integration\n- SessionFSM — Session Lifecycle State Machine\n- SkillCreationFSM — Skill Creation Lifecycle State Machine\n- Cron Scheduler — Full Phase 2 Schedule\n- CLI Interface — Interactive Local REPL\n- OPERATIONS.md Seed and Context Layer Integration\n- Daily Shift Report Email Delivery\n- Weekly Digest Email Delivery\n- Phase 2 End-to-End Staging Tests",
+            "timestamp": 1774832275046
+          }
+        },
+        {
+          "id": "mncjofmjgch7kmhi3",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**FTS5 Triggers for Session Turn Search**\n\nAs a developer, I want FTS5 INSERT/UPDATE/DELETE triggers on the turns table so that session_search returns up-to-date results without manual rebuilds.\n\n### Acceptance Criteria\n1. Three triggers exist: turns_fts_insert, turns_fts_delete, turns_fts_update\n2. Inserting a turn via saveTurn() causes it to appear in turns_fts immediately\n3. Updating a turn updates its FTS5 index entry\n4. Deleting a turn removes its FTS5 index entry\n5. Triggers are created idempotently in runMigrations()\n6. searchTurns(query, limit) exported from session-store.js returns ranked results with session_id, turn_index, role, content, created_at\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] FTS5 Triggers for Session Turn Search - FULLSTACK",
+          "timestamp": 1774836250651,
+          "response": {
+            "content": "All three changes are clean. Here's what was implemented:\n\n---\n\n**`src/session-store.js` — three additions:**\n\n**1. Triggers (in `MIGRATIONS`, after the `turns_fts` DDL):**\n\n| Trigger | Event | Action |\n|---|---|---|\n| `turns_fts_insert` | `AFTER INSERT ON turns` | Inserts new row into FTS5 index |\n| `turns_fts_delete` | `AFTER DELETE ON turns` | Removes old row from FTS5 index via `'delete'` special command |\n| `turns_fts_update` | `AFTER UPDATE ON turns` | Delete old + insert new (atomic within one trigger body) |\n\nAll use `CREATE TRIGGER IF NOT EXISTS` so they are idempotent across `runMigrations()` calls.\n\n**2. `searchTurns(query, limit = 20)`:**\n- FTS5 `MATCH` on `turns_fts`, joined back to `turns` to retrieve `role` (which isn't in the FTS schema)\n- Ordered by `bm25(turns_fts)` ascending — BM25 scores are negative, so this puts the best matches first\n- Returns `{ session_id, turn_index, role, content, created_at }` per row\n\n**3. Export** — `searchTurns` added to `module.exports`.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.5154498000000001,
+            "turns": 7,
+            "duration": 119292,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\session-store.js",
+                "action": "read",
+                "timestamp": 1774836362912
+              }
+            ],
+            "timestamp": 1774836377509
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "d4c4e3d7-6895-48c8-a9af-2d73e501b347",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncjrh5pnejpykc1s",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**skills.db Schema and Migration**\n\nAs a developer, I want the SQLite skills database created and migrated automatically so that the skill library is available from the first run.\n\n### Acceptance Criteria\n1. skills.db is created at data/skills.db if it does not exist\n2. WAL mode is enabled\n3. skills table is created with all columns: id, name, title, description, domain, content, version, use_count, last_used_at, created_at, updated_at\n4. skills_fts FTS5 virtual table is created and linked to skills\n5. skill_uses table is created with all columns\n6. All defined indexes are created\n7. Migrations are idempotent\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] skills.db Schema and Migration - FULLSTACK",
+          "timestamp": 1774836392605,
+          "response": {
+            "content": "Done. Here's what was built and why each decision was made:\n\n**`src/skill-store.js`** — follows `session-store.js` exactly in structure:\n\n**Schema:**\n\n| Table | Key columns |\n|---|---|\n| `skills` | `id`, `name` (UNIQUE), `title`, `description`, `domain`, `content`, `version`, `use_count`, `last_used_at`, `created_at`, `updated_at` |\n| `skills_fts` | FTS5 content table linked to `skills` via `content_rowid=id`; `name`, `title`, `description` are indexed; `domain` is `UNINDEXED` (stored for retrieval, not tokenised) |\n| `skill_uses` | `id`, `skill_id` (FK → skills), `session_id`, `invoked_at` |\n\n**Three FTS5 sync triggers** (`skills_fts_insert`, `skills_fts_delete`, `skills_fts_update`) — same pattern used for `turns_fts` in `session-store.js`.\n\n**Indexes:**\n- `idx_skills_domain`, `idx_skills_use_count` on `skills`\n- `idx_skill_uses_skill_id`, `idx_skill_uses_session_id`, `idx_skill_uses_invoked_at` on `skill_uses`\n\n**Idempotency:** Every DDL statement uses `IF NOT EXISTS`, and `runMigrations()` wraps them all in a single transaction — safe to run on every startup.\n\n**Connection:** `getDb()` creates `data/skills.db` (respecting `COSA_DATA_DIR`), enables WAL mode and foreign keys — identical to `session-store.js`.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.47013015,
+            "turns": 4,
+            "duration": 81644,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\cosa.config.js",
+                "action": "read",
+                "timestamp": 1774836410743
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\skill-store.js",
+                "action": "write",
+                "timestamp": 1774836470140
+              }
+            ],
+            "timestamp": 1774836481804
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "7f455725-f02a-49ba-a4f4-4c1f006db860",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncjts4cu4gh0i45p",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Skill Store CRUD and Seed Install**\n\nAs a developer, I want a skill-store module that installs seed skills on first run and exposes CRUD operations so that COSA has operational knowledge from day one.\n\n### Acceptance Criteria\n1. On first run, 8 seed skill markdown files from skills/seed/ are inserted into skills.db\n2. Seed install is idempotent — does not duplicate skills on subsequent startups\n3. list() returns all skills as an array\n4. listCompact() returns a formatted string (~30 tokens/skill) for use in the system prompt\n5. get(name) returns the full skill document or null if not found\n6. create(skill) inserts a new skill and returns the inserted row\n7. improve(name, experience) appends an experience entry to the skill's ## Experience section\n8. improve() trims ## Experience to the 5 most recent entries if document exceeds 3000 chars\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Skill Store CRUD and Seed Install - FULLSTACK",
+          "timestamp": 1774836500124,
+          "response": {
+            "content": "Good. Everything looks correct. Here's a summary of what was built:\n\n---\n\n**8 seed skill files** in `skills/seed/` — one per operational domain:\n\n| File | Domain | Purpose |\n|---|---|---|\n| `ssh-health-check.md` | monitoring | Broad SSH health check |\n| `disk-space-monitor.md` | monitoring | Disk usage thresholds |\n| `service-status.md` | monitoring | Critical service verification |\n| `log-tail.md` | diagnostics | Log error surfacing |\n| `db-integrity-audit.md` | diagnostics | SQLite integrity + FK checks |\n| `process-monitor.md` | diagnostics | CPU/memory process inspection |\n| `network-connectivity.md` | networking | Upstream endpoint probes |\n| `operator-report.md` | communication | Plain-text report composition |\n\nEach file uses YAML frontmatter (`name`, `title`, `description`, `domain`) + a markdown body with `## Steps` and a blank `## Experience` section ready for `improve()`.\n\n**`src/skill-store.js`** additions:\n- `list()` — all rows ordered by domain/name\n- `listCompact()` — `name (domain): description` per line, ~30 tokens/skill\n- `get(name)` — full row or null\n- `create(skill)` — inserts and returns the full row\n- `improve(name, experience)` — timestamps + appends the entry to `## Experience`; trims to 5 most recent entries when doc exceeds 3000 chars\n- `installSeedSkills()` — reads `skills/seed/*.md`, parses YAML frontmatter, inserts only if name not already present (idempotent)\n- `_parseSeedFile()`, `_appendExperience()`, `_trimExperience()` — internal helpers\n\n**`src/main.js`** — added step 2b after session-store migrations: runs `skillStore.runMigrations()` + `skillStore.installSeedSkills()` and logs newly installed skill names.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 1.1349273000000002,
+            "turns": 20,
+            "duration": 210722,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\skill-store.js",
+                "action": "read",
+                "timestamp": 1774836700774
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\main.js",
+                "action": "write",
+                "timestamp": 1774836694076
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\context-builder.js",
+                "action": "read",
+                "timestamp": 1774836544231
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\ssh-health-check.md",
+                "action": "write",
+                "timestamp": 1774836581381
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\disk-space-monitor.md",
+                "action": "write",
+                "timestamp": 1774836588535
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\service-status.md",
+                "action": "write",
+                "timestamp": 1774836597739
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\log-tail.md",
+                "action": "write",
+                "timestamp": 1774836605025
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\db-integrity-audit.md",
+                "action": "write",
+                "timestamp": 1774836612738
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\process-monitor.md",
+                "action": "write",
+                "timestamp": 1774836619787
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\network-connectivity.md",
+                "action": "write",
+                "timestamp": 1774836631758
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\operator-report.md",
+                "action": "write",
+                "timestamp": 1774836640676
+              }
+            ],
+            "timestamp": 1774836716783
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "8c595301-573a-43f4-ab63-0686f330a423",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncjyr4umy5dg6ho2",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Memory Manager — MEMORY.md Load, Update, and Limit Enforcement**\n\nAs a developer, I want a memory-manager module that loads MEMORY.md at session start and enforces a 2200-character hard limit so that COSA's persistent memory never grows unbounded.\n\n### Acceptance Criteria\n1. loadMemory() reads data/MEMORY.md and returns its contents; returns an empty template if the file does not exist\n2. updateMemory(patch) merges patch fields into the existing MEMORY.md sections and writes back to disk\n3. writeMemory(content) replaces MEMORY.md entirely after enforcing the character limit\n4. If a write would exceed 2200 characters, the oldest Recent Incidents entry is pruned and the write is retried\n5. If still over limit after pruning incidents, the Notes section is truncated to 100 characters\n6. The 2200-character hard limit is never exceeded after any write\n7. updateMemory() implemented as a SAM acceptor per Phase 2 §19.4\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Memory Manager — MEMORY.md Load, Update, and Limit Enforcement - FULLSTACK",
+          "timestamp": 1774836732126,
+          "response": {
+            "content": "Good. Everything is correct. Here's what was built:\n\n---\n\n**`src/memory-manager.js`** — complete implementation:\n\n**Public API:**\n\n| Function | Purpose |\n|---|---|\n| `loadMemory()` | Reads `data/MEMORY.md`; returns empty template if absent |\n| `updateMemory(patch)` | Merges patch fields, enforces limit, writes to disk |\n| `writeMemory(content)` | Full replacement; enforces limit before writing |\n| `makeMemoryAcceptor()` | Returns a SAM acceptor `model => proposal => {}` per §19.4 |\n\n**Limit enforcement — two-pass strategy in `_enforceLimit(sections, timestamp)`:**\n1. Assemble document; if ≤ 2200 chars → done\n2. **Pass 1**: prune `Recent Incidents` to 3 entries (oldest removed, newest at top); retry\n3. **Pass 2**: truncate `Notes` to 100 chars; return — hard limit never exceeded\n\n**`updateMemory(patch)` as SAM acceptor (§19.4):**\nThe merge + limit check happen before any filesystem write. The invariant is enforced at the \"model level\" — the final string is computed and validated before `writeFileSync` is called, matching the SAM acceptor contract exactly. `makeMemoryAcceptor()` wraps the same logic into the curried `model => proposal => {}` form for use inside a `createInstance` SAM session.\n\n**Section parsing** uses a line-by-line scanner that captures `## Header` bodies — no regex fragility on multi-line section content.\n\n**`recentIncident` patch** prepends new bullets at the top of the list (newest first), strips the `(none)` placeholder on first real entry.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.82631565,
+            "turns": 8,
+            "duration": 137499,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_phase2_spec.md",
+                "action": "read",
+                "timestamp": 1774836760476
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\memory-manager.js",
+                "action": "read",
+                "timestamp": 1774836864369
+              }
+            ],
+            "timestamp": 1774836875646
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "1311482a-07c8-4ce8-824c-2b3162980fba",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnck24sh6kxcy20xu",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Context Builder — 10-Layer Prompt Assembly with Cache Hints**\n\nAs a developer, I want the context builder updated to support the full 10-layer prompt architecture with Anthropic cache breakpoints so that Layers 0–4 cache on every session.\n\n### Acceptance Criteria\n1. build(options) accepts memory, skillIndex, activeSkills, and sessionSummary options\n2. Output is an array of system blocks suitable for the Anthropic messages.create() system parameter\n3. Layers 0–4 (identity, APPLIANCE.md, OPERATIONS.md, skill index, MEMORY.md) are concatenated into a single block with cache_control: { type: 'ephemeral' }\n4. Layers 5–9 are assembled fresh each call and returned as separate blocks\n5. If memory is not provided, Layer 4 is omitted rather than empty\n6. If skillIndex is not provided, Layer 3 is omitted\n7. build() is deterministic for the same inputs\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Context Builder — 10-Layer Prompt Assembly with Cache Hints - FULLSTACK",
+          "timestamp": 1774836889793,
+          "response": {
+            "content": "Everything is correct. Here's a summary of what was built:\n\n---\n\n**`config/OPERATIONS.md`** — new Layer 2 file with placeholder operational patterns (SSH retry, health check cadence, operator preferences). Operator-maintained; COSA reads but does not write in Phase 2.\n\n**`src/context-builder.js`** — full rewrite of `build()`:\n\n| Block | Content | `cache_control` |\n|---|---|---|\n| Block 1 | Layers 0–4 joined by `---` | `{ type: 'ephemeral' }` |\n| Block 2 | Layer 5: active skills (omitted if not provided) | none |\n| Block 3 | Layer 6: tool registry | none |\n| Block 4 | Layer 7: session summary (omitted if not provided) | none |\n| Block 5 | Layer 9: timestamp | none |\n\nKey design decisions:\n- `OPERATIONS_MD` is loaded at module init; if the file is absent the layer is silently omitted (handles first-deploy case)\n- `skillIndex` and `memory` are omitted (not empty-stringed) when not provided — clean cache hit for sessions that don't need them\n- Return is a bare array, usable directly as `system:` in `client.messages.create()`\n- Layer 8 (cross-session recall) is a no-op slot per Phase 2 deferral\n\n**`src/orchestrator.js`** — two-line update to `runSession()`: loads memory and skill index before calling `contextBuilder.build({ memory, skillIndex })`, threading Phase 2 context layers into every session automatically.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 1.2126730499999998,
+            "turns": 15,
+            "duration": 174178,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\context-builder.js",
+                "action": "read",
+                "timestamp": 1774837059526
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_phase2_spec.md",
+                "action": "read",
+                "timestamp": 1774836913126
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\APPLIANCE.md",
+                "action": "read",
+                "timestamp": 1774836971659
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\OPERATIONS.md",
+                "action": "write",
+                "timestamp": 1774836997265
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\orchestrator.js",
+                "action": "write",
+                "timestamp": 1774837052867
+              }
+            ],
+            "timestamp": 1774837069841
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "ef487849-c15b-4fc7-8021-9812586e3024",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnck6ayduppzm3tn5",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Context Compressor — Summarize Middle Turns**\n\nAs a developer, I want a context-compressor module that detects when the message array is too long and summarizes the middle turns via Haiku so that long sessions never exceed context limits.\n\n### Acceptance Criteria\n1. needsCompression(messages) returns true when messages.length exceeds config.contextCompression.maxTurnsBeforeCompress\n2. compress(messages, sessionId) protects the first 3 and last 4 turns\n3. compress() calls claude-haiku-4-5-20251001 to summarize the middle turns\n4. The summary is injected as a single user message prefixed with '[Context summary — prior turns compressed]'\n5. The returned array length equals protectFirstN + 1 + protectLastN = 8 (with default config)\n6. A compression event is logged to session.db as a system-role turn\n7. Compression is implemented as a SAM action/acceptor pair per Phase 2 §19.3\n8. Acceptor rejects (no Haiku call) if needsCompression returns false\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Context Compressor — Summarize Middle Turns - FULLSTACK",
+          "timestamp": 1774837084405,
+          "response": {
+            "content": "Everything is wired correctly. Here's what was built:\n\n---\n\n**`src/session-store.js`** — one addition:\n- `markSessionCompressed(sessionId)` — sets `parent_id = session_id` (self-referential marker per spec §9.1.3)\n\n**`src/context-compressor.js`** — new module:\n\n| Export | Purpose |\n|---|---|\n| `needsCompression(messages)` | Returns true when `messages.length > maxTurnsBeforeCompress` (default: 12) |\n| `compress(messages, sessionId)` | Full standalone compression: partition → Haiku call → splice summary → log to DB → mark session → return compressed array |\n| `proposeCompressionAction(data)` | SAM action: short-circuits with `{ compressionNeeded: false }` if not needed; otherwise calls Haiku and returns `{ compressionNeeded: true, compressedMessages }` |\n| `makeCompressionAcceptor()` | SAM acceptor factory: `model => proposal => {}` — no-ops when `compressionNeeded: false` (AC8 guard), otherwise sets `model.messages = proposal.compressedMessages` |\n\nConfig falls back to safe defaults if `appliance.context_compression` section is absent.\n\n**`src/orchestrator.js`** — four targeted changes:\n1. `callClaudeAction` now accepts `sessionId`, checks `needsCompression` before the API call, runs `compress()` if needed, returns `{ response, compressedMessages }` in the proposal\n2. `compressionAcceptor` instantiated from `makeCompressionAcceptor()` at module scope\n3. `compressionAcceptor` inserted **before** `claudeResponseAcceptor` so `model.messages` is updated before the response turn is appended\n4. `sessionId` threaded through both the NAP's `callClaudeIntent` call and the initial kickoff",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 1.6008552000000003,
+            "turns": 19,
+            "duration": 236306,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_phase2_spec.md",
+                "action": "read",
+                "timestamp": 1774837108320
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\session-store.js",
+                "action": "write",
+                "timestamp": 1774837207190
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\context-compressor.js",
+                "action": "write",
+                "timestamp": 1774837239188
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\orchestrator.js",
+                "action": "write",
+                "timestamp": 1774837307118
+              }
+            ],
+            "timestamp": 1774837326579
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "fe1d2400-87df-46be-8b59-dd3b8244318f",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnckbu4gnwdhmpr0s",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**shift_report Tool**\n\nAs COSA, I want to aggregate the previous day's appliance records into a structured summary so that I can generate and send the daily shift report email.\n\n### Acceptance Criteria\n1. Accepts lookback_hours (default 24, max 48) and an optional date (YYYY-MM-DD) override\n2. Executes a read-only db_query to aggregate min/max/avg temperature, avg humidity, total readings, and condition breakdown\n3. Returns period_start, period_end, total_readings, temperature object, humidity object, conditions array, and anomalies array\n4. Risk level is 'read'\n5. Returns an error if no readings exist for the requested period rather than silently returning zeros\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] shift_report Tool - FULLSTACK",
+          "timestamp": 1774837342528,
+          "response": {
+            "content": "`src/tools/shift-report.js` is created and registered. Here's what it does:\n\n- **`buildWindow`** — returns `period_start`/`period_end` as ISO timestamps. When `date` is given, covers the full UTC calendar day; otherwise `now - lookback_hours` → `now`.\n- **Two parallel SSH queries** — one aggregation query (min/max/avg temp + humidity stats, total count) and one condition breakdown query (group by `weather_description`).\n- **AC5 enforced** — throws with a descriptive message if `total_readings === 0`.\n- **`detectAnomalies`** — flags temp > 40 °C, temp < -10 °C, or humidity > 95 %.\n- Returns the structured shape: `period_start`, `period_end`, `total_readings`, `temperature` object, `humidity` object, `conditions` array, `anomalies` array, `generated_at`.\n- Risk level: `'read'`. SQL passed via stdin (no shell injection). Parallels `db-query.js` patterns throughout.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 1.4001381,
+            "turns": 14,
+            "duration": 252513,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\health-check.js",
+                "action": "read",
+                "timestamp": 1774837509359
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\db-query.js",
+                "action": "read",
+                "timestamp": 1774837515290
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\APPLIANCE.md",
+                "action": "read",
+                "timestamp": 1774837518650
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\dev\\tools\\weather-station\\src\\database.js",
+                "action": "read",
+                "timestamp": 1774837529962
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\main.js",
+                "action": "write",
+                "timestamp": 1774837591129
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\shift-report.js",
+                "action": "write",
+                "timestamp": 1774837569298
+              }
+            ],
+            "timestamp": 1774837600661
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "cc7fc2bf-4f94-461e-af89-6e77b64334b3",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnckhn0qt12j8o9fy",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**archive_search Tool**\n\nAs COSA, I want to search across historical session turns using FTS5 so that I can recall prior incident resolutions when handling repeat issues.\n\n### Acceptance Criteria\n1. Accepts query (required, FTS5 syntax) and limit (default 10, max 50)\n2. Delegates to session-store.searchTurns()\n3. Returns results array with session_id, turn_index, role, created_at, and excerpt (200 chars max)\n4. Returns total_found count\n5. Risk level is 'read'\n6. off_hours_gate config key is parsed but inactive for WeatherStation\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] archive_search Tool - FULLSTACK",
+          "timestamp": 1774837613258,
+          "response": {
+            "content": "`src/tools/archive-search.js` created and registered. Key details:\n\n- **AC1**: Accepts `query` (required) and `limit` (default 10, max 50).\n- **AC2**: Delegates directly to `session-store.searchTurns(query, effectiveLimit)` — no reimplementation.\n- **AC3**: Maps each row to `{ session_id, turn_index, role, created_at, excerpt }` where `excerpt` is content truncated to 200 chars with a trailing `…` when cut.\n- **AC4**: Returns `total_found` as `results.length` (BM25-ordered, capped at limit).\n- **AC5**: Risk level `'read'`.\n- **AC6**: No `off_hours_gate` enforcement — the config key is intentionally not wired, consistent with WeatherStation mock having no hours-of-operation constraint.\n- Handler is synchronous (better-sqlite3 is sync) — no `async` needed.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.44668005,
+            "turns": 6,
+            "duration": 45144,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\session-store.js",
+                "action": "read",
+                "timestamp": 1774837633426
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\archive-search.js",
+                "action": "write",
+                "timestamp": 1774837646755
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\main.js",
+                "action": "write",
+                "timestamp": 1774837656824
+              }
+            ],
+            "timestamp": 1774837664163
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "b40887f6-6aac-4d7a-b444-cdda2b20acb6",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnckj0dbhwe19yg3w",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**backup_run Tool**\n\nAs COSA, I want to trigger a backup of the appliance database so that data is preserved and can be verified afterward.\n\n### Acceptance Criteria\n1. Exports the readings table to a timestamped JSONL file in the configured backup directory\n2. Writes a .sha256 sidecar file containing the SHA-256 checksum of the JSONL\n3. Returns success, backup_path, row_count, checksum, started_at, completed_at, duration_ms\n4. Risk level is 'medium'\n5. Timeout is enforced per appliance.yaml (default 120s)\n6. Returns success: false with an error message rather than throwing on SSH failure\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] backup_run Tool - FULLSTACK",
+          "timestamp": 1774837677215,
+          "response": {
+            "content": "`src/tools/backup-run.js` created and registered. Here's a summary of the design decisions:\n\n**Execution model**: passes a bash script via `sshBackend.exec('bash -s', script)`. The script is built from static strings (no user input) so there's no injection risk. Paths from config are single-quote-escaped via `shEscape()`.\n\n**JSONL conversion**: uses `node -e \"...\"` as the JSON-array → JSONL transformer, rather than python3, because Node.js is guaranteed present on the WeatherStation appliance. The one-liner streams all rows from sqlite3's JSON array output, printing each as a separate line.\n\n**Script output**: two lines on stdout — `rowCount\\nchecksum` — parsed by `lines[0]` / `lines[1]` after the exec completes.\n\n**AC6 (no-throw on failure)**: both the `try/catch` around `execWithTimeout` and the `exitCode !== 0` branch return `{ success: false, error, ... }` instead of throwing.\n\n**AC5 (timeout)**: `execWithTimeout` races the exec promise against a `setTimeout` reject, using `appliance.tools.backup_run.timeout_s` (default 120s) from config.\n\n**Sidecar format**: `<hash>  <filename>\\n` — the standard sha256sum two-space format, consistent with what `sha256sum --check` expects.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.7067851500000001,
+            "turns": 9,
+            "duration": 171673,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\db-integrity.js",
+                "action": "read",
+                "timestamp": 1774837693758
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "write",
+                "timestamp": 1774837843476
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\backup-run.js",
+                "action": "write",
+                "timestamp": 1774837828283
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\main.js",
+                "action": "write",
+                "timestamp": 1774837839389
+              }
+            ],
+            "timestamp": 1774837854883
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "6326e96e-513b-4e10-b7d5-2d63bba66459",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnckn39drrvci390u",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**settings_write Tool**\n\nAs COSA, I want to update a single appliance configuration key-value so that operator-requested configuration changes can be applied safely.\n\n### Acceptance Criteria\n1. Accepts key, value (both required), and optional reason\n2. Rejects keys not in the allowed_keys allowlist from appliance.yaml with a structured error\n3. Reads the old value before writing\n4. Executes parameterized INSERT OR REPLACE into the station_info table via SSH\n5. Returns success, key, old_value, new_value, applied_at\n6. Risk level is 'medium'\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] settings_write Tool - FULLSTACK",
+          "timestamp": 1774837867585,
+          "response": {
+            "content": "`src/tools/settings-write.js` created and registered. Design notes:\n\n**\"Parameterized\" via SQL escaping**: sqlite3 CLI has no bind parameters, so values are embedded using `sqlEscape()` — single quotes doubled (`'` → `''`). This is SQLite's defined string escaping rule and is safe for arbitrary string values. The key is additionally protected by the allowlist check before any SQL runs.\n\n**Two separate exec calls**: `readOldValue` uses `-readonly` + `-json` (consistent with `db-query.js`); `writeValue` uses a writable connection without `-readonly`. Each can fail independently with a structured `success: false` return.\n\n**AC2 structured error**: returns `{ success: false, error, allowed_keys }` — the agent can surface the full list of valid keys to the operator.\n\n**`reason` field**: omitted from the result object when not provided (rather than including `reason: undefined`), keeping the response clean.\n\n**Config**: `allowed_keys` in `appliance.yaml` covers the five writable WeatherStation settings — operator identity, timezone, free-text notes, and a maintenance mode flag. Adding new writable keys is a config-only change.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.6167952000000001,
+            "turns": 7,
+            "duration": 84902,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\db-query.js",
+                "action": "read",
+                "timestamp": 1774837887587
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\settings-write.js",
+                "action": "write",
+                "timestamp": 1774837931538
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\main.js",
+                "action": "write",
+                "timestamp": 1774837942752
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "write",
+                "timestamp": 1774837947647
+              }
+            ],
+            "timestamp": 1774837958898
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "1e778e8b-df23-40b1-ace6-01a589845500",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnckpbshybs7ueyvf",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**restart_appliance Tool**\n\nAs COSA, I want to issue a graceful service restart via the process supervisor so that the appliance can be restarted after configuration changes or when it becomes unresponsive.\n\n### Acceptance Criteria\n1. Captures uptime_before_ms from systemctl before issuing the restart\n2. Runs systemctl restart {service_name} via SSH\n3. Polls GET /health/ready every 2 seconds up to graceful_timeout_seconds\n4. Returns success, service_name, restart_issued_at, came_up_at, uptime_before_ms, health_after\n5. Returns success: false if the service does not come up within the timeout\n6. Risk level is 'high'\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] restart_appliance Tool - FULLSTACK",
+          "timestamp": 1774837971953,
+          "response": {
+            "content": "`src/tools/restart-appliance.js` created and registered. Design notes:\n\n**AC1 — uptime_before_ms**: `fetchUptimeMs` calls `systemctl show {service} --property=ExecMainStartTimestamp`, parses the key=value output, and returns `Date.now() - startTimestamp`. Failures return `null` without aborting — the restart still proceeds.\n\n**AC2 — restart**: `issueRestart` calls `systemctl restart {service}`. Non-zero exit throws, caught by the handler which returns `success: false` with the error.\n\n**AC3 — polling**: `pollUntilReady` loops with 2-second sleep, checking `GET /health/ready`. The `remaining` guard prevents overshooting the deadline. Each HTTP call has its own per-request `AbortController` timeout from `request_timeout_ms`.\n\n**AC5 — timeout failure**: when the loop exits without a 200, `healthy` is false → `success: false` with an `error` message stating the timeout duration.\n\n**AC6 — risk level `'high'`**: the tool registry and approval engine will require operator confirmation before execution.\n\n**`sleep` deadline guard**: `Math.min(POLL_INTERVAL_MS, remaining)` prevents the final sleep from extending past the graceful deadline — avoids an off-by-one where one extra 2s sleep pushes past `timeout_ms`.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.6446055,
+            "turns": 7,
+            "duration": 88125,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\health-check.js",
+                "action": "read",
+                "timestamp": 1774837996222
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\restart-appliance.js",
+                "action": "write",
+                "timestamp": 1774838032643
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\main.js",
+                "action": "write",
+                "timestamp": 1774838046414
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "write",
+                "timestamp": 1774838053620
+              }
+            ],
+            "timestamp": 1774838066260
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "07b6a91e-177d-41dd-8b63-84d6203683b1",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnckrmv07816vetqg",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**session_search Tool**\n\nAs COSA, I want to search prior session turns by keyword so that I can recall past incident resolutions and operator instructions when handling current issues.\n\n### Acceptance Criteria\n1. Accepts query (required), limit (default 10, max 50), and optional role filter\n2. Delegates to session-store.searchTurns()\n3. Returns results with session_id, started_at, trigger_type, turn_index, role, excerpt, created_at\n4. Role filter works correctly for 'user', 'assistant', and 'tool'\n5. Risk level is 'read'\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] session_search Tool - FULLSTACK",
+          "timestamp": 1774838079612,
+          "response": {
+            "content": "Done. Here's what was built and why:\n\n**`session-store.js` — `searchTurnsWithSession`**: The existing `searchTurns` only returns turn columns with no session metadata. The new function does `JOIN sessions s ON s.session_id = t.session_id` to pull in `started_at` and `trigger_type`. Role filtering uses a second `.prepare()` path with an extra `AND t.role = ?` bind parameter — two SQL strings rather than one with a conditional expression, keeping the query planner's job simple and avoiding SQL injection from the `role` value (which is also validated by the schema `enum` before it reaches the store).\n\n**`session_search` tool vs `archive_search`**: Both delegate FTS search to the session store and return 200-char excerpts, but they serve different purposes and return different shapes:\n- `archive_search` — raw turn lookup, no session context (`session_id, turn_index, role, excerpt, created_at`)\n- `session_search` — incident recall with session context (`+ started_at, trigger_type`) and role filtering\n\n**AC4 — role filter**: validated at the schema level (`enum: ['user', 'assistant', 'tool']`) so invalid values are rejected before the handler runs. `null` (omitted) passes through to `searchTurnsWithSession` which branches on its truthiness.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.8186554500000001,
+            "turns": 11,
+            "duration": 99930,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\session-store.js",
+                "action": "write",
+                "timestamp": 1774838144653
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\session-search.js",
+                "action": "write",
+                "timestamp": 1774838162655
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\main.js",
+                "action": "write",
+                "timestamp": 1774838175579
+              }
+            ],
+            "timestamp": 1774838185574
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "9f0238f0-f3d5-4839-ad39-a08d3a315b5b",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncku70kamiwovgfb",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Orchestrator Post-Session Hook — Memory Update and Skill Creation**\n\nAs a developer, I want the orchestrator to run a post-session hook after each session closes so that MEMORY.md is updated and novel incidents trigger skill creation.\n\n### Acceptance Criteria\n1. postSessionHook() is called after every session with sessionId, trigger, toolCalls, and finalText\n2. health_check result of 'healthy' updates MEMORY.md applianceHealth section\n3. health_check result of 'degraded' or 'unreachable' updates applianceHealth and activeAnomalies\n4. backup_run success updates MEMORY.md lastBackup section\n5. backup_run failure updates lastBackup and activeAnomalies\n6. shouldCreateSkill() returns true when trigger_type != email query, tool calls >= min_tool_calls_for_skill, and status = complete\n7. When shouldCreateSkill() is true and no matching skill exists in skills_fts, skill creation is triggered\n8. Skill creation generates a valid agentskills.io document via claude-sonnet-4-6\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Orchestrator Post-Session Hook — Memory Update and Skill Creation - FULLSTACK",
+          "timestamp": 1774838199044,
+          "response": {
+            "content": "Done. Here's a summary of the implementation:\n\n**`session-store.js` — `getSessionToolCalls(sessionId)`**: queries `tool_calls WHERE status = 'executed'`, parses `input`/`output` JSON via `safeParse` (null on failure), returns chronological array. Exported and used by the orchestrator to collect the tool record after the session closes.\n\n**`post-session-hook.js`**:\n- **`_healthCheckPatch(result)`** — AC2: healthy → `applianceHealth` only; AC3: degraded/unreachable → `applianceHealth` + `activeAnomalies` with the error list.\n- **`_backupRunPatch(result)`** — AC4: success → `lastBackup`; AC5: failure → `lastBackup` + `activeAnomalies`.\n- `_updateMemoryFromToolCalls` iterates all tool calls, builds a combined patch (so a single call to `updateMemory` handles both tools in one write), logs which sections were touched.\n- **`shouldCreateSkill(triggerType, toolCallCount, status)`** — AC6: `type !== 'email'`, count ≥ `min_tool_calls_for_skill` (default 3), status `'complete'`.\n- **`_buildSkillSearchQuery`** — converts snake_case tool names to space-separated words, joins unique names with OR for FTS5.\n- **`_generateSkillDocument`** — AC8: calls `claude-sonnet-4-6` with a structured prompt that includes tool names + truncated final text; parses the response with `_parseSkillDocument` (YAML frontmatter + body).\n- **AC7**: if `searchSkills` returns ≥1 hit, the skill already covers this pattern; skip creation.\n- All errors are caught and logged; the hook never propagates exceptions.\n\n**`orchestrator.js`**: hook fired after `closeSession` synchronously fetches `getSessionToolCalls`, then calls `postSessionHook(...).catch(() => {})` — fire-and-forget, does not delay the `resolve` that returns the response to the caller.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 1.37932515,
+            "turns": 23,
+            "duration": 245165,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\orchestrator.js",
+                "action": "write",
+                "timestamp": 1774838428748
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\memory-manager.js",
+                "action": "read",
+                "timestamp": 1774838214497
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\skill-store.js",
+                "action": "read",
+                "timestamp": 1774838228695
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "write",
+                "timestamp": 1774838434143
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\session-store.js",
+                "action": "write",
+                "timestamp": 1774838367536
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\skills\\seed\\ssh-health-check.md",
+                "action": "read",
+                "timestamp": 1774838282595
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\post-session-hook.js",
+                "action": "write",
+                "timestamp": 1774838412110
+              }
+            ],
+            "timestamp": 1774838450146
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "76fe6e30-996f-4548-bbeb-3de335462945",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mnckzwym3hf4m3oqk",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Orchestrator — Context Compression Integration**\n\nAs a developer, I want the orchestrator to check for compression need before each Claude API call so that long sessions are automatically compressed without losing context.\n\n### Acceptance Criteria\n1. contextCompressor.needsCompression(messages) is called before every client.messages.create() call\n2. If needsCompression returns true, contextCompressor.compress(messages, sessionId) is called and the returned array replaces the live messages array\n3. The Claude API call proceeds with the compressed messages array\n4. A subsequent messages.length check confirms the array is shorter after compression\n5. SessionFSM transitions to 'compressing' state during compression and back to 'running' after\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Orchestrator — Context Compression Integration - FULLSTACK",
+          "timestamp": 1774838465950,
+          "response": {
+            "content": "Done. Here's what was fixed and why each AC is now fully satisfied:\n\n**Root bug fixed**: `callClaudeAction` was returning `{ response, compressedMessages }` without `compressionNeeded`. The `makeCompressionAcceptor` guard `if (!proposal.compressionNeeded) return` was always exiting early — `model.messages` was never replaced with the compressed array, so the SAM model and the actual Claude call were silently diverging after compression.\n\n**AC1**: `contextCompressor.needsCompression(messages)` was already called; now explicitly annotated in the action flow.\n\n**AC2**: `compressedMessages` is now the variable that replaces `workingMessages`; `compressionNeeded: compressedMessages != null` is added to the proposal so the `compressionAcceptor` gate opens correctly and `model.messages` is actually updated.\n\n**AC3**: `client.messages.create` receives `workingMessages` (the compressed array) — unchanged in structure, now correctly reflected in the model too.\n\n**AC4**: `workingMessages.length >= messages.length` check added after compression. Logs a `console.warn` if the invariant is violated (guards against edge cases where `protectFirstN + protectLastN ≥ original length`).\n\n**AC5**: `makeCompressionAcceptor` sets `model.status = 'compressing'` when it applies the compressed array. `claudeResponseAcceptor` detects this state and resets it to `'running'` before processing the response. Both run in the same synchronous acceptor chain, making the transition observable in the FSM state sequence: `running → compressing → running|complete`.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.86067735,
+            "turns": 5,
+            "duration": 136755,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\context-compressor.js",
+                "action": "write",
+                "timestamp": 1774838566813
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\orchestrator.js",
+                "action": "write",
+                "timestamp": 1774838596893
+              }
+            ],
+            "timestamp": 1774838608422
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "fcd86b2e-967f-4cf9-922c-81450fbf63fb",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncl39644pswpws69",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**SessionFSM — Session Lifecycle State Machine**\n\nAs a developer, I want the orchestrator's session lifecycle managed by a @cognitive-fab/sam-fsm machine so that all state transitions are guarded and testable.\n\n### Acceptance Criteria\n1. SessionFSM has all 7 states: idle, running, awaiting_tool, awaiting_approval, compressing, complete, error\n2. All key transitions from §19.1 are implemented with correct guards\n3. Transitioning to 'awaiting_approval' for read-risk tools throws (guard violation)\n4. Both running and awaiting_tool can transition to error on fatal_error event\n5. compressing → running roundtrip works end-to-end\n6. complete and error both transition to idle on reset\n7. Invalid state transitions throw rather than silently failing\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] SessionFSM — Session Lifecycle State Machine - FULLSTACK",
+          "timestamp": 1774838621740,
+          "response": {
+            "content": "You've hit your limit · resets 9pm (America/Los_Angeles)",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.57284895,
+            "turns": 3,
+            "duration": 8337,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\approval-engine.js",
+                "action": "read",
+                "timestamp": 1774838635050
+              }
+            ],
+            "timestamp": 1774838636567
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "867e2704-56d6-4138-8d48-8419c028f965",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncl3s55uj5j9rj79",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**SkillCreationFSM — Skill Creation Lifecycle State Machine**\n\nAs a developer, I want the skill creation workflow managed by a @cognitive-fab/sam-fsm machine so that the novel incident detection, search, generation, and persistence steps are guarded.\n\n### Acceptance Criteria\n1. SkillCreationFSM has all 6 states: idle, evaluating, searching, generating, validating, persisted\n2. not_novel event from evaluating transitions to idle without calling skills_fts\n3. match_found event from searching transitions to idle (existing skill flagged for improvement)\n4. no_match event from searching transitions to generating\n5. invalid event from validating transitions back to generating for up to 2 retries\n6. retry_exceeded after 2 failed validations transitions to idle and logs failure without saving a skill\n7. Happy path idle → persisted results in a new row in skills.db\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] SkillCreationFSM — Skill Creation Lifecycle State Machine - FULLSTACK",
+          "timestamp": 1774838646329,
+          "response": {
+            "content": "You've hit your limit · resets 9pm (America/Los_Angeles)",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0,
+            "turns": 1,
+            "duration": 1091,
+            "filesModified": [],
+            "timestamp": 1774838653996
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "089908dd-9b60-457b-b199-ad218e666b67",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncl45y2607h9ifj8",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Cron Scheduler — Full Phase 2 Schedule**\n\nAs a developer, I want the cron scheduler updated with all 6 Phase 2 tasks so that backup, reporting, and digest automation run on schedule without operator intervention.\n\n### Acceptance Criteria\n1. backup task fires at 0 3 * * * and sends the backup trigger message\n2. backup_verify task fires at 5 3 * * * and sends the verify trigger message\n3. shift_report task fires at 0 6 * * * and sends the shift report trigger message\n4. archive_check task fires at 10 3 * * * and sends the archive check trigger message\n5. weekly_digest task fires at 0 2 * * 1 and sends the digest trigger message\n6. health_check remains at 0 * * * * from Phase 1\n7. All 6 tasks are registered from appliance.yaml cron config\n8. Weekly digest is not sent if a digest was sent within the last 6 days (168 hours)\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Cron Scheduler — Full Phase 2 Schedule - FULLSTACK",
+          "timestamp": 1774838664218,
+          "response": {
+            "content": "You've hit your limit · resets 9pm (America/Los_Angeles)",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0,
+            "turns": 1,
+            "duration": 933,
+            "filesModified": [],
+            "timestamp": 1774838672002
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "38a89896-2250-4afa-a3d8-98a926c35ec6",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncl4jk2hfgnhfn3n",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**CLI Interface — Interactive Local REPL**\n\nAs a developer, I want a local CLI REPL that pipes each line to the orchestrator so that COSA can be used interactively for debugging and setup.\n\n### Acceptance Criteria\n1. startCli() starts a readline REPL on stdin/stdout\n2. Each line dispatched creates a new runSession({ type: 'cli', source: 'cli', message }) call\n3. Response text is printed to stdout after the session completes\n4. Typing 'exit' or pressing Ctrl+C terminates the process cleanly\n5. CLI starts automatically when --cli flag is passed to main.js\n6. CLI starts automatically when NODE_ENV=development and stdin is a TTY\n7. Each CLI line is an independent session (no multi-turn state between prompts)\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] CLI Interface — Interactive Local REPL - FULLSTACK",
+          "timestamp": 1774838681858,
+          "response": {
+            "content": "You've hit your limit · resets 9pm (America/Los_Angeles)",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0,
+            "turns": 1,
+            "duration": 1175,
+            "filesModified": [],
+            "timestamp": 1774838689682
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "baf7449b-96e6-451a-9eb9-9e5f9d1ac9ca",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncl4xe2wf3bd2qva",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**OPERATIONS.md Seed and Context Layer Integration**\n\nAs a developer, I want OPERATIONS.md seeded for WeatherStation and included as Layer 2 in the system prompt so that COSA understands normal appliance behavior from the first session.\n\n### Acceptance Criteria\n1. config/OPERATIONS.md exists with WeatherStation seed content covering normal behavior and known issues sections\n2. contextBuilder.build() reads OPERATIONS.md and includes it as Layer 2\n3. OPERATIONS.md is included in the cached Layers 0-4 block\n4. OPERATIONS.md is read from disk once at session start and not re-read within the session\n5. Phase 2 spec note honored: COSA reads OPERATIONS.md but does not write it (auto-update deferred to Phase 3)\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] OPERATIONS.md Seed and Context Layer Integration - FULLSTACK",
+          "timestamp": 1774838699786,
+          "response": {
+            "content": "You've hit your limit · resets 9pm (America/Los_Angeles)",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0,
+            "turns": 1,
+            "duration": 1073,
+            "filesModified": [],
+            "timestamp": 1774838707845
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "21f7d238-d253-4cc6-9241-b1defb4ebefb",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncl5brrtsi3eab9m",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Daily Shift Report Email Delivery**\n\nAs COSA, I want the cron shift_report task to format and send a plain-text email to the operator every morning so that they receive a daily summary without requesting it.\n\n### Acceptance Criteria\n1. Subject line is '[COSA] Shift Report: YYYY-MM-DD'\n2. Email body matches the format in §11.1: period, summary block, conditions breakdown, anomalies, system status\n3. Email is plain text — no HTML\n4. Last backup status from MEMORY.md is included in the system status section\n5. No email is sent if the shift_report tool returns an error (alert is sent instead)\n6. A second shift report is not sent if the cron fires again within 6 hours (deduplication via alerts table)\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Daily Shift Report Email Delivery - FULLSTACK",
+          "timestamp": 1774838718423,
+          "response": {
+            "content": "You've hit your limit · resets 9pm (America/Los_Angeles)",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0,
+            "turns": 2,
+            "duration": 2602,
+            "filesModified": [],
+            "timestamp": 1774838728108
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "559af815-86f0-4fe9-9cfc-e196c12fd9f8",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncl5lpeod90n57nw",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Weekly Digest Email Delivery**\n\nAs COSA, I want the cron weekly_digest task to compile and send a weekly operational summary email so that the operator has a regular overview without requesting it.\n\n### Acceptance Criteria\n1. Subject line is '[COSA] Weekly Digest: week of YYYY-MM-DD'\n2. Email body matches the format in §11.2: health check summary, backup summary, anomalies, skills, operator activity\n3. Digest gathers data via session_search calls for backup and health events\n4. Skills section reports new skills created and skills improved this week\n5. No second digest is sent if a digest was sent within the past 6 days\n6. Email is plain text — no HTML\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Weekly Digest Email Delivery - FULLSTACK",
+          "timestamp": 1774838731298,
+          "response": {
+            "content": "You've hit your limit · resets 9pm (America/Los_Angeles)",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0,
+            "turns": 1,
+            "duration": 529,
+            "filesModified": [],
+            "timestamp": 1774838738673
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "aeee2331-74e1-48aa-84c8-28845a375779",
+          "branchType": "fullstack"
+        },
+        {
+          "id": "mncl5ywq39tgvp6dh",
+          "parentId": null,
+          "content": "## Implementation Request\n\n### RICE FACT Framework\n\n**Role:** You are a Senior Full Stack Developer capable of implementing complete features across the entire application stack.\n\n**Instruction:** Implement the complete end-to-end feature for this user story. Build both frontend and backend components with proper integration.\n\n**Context:** This is the full stack implementation thread. You are responsible for the complete feature including UI, API, data models, and their integration.\n\n**Example:** Follow existing patterns for both frontend components and backend services. Ensure consistent data flow between layers.\n\n**Format:** Provide complete implementation across all layers. Include UI components, API endpoints, data models, and integration code. Document the data flow.\n\n**Aim:** Create a seamless, fully functional feature that works cohesively across the frontend and backend.\n\n**Constraints:** Maintain separation of concerns between layers. Ensure proper error handling propagates correctly through the stack. Follow existing patterns for both UI and backend.\n\n**Tone:** Holistic and integration-focused. Balance user experience with technical correctness.\n\n---\n\n### User Story\n**Phase 2 End-to-End Staging Tests**\n\nAs a developer, I want acceptance tests T-2.1 through T-2.10 to pass against the WeatherStation mock so that Phase 2 exit criteria are verified before declaring the implementation complete.\n\n### Acceptance Criteria\n1. T-2.1: Backup automation — JSONL and .sha256 files created; backup_verify returns verified: true; MEMORY.md updated; no alert email on success\n2. T-2.2: Shift report delivery — email arrives with correct subject and body; no second email within 6 hours\n3. T-2.3: Skill creation from novel incident — new row in skills.db after 3+ tool call session; skill document has required sections; MEMORY.md recentIncidents updated\n4. T-2.4: Skill reuse — skill appears in Layer 5 on second matching session; skill_uses table updated\n5. T-2.5: Memory persistence — MEMORY.md updated after health check; contents appear in system prompt of next session\n6. T-2.6: Context compression — array compressed at turn 13; length ≤ 8; raw turns preserved in session.db\n7. T-2.7: Settings change approval — approval email sent; token accepted; station_info updated\n8. T-2.8: Session search — COSA calls session_search and returns excerpts from matching prior sessions\n9. T-2.9: Weekly digest — email sent with correct subject; no second digest within 6 days\n10. T-2.10: CLI interface — health_check called and response printed; process exits cleanly on 'exit'\n\n### Refined Implementation Specification (RIS)\n\nThe following RIS was generated by the CRE for this story. Follow it precisely:\n\n\n\n---\n\n\n### Implementation Notes\nThis is part of an approved sprint plan. Please implement this story following the established patterns in the codebase and the guidance above.\n\n---\n\nPlease proceed with the implementation.",
+          "title": "[Sprint] Phase 2 End-to-End Staging Tests - FULLSTACK",
+          "timestamp": 1774838748410,
+          "response": {
+            "content": "You've hit your limit · resets 9pm (America/Los_Angeles)",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0,
+            "turns": 1,
+            "duration": 711,
+            "filesModified": [],
+            "timestamp": 1774838756169
+          },
+          "children": [],
+          "sprintId": "mnchcwvgvycrfzkro",
+          "storyId": "429aa51d-62ff-4447-a6c8-71b3a8d65c26",
+          "branchType": "fullstack"
         }
       ]
     }
   },
   "activeBranch": "fullstack",
-  "activePromptId": "929401b8-ee64-4ff3-9233-6ebf83c4f149",
+  "activePromptId": "mncl5ywq39tgvp6dh",
   "branchOrder": [
     "specifications",
     "architecture",
@@ -1919,7 +2870,7 @@
     "tmp"
   ],
   "lastSelectedPromptPerBranch": {
-    "fullstack": "e54f2918-4df5-4797-a914-44b95879bc5d"
+    "fullstack": null
   },
-  "updatedAt": "2026-03-29T20:59:41.321Z"
+  "updatedAt": "2026-03-30T02:46:16.453Z"
 }

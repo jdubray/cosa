@@ -309,9 +309,424 @@
       ],
       "timestamp": "2026-03-29T04:40:37.796Z",
       "model_used": "sonnet"
+    },
+    {
+      "id": "mnch9vy85ja16afmv",
+      "user_prompt": "Let's now prepare to implement phase 2",
+      "project_context": null,
+      "generated_stories": [
+        {
+          "id": "d4c4e3d7-6895-48c8-a9af-2d73e501b347",
+          "title": "FTS5 Triggers for Session Turn Search",
+          "description": "As a developer, I want FTS5 INSERT/UPDATE/DELETE triggers on the turns table so that session_search returns up-to-date results without manual rebuilds.",
+          "acceptance_criteria": [
+            "Three triggers exist: turns_fts_insert, turns_fts_delete, turns_fts_update",
+            "Inserting a turn via saveTurn() causes it to appear in turns_fts immediately",
+            "Updating a turn updates its FTS5 index entry",
+            "Deleting a turn removes its FTS5 index entry",
+            "Triggers are created idempotently in runMigrations()",
+            "searchTurns(query, limit) exported from session-store.js returns ranked results with session_id, turn_index, role, content, created_at"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "7f455725-f02a-49ba-a4f4-4c1f006db860",
+          "title": "skills.db Schema and Migration",
+          "description": "As a developer, I want the SQLite skills database created and migrated automatically so that the skill library is available from the first run.",
+          "acceptance_criteria": [
+            "skills.db is created at data/skills.db if it does not exist",
+            "WAL mode is enabled",
+            "skills table is created with all columns: id, name, title, description, domain, content, version, use_count, last_used_at, created_at, updated_at",
+            "skills_fts FTS5 virtual table is created and linked to skills",
+            "skill_uses table is created with all columns",
+            "All defined indexes are created",
+            "Migrations are idempotent"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "8c595301-573a-43f4-ab63-0686f330a423",
+          "title": "Skill Store CRUD and Seed Install",
+          "description": "As a developer, I want a skill-store module that installs seed skills on first run and exposes CRUD operations so that COSA has operational knowledge from day one.",
+          "acceptance_criteria": [
+            "On first run, 8 seed skill markdown files from skills/seed/ are inserted into skills.db",
+            "Seed install is idempotent — does not duplicate skills on subsequent startups",
+            "list() returns all skills as an array",
+            "listCompact() returns a formatted string (~30 tokens/skill) for use in the system prompt",
+            "get(name) returns the full skill document or null if not found",
+            "create(skill) inserts a new skill and returns the inserted row",
+            "improve(name, experience) appends an experience entry to the skill's ## Experience section",
+            "improve() trims ## Experience to the 5 most recent entries if document exceeds 3000 chars"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "1311482a-07c8-4ce8-824c-2b3162980fba",
+          "title": "Memory Manager — MEMORY.md Load, Update, and Limit Enforcement",
+          "description": "As a developer, I want a memory-manager module that loads MEMORY.md at session start and enforces a 2200-character hard limit so that COSA's persistent memory never grows unbounded.",
+          "acceptance_criteria": [
+            "loadMemory() reads data/MEMORY.md and returns its contents; returns an empty template if the file does not exist",
+            "updateMemory(patch) merges patch fields into the existing MEMORY.md sections and writes back to disk",
+            "writeMemory(content) replaces MEMORY.md entirely after enforcing the character limit",
+            "If a write would exceed 2200 characters, the oldest Recent Incidents entry is pruned and the write is retried",
+            "If still over limit after pruning incidents, the Notes section is truncated to 100 characters",
+            "The 2200-character hard limit is never exceeded after any write",
+            "updateMemory() implemented as a SAM acceptor per Phase 2 §19.4"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "ef487849-c15b-4fc7-8021-9812586e3024",
+          "title": "Context Builder — 10-Layer Prompt Assembly with Cache Hints",
+          "description": "As a developer, I want the context builder updated to support the full 10-layer prompt architecture with Anthropic cache breakpoints so that Layers 0–4 cache on every session.",
+          "acceptance_criteria": [
+            "build(options) accepts memory, skillIndex, activeSkills, and sessionSummary options",
+            "Output is an array of system blocks suitable for the Anthropic messages.create() system parameter",
+            "Layers 0–4 (identity, APPLIANCE.md, OPERATIONS.md, skill index, MEMORY.md) are concatenated into a single block with cache_control: { type: 'ephemeral' }",
+            "Layers 5–9 are assembled fresh each call and returned as separate blocks",
+            "If memory is not provided, Layer 4 is omitted rather than empty",
+            "If skillIndex is not provided, Layer 3 is omitted",
+            "build() is deterministic for the same inputs"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "fe1d2400-87df-46be-8b59-dd3b8244318f",
+          "title": "Context Compressor — Summarize Middle Turns",
+          "description": "As a developer, I want a context-compressor module that detects when the message array is too long and summarizes the middle turns via Haiku so that long sessions never exceed context limits.",
+          "acceptance_criteria": [
+            "needsCompression(messages) returns true when messages.length exceeds config.contextCompression.maxTurnsBeforeCompress",
+            "compress(messages, sessionId) protects the first 3 and last 4 turns",
+            "compress() calls claude-haiku-4-5-20251001 to summarize the middle turns",
+            "The summary is injected as a single user message prefixed with '[Context summary — prior turns compressed]'",
+            "The returned array length equals protectFirstN + 1 + protectLastN = 8 (with default config)",
+            "A compression event is logged to session.db as a system-role turn",
+            "Compression is implemented as a SAM action/acceptor pair per Phase 2 §19.3",
+            "Acceptor rejects (no Haiku call) if needsCompression returns false"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "cc7fc2bf-4f94-461e-af89-6e77b64334b3",
+          "title": "shift_report Tool",
+          "description": "As COSA, I want to aggregate the previous day's appliance records into a structured summary so that I can generate and send the daily shift report email.",
+          "acceptance_criteria": [
+            "Accepts lookback_hours (default 24, max 48) and an optional date (YYYY-MM-DD) override",
+            "Executes a read-only db_query to aggregate min/max/avg temperature, avg humidity, total readings, and condition breakdown",
+            "Returns period_start, period_end, total_readings, temperature object, humidity object, conditions array, and anomalies array",
+            "Risk level is 'read'",
+            "Returns an error if no readings exist for the requested period rather than silently returning zeros"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "b40887f6-6aac-4d7a-b444-cdda2b20acb6",
+          "title": "archive_search Tool",
+          "description": "As COSA, I want to search across historical session turns using FTS5 so that I can recall prior incident resolutions when handling repeat issues.",
+          "acceptance_criteria": [
+            "Accepts query (required, FTS5 syntax) and limit (default 10, max 50)",
+            "Delegates to session-store.searchTurns()",
+            "Returns results array with session_id, turn_index, role, created_at, and excerpt (200 chars max)",
+            "Returns total_found count",
+            "Risk level is 'read'",
+            "off_hours_gate config key is parsed but inactive for WeatherStation"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "6326e96e-513b-4e10-b7d5-2d63bba66459",
+          "title": "backup_run Tool",
+          "description": "As COSA, I want to trigger a backup of the appliance database so that data is preserved and can be verified afterward.",
+          "acceptance_criteria": [
+            "Exports the readings table to a timestamped JSONL file in the configured backup directory",
+            "Writes a .sha256 sidecar file containing the SHA-256 checksum of the JSONL",
+            "Returns success, backup_path, row_count, checksum, started_at, completed_at, duration_ms",
+            "Risk level is 'medium'",
+            "Timeout is enforced per appliance.yaml (default 120s)",
+            "Returns success: false with an error message rather than throwing on SSH failure"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "title": "backup_verify Tool",
+          "description": "As COSA, I want to verify the most recent backup's checksum so that I can detect corruption before it becomes an unrecoverable data loss.",
+          "acceptance_criteria": [
+            "Reads the most recent backup file from the configured directory if backup_path is not specified",
+            "Re-computes the SHA-256 checksum of the JSONL file",
+            "Compares against the expected hash from the .sha256 sidecar",
+            "Returns verified, backup_path, expected_hash, actual_hash, row_count, file_size_kb, backup_age_hours",
+            "Returns verified: false (not a throw) when checksums do not match",
+            "Throws if no backup file is found at all",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "1e778e8b-df23-40b1-ace6-01a589845500",
+          "title": "settings_write Tool",
+          "description": "As COSA, I want to update a single appliance configuration key-value so that operator-requested configuration changes can be applied safely.",
+          "acceptance_criteria": [
+            "Accepts key, value (both required), and optional reason",
+            "Rejects keys not in the allowed_keys allowlist from appliance.yaml with a structured error",
+            "Reads the old value before writing",
+            "Executes parameterized INSERT OR REPLACE into the station_info table via SSH",
+            "Returns success, key, old_value, new_value, applied_at",
+            "Risk level is 'medium'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "07b6a91e-177d-41dd-8b63-84d6203683b1",
+          "title": "restart_appliance Tool",
+          "description": "As COSA, I want to issue a graceful service restart via the process supervisor so that the appliance can be restarted after configuration changes or when it becomes unresponsive.",
+          "acceptance_criteria": [
+            "Captures uptime_before_ms from systemctl before issuing the restart",
+            "Runs systemctl restart {service_name} via SSH",
+            "Polls GET /health/ready every 2 seconds up to graceful_timeout_seconds",
+            "Returns success, service_name, restart_issued_at, came_up_at, uptime_before_ms, health_after",
+            "Returns success: false if the service does not come up within the timeout",
+            "Risk level is 'high'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "9f0238f0-f3d5-4839-ad39-a08d3a315b5b",
+          "title": "session_search Tool",
+          "description": "As COSA, I want to search prior session turns by keyword so that I can recall past incident resolutions and operator instructions when handling current issues.",
+          "acceptance_criteria": [
+            "Accepts query (required), limit (default 10, max 50), and optional role filter",
+            "Delegates to session-store.searchTurns()",
+            "Returns results with session_id, started_at, trigger_type, turn_index, role, excerpt, created_at",
+            "Role filter works correctly for 'user', 'assistant', and 'tool'",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "76fe6e30-996f-4548-bbeb-3de335462945",
+          "title": "Orchestrator Post-Session Hook — Memory Update and Skill Creation",
+          "description": "As a developer, I want the orchestrator to run a post-session hook after each session closes so that MEMORY.md is updated and novel incidents trigger skill creation.",
+          "acceptance_criteria": [
+            "postSessionHook() is called after every session with sessionId, trigger, toolCalls, and finalText",
+            "health_check result of 'healthy' updates MEMORY.md applianceHealth section",
+            "health_check result of 'degraded' or 'unreachable' updates applianceHealth and activeAnomalies",
+            "backup_run success updates MEMORY.md lastBackup section",
+            "backup_run failure updates lastBackup and activeAnomalies",
+            "shouldCreateSkill() returns true when trigger_type != email query, tool calls >= min_tool_calls_for_skill, and status = complete",
+            "When shouldCreateSkill() is true and no matching skill exists in skills_fts, skill creation is triggered",
+            "Skill creation generates a valid agentskills.io document via claude-sonnet-4-6"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "fcd86b2e-967f-4cf9-922c-81450fbf63fb",
+          "title": "Orchestrator — Context Compression Integration",
+          "description": "As a developer, I want the orchestrator to check for compression need before each Claude API call so that long sessions are automatically compressed without losing context.",
+          "acceptance_criteria": [
+            "contextCompressor.needsCompression(messages) is called before every client.messages.create() call",
+            "If needsCompression returns true, contextCompressor.compress(messages, sessionId) is called and the returned array replaces the live messages array",
+            "The Claude API call proceeds with the compressed messages array",
+            "A subsequent messages.length check confirms the array is shorter after compression",
+            "SessionFSM transitions to 'compressing' state during compression and back to 'running' after"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "867e2704-56d6-4138-8d48-8419c028f965",
+          "title": "SessionFSM — Session Lifecycle State Machine",
+          "description": "As a developer, I want the orchestrator's session lifecycle managed by a @cognitive-fab/sam-fsm machine so that all state transitions are guarded and testable.",
+          "acceptance_criteria": [
+            "SessionFSM has all 7 states: idle, running, awaiting_tool, awaiting_approval, compressing, complete, error",
+            "All key transitions from §19.1 are implemented with correct guards",
+            "Transitioning to 'awaiting_approval' for read-risk tools throws (guard violation)",
+            "Both running and awaiting_tool can transition to error on fatal_error event",
+            "compressing → running roundtrip works end-to-end",
+            "complete and error both transition to idle on reset",
+            "Invalid state transitions throw rather than silently failing"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "089908dd-9b60-457b-b199-ad218e666b67",
+          "title": "SkillCreationFSM — Skill Creation Lifecycle State Machine",
+          "description": "As a developer, I want the skill creation workflow managed by a @cognitive-fab/sam-fsm machine so that the novel incident detection, search, generation, and persistence steps are guarded.",
+          "acceptance_criteria": [
+            "SkillCreationFSM has all 6 states: idle, evaluating, searching, generating, validating, persisted",
+            "not_novel event from evaluating transitions to idle without calling skills_fts",
+            "match_found event from searching transitions to idle (existing skill flagged for improvement)",
+            "no_match event from searching transitions to generating",
+            "invalid event from validating transitions back to generating for up to 2 retries",
+            "retry_exceeded after 2 failed validations transitions to idle and logs failure without saving a skill",
+            "Happy path idle → persisted results in a new row in skills.db"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "38a89896-2250-4afa-a3d8-98a926c35ec6",
+          "title": "Cron Scheduler — Full Phase 2 Schedule",
+          "description": "As a developer, I want the cron scheduler updated with all 6 Phase 2 tasks so that backup, reporting, and digest automation run on schedule without operator intervention.",
+          "acceptance_criteria": [
+            "backup task fires at 0 3 * * * and sends the backup trigger message",
+            "backup_verify task fires at 5 3 * * * and sends the verify trigger message",
+            "shift_report task fires at 0 6 * * * and sends the shift report trigger message",
+            "archive_check task fires at 10 3 * * * and sends the archive check trigger message",
+            "weekly_digest task fires at 0 2 * * 1 and sends the digest trigger message",
+            "health_check remains at 0 * * * * from Phase 1",
+            "All 6 tasks are registered from appliance.yaml cron config",
+            "Weekly digest is not sent if a digest was sent within the last 6 days (168 hours)"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "baf7449b-96e6-451a-9eb9-9e5f9d1ac9ca",
+          "title": "CLI Interface — Interactive Local REPL",
+          "description": "As a developer, I want a local CLI REPL that pipes each line to the orchestrator so that COSA can be used interactively for debugging and setup.",
+          "acceptance_criteria": [
+            "startCli() starts a readline REPL on stdin/stdout",
+            "Each line dispatched creates a new runSession({ type: 'cli', source: 'cli', message }) call",
+            "Response text is printed to stdout after the session completes",
+            "Typing 'exit' or pressing Ctrl+C terminates the process cleanly",
+            "CLI starts automatically when --cli flag is passed to main.js",
+            "CLI starts automatically when NODE_ENV=development and stdin is a TTY",
+            "Each CLI line is an independent session (no multi-turn state between prompts)"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "21f7d238-d253-4cc6-9241-b1defb4ebefb",
+          "title": "OPERATIONS.md Seed and Context Layer Integration",
+          "description": "As a developer, I want OPERATIONS.md seeded for WeatherStation and included as Layer 2 in the system prompt so that COSA understands normal appliance behavior from the first session.",
+          "acceptance_criteria": [
+            "config/OPERATIONS.md exists with WeatherStation seed content covering normal behavior and known issues sections",
+            "contextBuilder.build() reads OPERATIONS.md and includes it as Layer 2",
+            "OPERATIONS.md is included in the cached Layers 0-4 block",
+            "OPERATIONS.md is read from disk once at session start and not re-read within the session",
+            "Phase 2 spec note honored: COSA reads OPERATIONS.md but does not write it (auto-update deferred to Phase 3)"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "559af815-86f0-4fe9-9cfc-e196c12fd9f8",
+          "title": "Daily Shift Report Email Delivery",
+          "description": "As COSA, I want the cron shift_report task to format and send a plain-text email to the operator every morning so that they receive a daily summary without requesting it.",
+          "acceptance_criteria": [
+            "Subject line is '[COSA] Shift Report: YYYY-MM-DD'",
+            "Email body matches the format in §11.1: period, summary block, conditions breakdown, anomalies, system status",
+            "Email is plain text — no HTML",
+            "Last backup status from MEMORY.md is included in the system status section",
+            "No email is sent if the shift_report tool returns an error (alert is sent instead)",
+            "A second shift report is not sent if the cron fires again within 6 hours (deduplication via alerts table)"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "aeee2331-74e1-48aa-84c8-28845a375779",
+          "title": "Weekly Digest Email Delivery",
+          "description": "As COSA, I want the cron weekly_digest task to compile and send a weekly operational summary email so that the operator has a regular overview without requesting it.",
+          "acceptance_criteria": [
+            "Subject line is '[COSA] Weekly Digest: week of YYYY-MM-DD'",
+            "Email body matches the format in §11.2: health check summary, backup summary, anomalies, skills, operator activity",
+            "Digest gathers data via session_search calls for backup and health events",
+            "Skills section reports new skills created and skills improved this week",
+            "No second digest is sent if a digest was sent within the past 6 days",
+            "Email is plain text — no HTML"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "429aa51d-62ff-4447-a6c8-71b3a8d65c26",
+          "title": "Phase 2 End-to-End Staging Tests",
+          "description": "As a developer, I want acceptance tests T-2.1 through T-2.10 to pass against the WeatherStation mock so that Phase 2 exit criteria are verified before declaring the implementation complete.",
+          "acceptance_criteria": [
+            "T-2.1: Backup automation — JSONL and .sha256 files created; backup_verify returns verified: true; MEMORY.md updated; no alert email on success",
+            "T-2.2: Shift report delivery — email arrives with correct subject and body; no second email within 6 hours",
+            "T-2.3: Skill creation from novel incident — new row in skills.db after 3+ tool call session; skill document has required sections; MEMORY.md recentIncidents updated",
+            "T-2.4: Skill reuse — skill appears in Layer 5 on second matching session; skill_uses table updated",
+            "T-2.5: Memory persistence — MEMORY.md updated after health check; contents appear in system prompt of next session",
+            "T-2.6: Context compression — array compressed at turn 13; length ≤ 8; raw turns preserved in session.db",
+            "T-2.7: Settings change approval — approval email sent; token accepted; station_info updated",
+            "T-2.8: Session search — COSA calls session_search and returns excerpts from matching prior sessions",
+            "T-2.9: Weekly digest — email sent with correct subject; no second digest within 6 days",
+            "T-2.10: CLI interface — health_check called and response printed; process exits cleanly on 'exit'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        }
+      ],
+      "timestamp": "2026-03-30T00:56:52.736Z",
+      "model_used": "sonnet"
     }
   ],
   "implementation_journeys": [],
   "createdAt": "2026-03-28T21:33:40.813Z",
-  "updatedAt": "2026-03-29T04:40:37.809Z"
+  "updatedAt": "2026-03-30T00:56:52.874Z"
 }

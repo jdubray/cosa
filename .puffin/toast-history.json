@@ -378,6 +378,482 @@
       "message": "Sprint closed successfully",
       "type": "success",
       "source": "app"
+    },
+    {
+      "id": "toast-1774832355861-rerw3b7",
+      "timestamp": 1774832355861,
+      "message": "Branch \"phase-2\" created and checked out",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774834806120-sxhhaw5",
+      "timestamp": 1774834806120,
+      "message": "CRE: Plan approved, RIS generated, and assertions ready",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836250577-9ghxkph",
+      "timestamp": 1774836250577,
+      "message": "Implementing: FTS5 Triggers for Session Turn Search",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836391395-jxfj3bs",
+      "timestamp": 1774836391395,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836391571-rnfhgfp",
+      "timestamp": 1774836391571,
+      "message": "⚠️ Assertions: 0/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836392524-qab2mvb",
+      "timestamp": 1774836392524,
+      "message": "Implementing: skills.db Schema and Migration",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836498942-oc3yst1",
+      "timestamp": 1774836498942,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836499101-gag2pc5",
+      "timestamp": 1774836499101,
+      "message": "⚠️ Assertions: 1/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836500063-z92hnv6",
+      "timestamp": 1774836500063,
+      "message": "Implementing: Skill Store CRUD and Seed Install",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836730948-yzr0wh8",
+      "timestamp": 1774836730948,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836731104-m9scx1j",
+      "timestamp": 1774836731104,
+      "message": "⚠️ Assertions: 7/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836732059-ekvwfwm",
+      "timestamp": 1774836732059,
+      "message": "Implementing: Memory Manager — MEMORY.md Load, Update, and Limit Enforcement",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836888603-u7i0v86",
+      "timestamp": 1774836888603,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836888758-mav37ev",
+      "timestamp": 1774836888758,
+      "message": "✓ Assertions: 5/5 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774836889723-gjts6p6",
+      "timestamp": 1774836889723,
+      "message": "Implementing: Context Builder — 10-Layer Prompt Assembly with Cache Hints",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837083232-ryr2174",
+      "timestamp": 1774837083232,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837083380-cyf9rt4",
+      "timestamp": 1774837083380,
+      "message": "✓ Assertions: 7/7 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837084344-wstxcf6",
+      "timestamp": 1774837084344,
+      "message": "Implementing: Context Compressor — Summarize Middle Turns",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837341336-jmnkl45",
+      "timestamp": 1774837341336,
+      "message": "Verifying 6 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837341480-r7clgyy",
+      "timestamp": 1774837341480,
+      "message": "✓ Assertions: 6/6 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837342455-er6pvkt",
+      "timestamp": 1774837342455,
+      "message": "Implementing: shift_report Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837612070-6li79vs",
+      "timestamp": 1774837612070,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837612211-reokd5n",
+      "timestamp": 1774837612211,
+      "message": "⚠️ Assertions: 5/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837613191-d4f9w7d",
+      "timestamp": 1774837613191,
+      "message": "Implementing: archive_search Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837676017-noy4f6i",
+      "timestamp": 1774837676017,
+      "message": "Verifying 6 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837676167-n24da2l",
+      "timestamp": 1774837676167,
+      "message": "⚠️ Assertions: 2/6 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837677135-f8giku8",
+      "timestamp": 1774837677135,
+      "message": "Implementing: backup_run Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837866368-8np0low",
+      "timestamp": 1774837866368,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837866560-kzq2m7r",
+      "timestamp": 1774837866560,
+      "message": "⚠️ Assertions: 0/5 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837867517-wtwyw2y",
+      "timestamp": 1774837867517,
+      "message": "Implementing: settings_write Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837970743-ke38mim",
+      "timestamp": 1774837970743,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837970921-0uvlflu",
+      "timestamp": 1774837970921,
+      "message": "✓ Assertions: 8/8 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774837971882-nyeyv5p",
+      "timestamp": 1774837971882,
+      "message": "Implementing: restart_appliance Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838078420-3pm11og",
+      "timestamp": 1774838078420,
+      "message": "Verifying 6 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838078573-ul9cmia",
+      "timestamp": 1774838078573,
+      "message": "⚠️ Assertions: 0/6 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838079534-913zxdg",
+      "timestamp": 1774838079534,
+      "message": "Implementing: session_search Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838197798-6bbw1bo",
+      "timestamp": 1774838197798,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838197984-0w8essu",
+      "timestamp": 1774838197984,
+      "message": "⚠️ Assertions: 2/5 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838198945-n28ow7k",
+      "timestamp": 1774838198945,
+      "message": "Implementing: Orchestrator Post-Session Hook — Memory Update and Skill Creation",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838464740-fvqrp7u",
+      "timestamp": 1774838464740,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838464901-jf0sg6w",
+      "timestamp": 1774838464901,
+      "message": "⚠️ Assertions: 1/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838465868-k1pt8tt",
+      "timestamp": 1774838465868,
+      "message": "Implementing: Orchestrator — Context Compression Integration",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838620511-h9i5ywo",
+      "timestamp": 1774838620511,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838620692-v50d8t0",
+      "timestamp": 1774838620692,
+      "message": "✓ Assertions: 5/5 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838621663-zryvj3q",
+      "timestamp": 1774838621663,
+      "message": "Implementing: SessionFSM — Session Lifecycle State Machine",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838645104-visuq2c",
+      "timestamp": 1774838645104,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838645289-azdjlfo",
+      "timestamp": 1774838645289,
+      "message": "⚠️ Assertions: 2/5 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838646244-o8s6kn0",
+      "timestamp": 1774838646244,
+      "message": "Implementing: SkillCreationFSM — Skill Creation Lifecycle State Machine",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838662975-pob55ly",
+      "timestamp": 1774838662975,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838663174-0rm26qe",
+      "timestamp": 1774838663174,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838664132-q5yt3vd",
+      "timestamp": 1774838664132,
+      "message": "Implementing: Cron Scheduler — Full Phase 2 Schedule",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838680621-iw03mgt",
+      "timestamp": 1774838680621,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838680808-dzxga64",
+      "timestamp": 1774838680808,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838681764-39rqxs7",
+      "timestamp": 1774838681764,
+      "message": "Implementing: CLI Interface — Interactive Local REPL",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838698554-nl23uw8",
+      "timestamp": 1774838698554,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838698735-n4lr226",
+      "timestamp": 1774838698735,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838699699-ff7418g",
+      "timestamp": 1774838699699,
+      "message": "Implementing: OPERATIONS.md Seed and Context Layer Integration",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838717140-9y9qt0v",
+      "timestamp": 1774838717140,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838717375-qgzobyj",
+      "timestamp": 1774838717375,
+      "message": "⚠️ Assertions: 1/5 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838718316-560soqz",
+      "timestamp": 1774838718316,
+      "message": "Implementing: Daily Shift Report Email Delivery",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838730044-njohj0h",
+      "timestamp": 1774838730044,
+      "message": "Verifying 3 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838730249-kb24fat",
+      "timestamp": 1774838730249,
+      "message": "⚠️ Assertions: 0/3 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838731199-ex9a74h",
+      "timestamp": 1774838731199,
+      "message": "Implementing: Weekly Digest Email Delivery",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838748319-nl84zc0",
+      "timestamp": 1774838748319,
+      "message": "Implementing: Phase 2 End-to-End Staging Tests",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838766513-t5jc92b",
+      "timestamp": 1774838766513,
+      "message": "Verifying 3 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838766679-ewkrxic",
+      "timestamp": 1774838766679,
+      "message": "⚠️ Assertions: 0/3 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838767654-glbnw24",
+      "timestamp": 1774838767654,
+      "message": "All stories completed! Starting code review...",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774838776054-5xr73ev",
+      "timestamp": 1774838776054,
+      "message": "Code review complete: No issues found!",
+      "type": "success",
+      "source": "app"
     }
   ]
 }

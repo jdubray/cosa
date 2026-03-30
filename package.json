@@ -10,6 +10,8 @@
     "test:staging": "jest --testPathPattern=tests/staging --testTimeout=30000 --runInBand"
   },
   "dependencies": {
+    "@cognitive-fab/sam-pattern": "^1.6.1",
+    "@cognitive-fab/sam-fsm": "^1.0.0",
     "better-sqlite3": "^9.6.0",
     "dotenv": "^16.4.5",
     "js-yaml": "^4.1.0",

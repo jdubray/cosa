@@ -49,6 +49,24 @@ tools:
   db_integrity:
     enabled: true
     run_wal_checkpoint: true
+  backup_run:
+    enabled: true
+    backup_dir: "/tmp/cosa-backups"
+    timeout_s: 120
+  restart_appliance:
+    enabled: true
+    graceful_timeout_seconds: 60
+  post_session_hook:
+    enabled: true
+    min_tool_calls_for_skill: 3
+  settings_write:
+    enabled: true
+    allowed_keys:
+      - operator_name
+      - operator_email
+      - timezone
+      - station_notes
+      - maintenance_mode
 
 security:
   dangerous_commands:

@@ -1,19 +1,25 @@
 'use strict';
 
-const crypto     = require('crypto');
-const Anthropic  = require('@anthropic-ai/sdk');
-const { getConfig }                        = require('../config/cosa.config');
+const crypto    = require('crypto');
+const Anthropic = require('@anthropic-ai/sdk');
+const { createInstance, api } = require('@cognitive-fab/sam-pattern');
+const { getConfig }           = require('../config/cosa.config');
 const {
   createSession,
   closeSession,
   saveTurn,
   saveToolCall,
   recordBlockedToolCall,
-}                                          = require('./session-store');
-const securityGate     = require('./security-gate');
-const approvalEngine   = require('./approval-engine');
-const toolRegistry     = require('./tool-registry');
-const contextBuilder   = require('./context-builder');
+  getSessionToolCalls,
+}                             = require('./session-store');
+const { postSessionHook }     = require('./post-session-hook');
+const securityGate   = require('./security-gate');
+const approvalEngine = require('./approval-engine');
+const toolRegistry   = require('./tool-registry');
+const contextBuilder = require('./context-builder');
+const memoryManager      = require('./memory-manager');
+const skillStore         = require('./skill-store');
+const contextCompressor  = require('./context-compressor');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -31,7 +37,6 @@ const MAX_TOKENS = 4096;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
 
 /**
  * Extract the first plain-text block from a Claude response content array.
@@ -137,21 +142,221 @@ async function processToolUse(sessionId, toolUse) {
 }
 
 // ---------------------------------------------------------------------------
+// SAM actions
+// ---------------------------------------------------------------------------
+
+/**
+ * Action: optionally compress the message array, then call the Claude API.
+ *
+ * If the message array exceeds the compression threshold, Haiku is called
+ * first to summarize the middle turns.  The compressed array (if any) is
+ * returned in the proposal alongside the Claude response so the compression
+ * acceptor can update `model.messages` before the response acceptor runs.
+ *
+ * @param {{ messages: Array, systemPrompt: Array|string, tools: Array,
+ *           apiKey: string, sessionId: string }} data
+ * @returns {Promise<{ response: object, compressedMessages: Array|null }>}
+ */
+async function callClaudeAction({ messages, systemPrompt, tools, apiKey, sessionId }) {
+  let workingMessages    = messages;
+  let compressedMessages = null;
+
+  // AC1: Check compression need before every client.messages.create() call.
+  if (contextCompressor.needsCompression(messages)) {
+    // AC2: Replace the live messages array with the compressed one.
+    workingMessages    = await contextCompressor.compress(messages, sessionId);
+    compressedMessages = workingMessages;
+
+    // AC4: Confirm the compressed array is shorter than the original.
+    if (workingMessages.length >= messages.length) {
+      // Compression should always reduce length; log if the invariant is violated.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[orchestrator] Compression did not reduce message count: ` +
+        `${messages.length} → ${workingMessages.length}`
+      );
+    }
+  }
+
+  // AC3: Claude API call proceeds with the (possibly compressed) messages array.
+  const client   = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model:      MODEL,
+    max_tokens: MAX_TOKENS,
+    system:     systemPrompt,
+    tools,
+    messages:   workingMessages,
+  });
+
+  // compressionNeeded drives the compressionAcceptor guard in the SAM acceptor chain.
+  return { response, compressedMessages, compressionNeeded: compressedMessages != null };
+}
+
+/**
+ * Action: execute a single tool_use block through all gates.
+ *
+ * @param {{ toolUse: object, sessionId: string }} data
+ * @returns {Promise<object>} proposal containing `{ toolResult }`
+ */
+async function processToolAction({ toolUse, sessionId }) {
+  const toolResult = await processToolUse(sessionId, toolUse);
+  return { toolResult };
+}
+
+// ---------------------------------------------------------------------------
+// SAM acceptors  (curried: model => proposal => { mutate model })
+// ---------------------------------------------------------------------------
+
+/**
+ * Acceptor A1 — guard against exceeding the iteration cap.
+ * If the model has already hit MAX_ITERATIONS, mark it complete.
+ */
+const iterationGuardAcceptor = model => proposal => {
+  if (model.iterations >= MAX_ITERATIONS && model.status === 'running') {
+    model.status    = 'complete';
+    model.finalText = 'Maximum iterations (20) reached without a final response.';
+  }
+};
+
+/**
+ * Acceptor A1b — splice compressed messages into the model when compression
+ * occurred during the same `callClaudeAction` call.
+ *
+ * Runs before `claudeResponseAcceptor` so that when the response acceptor
+ * pushes the new assistant turn onto `model.messages`, it appends to the
+ * already-compressed array.
+ */
+const compressionAcceptor = contextCompressor.makeCompressionAcceptor();
+
+/**
+ * Acceptor A2 — consume a Claude API response.
+ * Increments the iteration counter, saves the turn, and branches on stop_reason.
+ */
+const claudeResponseAcceptor = model => proposal => {
+  if (!proposal.response) return;
+
+  const { response } = proposal;
+
+  // AC5: Transition from 'compressing' back to 'running' now that compression
+  // is applied and the Claude response is being consumed.  This runs in the same
+  // acceptor pass as makeCompressionAcceptor(), making the 'compressing' state
+  // an observable intermediate step within the session FSM.
+  if (model.status === 'compressing') {
+    model.status = 'running';
+  }
+
+  model.iterations++;
+
+  saveTurn(
+    model.sessionId,
+    'assistant',
+    JSON.stringify(response.content),
+    response.usage?.input_tokens  ?? null,
+    response.usage?.output_tokens ?? null
+  );
+
+  model.messages.push({ role: 'assistant', content: response.content });
+
+  if (response.stop_reason === 'end_turn' || response.stop_reason !== 'tool_use') {
+    model.status    = 'complete';
+    model.finalText = extractFinalText(response.content);
+    return;
+  }
+
+  // stop_reason === 'tool_use' — queue tool calls for sequential dispatch.
+  model.pendingToolCalls = response.content.filter(b => b.type === 'tool_use');
+  model.toolResults      = [];
+  model.processingIndex  = 0;
+};
+
+/**
+ * Acceptor A3 — consume a single tool result.
+ * Increments processingIndex.  When all tools in the current batch are done,
+ * flushes the results into the message history and clears pending state.
+ */
+const toolResultAcceptor = model => proposal => {
+  if (!proposal.toolResult) return;
+
+  model.toolResults.push(proposal.toolResult);
+  model.processingIndex++;
+
+  if (model.processingIndex === model.pendingToolCalls.length) {
+    // All tools dispatched — push the tool-result turn and reset.
+    model.messages.push({ role: 'user', content: model.toolResults });
+    saveTurn(model.sessionId, 'tool', JSON.stringify(model.toolResults), null, null);
+    model.pendingToolCalls = [];
+    model.toolResults      = [];
+    model.processingIndex  = 0;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// SAM NAPs  (model => () => boolean|undefined)
+// ---------------------------------------------------------------------------
+
+/**
+ * NAP 1 — dispatch the next pending tool call.
+ * Fires when there are tool calls queued and processingIndex points to one.
+ * Returns true to suppress the render cycle until the tool result arrives.
+ *
+ * @param {Function} processToolIntent
+ */
+function makeProcessToolNap(processToolIntent) {
+  return model => () => {
+    if (
+      model.status === 'running' &&
+      model.pendingToolCalls.length > 0 &&
+      model.processingIndex < model.pendingToolCalls.length
+    ) {
+      const toolUse = model.pendingToolCalls[model.processingIndex];
+      processToolIntent({ toolUse, sessionId: model.sessionId });
+      return true; // suppress render
+    }
+  };
+}
+
+/**
+ * NAP 2 — call Claude for the next conversation turn.
+ * Fires when no tool calls are pending and the session is still running.
+ * Returns true to suppress the render cycle until the response arrives.
+ *
+ * @param {Function} callClaudeIntent
+ */
+function makeCallClaudeNap(callClaudeIntent) {
+  return model => () => {
+    if (
+      model.status === 'running' &&
+      model.pendingToolCalls.length === 0 &&
+      model.processingIndex === 0
+    ) {
+      callClaudeIntent({
+        messages:     model.messages,
+        systemPrompt: model.systemPrompt,
+        tools:        model.tools,
+        apiKey:       model.apiKey,
+        sessionId:    model.sessionId,
+      });
+      return true; // suppress render
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Core agent loop
 // ---------------------------------------------------------------------------
 
 /**
- * Run a COSA agent session for the given trigger.
+ * Run a COSA agent session for the given trigger using the SAM pattern.
  *
- * Creates a session in session.db, enters an agentic loop calling Claude,
- * dispatches any tool calls through the security and approval gates, and
- * returns the final text response once the model emits `stop_reason: end_turn`
- * or the iteration cap is reached.
+ * Creates a per-session SAM instance with:
+ *   - Model: conversation state (messages, pending tool calls, status)
+ *   - Acceptors: iteration guard, Claude response handler, tool result handler
+ *   - NAPs: sequential tool dispatch, Claude call kickoff
+ *   - Render: resolves the outer Promise when status reaches 'complete'
  *
  * @param {{ type: string, source: string, message: string }} trigger
  * @returns {Promise<{ session_id: string, response: string }>}
- * @throws {Error} On Claude API failure or unhandled tool error (session is
- *   closed with an error summary before re-throwing).
+ * @throws {Error} On Claude API failure or unhandled tool error.
  */
 async function runSession(trigger) {
   const { env } = getConfig();
@@ -159,77 +364,95 @@ async function runSession(trigger) {
 
   createSession(sessionId, { type: trigger.type, source: trigger.source });
 
-  const systemPrompt = contextBuilder.build();
+  const memory       = memoryManager.loadMemory();
+  const skillIndex   = skillStore.listCompact();
+  const systemPrompt = contextBuilder.build({ memory, skillIndex });
   const tools        = toolRegistry.getSchemas();
-  const messages     = [{ role: 'user', content: trigger.message }];
 
   saveTurn(sessionId, 'user', trigger.message, null, null);
 
-  const client = new Anthropic({ apiKey: env.anthropicApiKey });
+  return new Promise((resolve, reject) => {
+    // ── Build per-session SAM instance ──────────────────────────────────────
+    const samInst = createInstance({ instanceName: `session-${sessionId}` });
+    const samApi  = api(samInst);
 
-  let finalText  = '';
-  let iterations = 0;
+    // ── Initial model state ──────────────────────────────────────────────────
+    samApi.addInitialState({
+      sessionId,
+      systemPrompt,
+      tools,
+      apiKey:           env.anthropicApiKey,
+      messages:         [{ role: 'user', content: trigger.message }],
+      iterations:       0,
+      pendingToolCalls: [],
+      toolResults:      [],
+      processingIndex:  0,
+      status:           'running',
+      finalText:        '',
+    });
 
-  try {
-    while (iterations < MAX_ITERATIONS) {
-      iterations++;
+    // ── Acceptors ────────────────────────────────────────────────────────────
+    samApi.addAcceptors([
+      iterationGuardAcceptor,
+      compressionAcceptor,
+      claudeResponseAcceptor,
+      toolResultAcceptor,
+    ]);
 
-      const response = await client.messages.create({
-        model:      MODEL,
-        max_tokens: MAX_TOKENS,
-        system:     systemPrompt,
-        tools,
-        messages,
-      });
+    // ── Wire up intents before NAPs reference them ───────────────────────────
+    const { intents: [callClaudeIntent, processToolIntent] } = samApi.getIntents([
+      callClaudeAction,
+      processToolAction,
+    ]);
 
-      // ── Log assistant turn ────────────────────────────────────────────────
-      saveTurn(
-        sessionId,
-        'assistant',
-        JSON.stringify(response.content),
-        response.usage?.input_tokens  ?? null,
-        response.usage?.output_tokens ?? null
-      );
+    // ── NAPs ─────────────────────────────────────────────────────────────────
+    samApi.addNAPs([
+      makeProcessToolNap(processToolIntent),
+      makeCallClaudeNap(callClaudeIntent),
+    ]);
 
-      messages.push({ role: 'assistant', content: response.content });
+    // ── Render: resolve/reject Promise on terminal states ───────────────────
+    let sessionClosed = false;
 
-      // ── Check termination conditions ──────────────────────────────────────
-      if (response.stop_reason === 'end_turn') {
-        finalText = extractFinalText(response.content);
-        break;
+    samApi.setRender(model => {
+      if (model.status === 'complete' && !sessionClosed) {
+        sessionClosed = true;
+        closeSession(sessionId, model.finalText.slice(0, 500));
+
+        // Fire post-session hook asynchronously — do not block the response.
+        const toolCalls = getSessionToolCalls(sessionId);
+        postSessionHook({
+          sessionId,
+          trigger,
+          toolCalls,
+          finalText: model.finalText,
+          status:    'complete',
+        }).catch(() => { /* errors already logged inside hook */ });
+
+        resolve({ session_id: sessionId, response: model.finalText });
+      } else if (model.status === 'error' && !sessionClosed) {
+        sessionClosed = true;
+        const errMsg = model.errorMessage ?? 'Unknown error';
+        closeSession(sessionId, `Error: ${errMsg}`);
+        reject(new Error(errMsg));
       }
+    });
 
-      if (response.stop_reason !== 'tool_use') {
-        // max_tokens, stop_sequence, or other — treat as terminal
-        finalText = extractFinalText(response.content);
-        break;
+    // ── Kick off the first Claude call ───────────────────────────────────────
+    callClaudeIntent({
+      messages:     [{ role: 'user', content: trigger.message }],
+      systemPrompt,
+      tools,
+      apiKey:       env.anthropicApiKey,
+      sessionId,
+    }).catch(err => {
+      if (!sessionClosed) {
+        sessionClosed = true;
+        closeSession(sessionId, `Error: ${err.message}`);
+        reject(err);
       }
-
-      // ── Process tool calls ────────────────────────────────────────────────
-      const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
-      const toolResults   = [];
-
-      for (const toolUse of toolUseBlocks) {
-        const result = await processToolUse(sessionId, toolUse);
-        toolResults.push(result);
-      }
-
-      messages.push({ role: 'user', content: toolResults });
-      saveTurn(sessionId, 'tool', JSON.stringify(toolResults), null, null);
-    }
-
-    // ── Graceful max-iterations message ──────────────────────────────────────
-    if (finalText === '') {
-      finalText = 'Maximum iterations (20) reached without a final response.';
-    }
-
-    closeSession(sessionId, finalText.slice(0, 500));
-    return { session_id: sessionId, response: finalText };
-
-  } catch (err) {
-    closeSession(sessionId, `Error: ${err.message}`);
-    throw err;
-  }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------

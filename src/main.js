@@ -2,6 +2,7 @@
 
 const { getConfig }    = require('../config/cosa.config');
 const { runMigrations } = require('./session-store');
+const skillStore       = require('./skill-store');
 const sshBackend       = require('./ssh-backend');
 const toolRegistry     = require('./tool-registry');
 const approvalEngine   = require('./approval-engine');
@@ -16,6 +17,12 @@ const log = createLogger('main');
 const healthCheckTool  = require('./tools/health-check');
 const dbQueryTool      = require('./tools/db-query');
 const dbIntegrityTool  = require('./tools/db-integrity');
+const shiftReportTool  = require('./tools/shift-report');
+const archiveSearchTool = require('./tools/archive-search');
+const backupRunTool     = require('./tools/backup-run');
+const settingsWriteTool     = require('./tools/settings-write');
+const restartApplianceTool  = require('./tools/restart-appliance');
+const sessionSearchTool     = require('./tools/session-search');
 
 /**
  * Bootstrap COSA: load config, run migrations, test SSH connectivity,
@@ -45,6 +52,18 @@ async function boot() {
     process.exit(1);
   }
 
+  // 2b. Run skills.db migrations and install seed skills on first run.
+  try {
+    skillStore.runMigrations();
+    const { installed } = skillStore.installSeedSkills();
+    if (installed.length > 0) {
+      log.info(`Seed skills installed: ${installed.join(', ')}`);
+    }
+  } catch (err) {
+    log.error(`Skills setup failed: ${err.message}`);
+    process.exit(1);
+  }
+
   // 3. Test SSH connectivity. Failure is logged as a warning; does not crash.
   await sshBackend.init();
 
@@ -66,6 +85,42 @@ async function boot() {
     dbIntegrityTool.schema,
     dbIntegrityTool.handler,
     dbIntegrityTool.riskLevel
+  );
+  toolRegistry.register(
+    shiftReportTool.name,
+    shiftReportTool.schema,
+    shiftReportTool.handler,
+    shiftReportTool.riskLevel
+  );
+  toolRegistry.register(
+    archiveSearchTool.name,
+    archiveSearchTool.schema,
+    archiveSearchTool.handler,
+    archiveSearchTool.riskLevel
+  );
+  toolRegistry.register(
+    backupRunTool.name,
+    backupRunTool.schema,
+    backupRunTool.handler,
+    backupRunTool.riskLevel
+  );
+  toolRegistry.register(
+    settingsWriteTool.name,
+    settingsWriteTool.schema,
+    settingsWriteTool.handler,
+    settingsWriteTool.riskLevel
+  );
+  toolRegistry.register(
+    restartApplianceTool.name,
+    restartApplianceTool.schema,
+    restartApplianceTool.handler,
+    restartApplianceTool.riskLevel
+  );
+  toolRegistry.register(
+    sessionSearchTool.name,
+    sessionSearchTool.schema,
+    sessionSearchTool.handler,
+    sessionSearchTool.riskLevel
   );
   log.info(`Tools registered: ${toolRegistry.getSchemas().map(t => t.name).join(', ')}`);
 
