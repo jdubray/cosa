@@ -22,7 +22,9 @@
 
 let _createFSM;
 try {
-  _createFSM = require('@cognitive-fab/sam-fsm').createFSM;
+  const fn = require('@cognitive-fab/sam-fsm').createFSM;
+  // Guard: the package may exist but not export createFSM (wrong version, etc.)
+  _createFSM = typeof fn === 'function' ? fn : _buildFallbackFSM;
 } catch {
   // Fallback: lightweight FSM implementation for environments where the
   // package is unavailable (e.g., CI without a full npm install).

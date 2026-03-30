@@ -2,9 +2,17 @@
 
 const nodemailer      = require('nodemailer');
 const { ImapFlow }    = require('imapflow');
+const { simpleParser } = require('mailparser');
 const { getConfig }   = require('../config/cosa.config');
-const approvalEngine  = require('./approval-engine');
 const { createLogger } = require('./logger');
+
+// approval-engine also requires email-gateway, creating a circular dependency.
+// Lazy-require it inside _dispatchMessage (after both modules are fully loaded)
+// to avoid the partial-initialisation problem that makes processInboundReply
+// appear as undefined.
+
+/** Timestamp recorded at module load — used to skip emails that pre-date this boot. */
+const BOOT_TIME = new Date();
 
 const log = createLogger('email-gateway');
 
@@ -27,6 +35,16 @@ const APPROVAL_RE = /\bAPPROVE-[0-9A-F]{8}\b|\bDENY\b/i;
 
 /** @type {ReturnType<typeof setInterval> | null} */
 let _pollInterval = null;
+
+/**
+ * Cached nodemailer SMTP transport.
+ * Lazily created on first send and reused for all subsequent outbound emails.
+ * Using pool:true keeps the connection alive across sends, avoiding repeated
+ * AUTH round-trips that trigger Google's "too many login attempts" rate limit.
+ *
+ * @type {import('nodemailer').Transporter | null}
+ */
+let _smtpTransport = null;
 
 /**
  * Optional handler invoked for inbound messages that are not approval replies.
@@ -60,21 +78,26 @@ function buildImapClient() {
 }
 
 /**
- * Build a nodemailer SMTP transport using credentials from config.
+ * Return the shared nodemailer SMTP transport, creating it on first call.
+ * pool:true keeps the underlying TCP connection alive so subsequent sends
+ * reuse the authenticated session instead of re-authenticating each time.
  *
  * @returns {import('nodemailer').Transporter}
  */
-function buildSmtpTransport() {
+function getSmtpTransport() {
+  if (_smtpTransport) return _smtpTransport;
   const { env } = getConfig();
-  return nodemailer.createTransport({
+  _smtpTransport = nodemailer.createTransport({
     host:   env.email.smtpHost,
     port:   env.email.smtpPort,
     secure: false, // STARTTLS on port 587
+    pool:   true,  // reuse connection — avoid re-AUTH on every email
     auth: {
       user: env.email.username,
       pass: env.email.appPassword,
     },
   });
+  return _smtpTransport;
 }
 
 /**
@@ -85,6 +108,8 @@ function buildSmtpTransport() {
  * @returns {Promise<void>}
  */
 async function _dispatchMessage(msg) {
+  // Lazy-require breaks the circular dependency with approval-engine.
+  const approvalEngine = require('./approval-engine');
   const text = `${msg.subject} ${msg.body}`;
   if (APPROVAL_RE.test(text)) {
     await approvalEngine.processInboundReply(msg);
@@ -112,7 +137,7 @@ async function _dispatchMessage(msg) {
  */
 async function sendEmail({ to, subject, text, inReplyTo, references }) {
   const { env } = getConfig();
-  const transport = buildSmtpTransport();
+  const transport = getSmtpTransport();
 
   /** @type {import('nodemailer').SendMailOptions} */
   const mailOptions = {
@@ -152,30 +177,49 @@ async function _runPoll() {
   let lock;
   try {
     lock = await client.getMailboxLock('INBOX');
-    const seqs = await client.search({ seen: false });
+    // `since` filters to messages received on or after the date (day boundary).
+    // Combined with the in-process BOOT_TIME check below, this prevents a
+    // backlog of old unseen messages from flooding COSA on startup.
+    const seqs = await client.search({ seen: false, since: BOOT_TIME });
 
     for (const seq of seqs) {
       const fetched = await client.fetchOne(String(seq), {
-        envelope:  true,
-        bodyParts: ['TEXT'],
+        envelope:     true,
+        source:       true,
+        internalDate: true,
       });
 
+      // Skip emails that arrived before this process started — they are stale
+      // messages from a previous COSA session that were not yet marked seen.
+      if (fetched.internalDate && fetched.internalDate < BOOT_TIME) {
+        await client.messageFlagsAdd(String(seq), ['\\Seen']);
+        log.info(`Skipped pre-boot email (arrived ${fetched.internalDate.toISOString()})`);
+        continue;
+      }
+
       const fromAddr = (fetched.envelope?.from?.[0]?.address ?? '').toLowerCase();
+
+      // Mark seen immediately — before dispatching — so that long-running
+      // sessions (e.g. waiting for operator approval) don't cause the next
+      // poll cycle to pick up the same message and spawn a duplicate session.
+      await client.messageFlagsAdd(String(seq), ['\\Seen']);
 
       if (fromAddr !== operatorEmail) {
         log.warn(`Ignored message from non-operator: <${fromAddr}>`);
       } else {
-        const body = fetched.bodyParts?.get('TEXT')?.toString() ?? '';
+        const parsed = await simpleParser(fetched.source ?? Buffer.alloc(0));
+        const body   = parsed.text?.trim() ?? '';
         const msg = {
           from:      fromAddr,
           subject:   fetched.envelope?.subject  ?? '',
           body,
           messageId: fetched.envelope?.messageId ?? null,
         };
-        await _dispatchMessage(msg);
+        log.info(`Email received — subject: "${msg.subject}", body length: ${body.length}`);
+        _dispatchMessage(msg).catch(err =>
+          log.error(`Session dispatch error: ${err.message}`)
+        );
       }
-
-      await client.messageFlagsAdd(String(seq), ['\\Seen']);
     }
   } finally {
     if (lock) lock.release();

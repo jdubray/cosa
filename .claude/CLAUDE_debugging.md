@@ -1,8 +1,8 @@
 ---
 
-## Branch Focus: Baanbaan
+## Branch Focus: Debugging
 
-You are working on the **baanbaan** thread.
+You are working on the **debugging** thread.
 
 <!-- puffin:generated-end -->
 
@@ -35,8 +35,8 @@ All file operations must be scoped to this project directory and its subdirector
 
 ---
 
-## Branch Focus: Baanbaan
+## Branch Focus: Debugging
 
-You are working on the **baanbaan** thread.
+You are working on the **debugging** thread.
 
 <!-- puffin:generated-end -->

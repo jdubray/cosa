@@ -1,0 +1,564 @@
+{
+  "id": "mnddied0j3rtb8sgo",
+  "title": "backup_verify Tool",
+  "branchName": "backupverify-tool",
+  "stories": [
+    {
+      "id": "df040a25-3199-49ea-bd66-3cd3492df62d",
+      "branchId": "fullstack",
+      "title": "backup_verify Tool",
+      "description": "As COSA, I want to verify the most recent backup's checksum so that I can detect corruption before it becomes an unrecoverable data loss.",
+      "acceptanceCriteria": [
+        "Reads the most recent backup file from the configured directory if backup_path is not specified",
+        "Re-computes the SHA-256 checksum of the JSONL file",
+        "Compares against the expected hash from the .sha256 sidecar",
+        "Returns verified, backup_path, expected_hash, actual_hash, row_count, file_size_kb, backup_age_hours",
+        "Returns verified: false (not a throw) when checksums do not match",
+        "Throws if no backup file is found at all",
+        "Risk level is 'read'"
+      ],
+      "inspectionAssertions": [
+        {
+          "id": "a60c7a98-195b-4ec9-93d1-9b0c579bc9f6",
+          "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "type": "file_contains",
+          "target": "src/main/ipc-handlers.js",
+          "message": "backup_verify tool must declare risk level as read",
+          "assertion": {
+            "match": "literal",
+            "content": "risk: 'read'"
+          },
+          "result": "pending",
+          "createdAt": "2026-03-30T16:13:06.950Z"
+        },
+        {
+          "id": "7279ac2a-ffa0-4e2d-88a6-3b27e535d79c",
+          "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "type": "file_contains",
+          "target": "src/main/ipc-handlers.js",
+          "message": "backup_verify tool must use SHA-256 algorithm",
+          "assertion": {
+            "match": "literal",
+            "content": "sha256"
+          },
+          "result": "pending",
+          "createdAt": "2026-03-30T16:13:06.950Z"
+        },
+        {
+          "id": "8647c9ee-ee0b-40ba-922b-e665a8fcb87a",
+          "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "type": "file_contains",
+          "target": "src/main/ipc-handlers.js",
+          "message": "backup_verify tool must return backup_age_hours in result",
+          "assertion": {
+            "match": "literal",
+            "content": "backup_age_hours"
+          },
+          "result": "pending",
+          "createdAt": "2026-03-30T16:13:06.950Z"
+        },
+        {
+          "id": "b42536c0-e54b-477b-903d-fdfa63854467",
+          "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "type": "file_contains",
+          "target": "src/main/ipc-handlers.js",
+          "message": "backup_verify tool must return file_size_kb in result",
+          "assertion": {
+            "match": "literal",
+            "content": "file_size_kb"
+          },
+          "result": "pending",
+          "createdAt": "2026-03-30T16:13:06.951Z"
+        },
+        {
+          "id": "1fe9cf69-4614-4ca1-b0fb-d39c79c731e8",
+          "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "type": "file_contains",
+          "target": "src/main/ipc-handlers.js",
+          "message": "backup_verify tool must return verified: false when checksums do not match",
+          "assertion": {
+            "match": "literal",
+            "content": "verified: false"
+          },
+          "result": "pending",
+          "createdAt": "2026-03-30T16:13:06.951Z"
+        },
+        {
+          "id": "17af869c-96f1-4d00-8c20-da1c19d3ee7b",
+          "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "type": "file_contains",
+          "target": "src/main/ipc-handlers.js",
+          "message": "backup_verify tool handler must be registered",
+          "assertion": {
+            "match": "literal",
+            "content": "backup_verify"
+          },
+          "result": "pending",
+          "createdAt": "2026-03-30T16:13:06.951Z"
+        },
+        {
+          "id": "ad3b1cd6-50bd-4489-903e-e770250ec1ee",
+          "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "type": "file_contains",
+          "target": "src/main/ipc-handlers.js",
+          "message": "backup_verify tool must read .sha256 sidecar file",
+          "assertion": {
+            "match": "literal",
+            "content": ".sha256"
+          },
+          "result": "pending",
+          "createdAt": "2026-03-30T16:13:06.951Z"
+        },
+        {
+          "id": "f5a1abd6-a81b-40e2-944c-e0c42e330f8c",
+          "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "type": "file_contains",
+          "target": "src/main/ipc-handlers.js",
+          "message": "backup_verify tool must return row_count in result",
+          "assertion": {
+            "match": "literal",
+            "content": "row_count"
+          },
+          "result": "pending",
+          "createdAt": "2026-03-30T16:13:06.952Z"
+        }
+      ],
+      "assertionResults": null,
+      "completionSummary": null,
+      "status": "completed",
+      "implementedOn": [],
+      "sourcePromptId": null,
+      "createdAt": "1774832275046.0",
+      "updatedAt": 1774887423400,
+      "archivedAt": null,
+      "completedAt": 1774887423400
+    }
+  ],
+  "status": "completed",
+  "storyProgress": {
+    "df040a25-3199-49ea-bd66-3cd3492df62d": {
+      "branches": {
+        "fullstack": {
+          "status": "in_progress",
+          "startedAt": 1774887195327
+        }
+      },
+      "status": "completed",
+      "completedAt": 1774887423400,
+      "criteriaProgress": {
+        "0": {
+          "checked": true,
+          "checkedAt": 1774887423401
+        },
+        "1": {
+          "checked": true,
+          "checkedAt": 1774887423401
+        },
+        "2": {
+          "checked": true,
+          "checkedAt": 1774887423401
+        },
+        "3": {
+          "checked": true,
+          "checkedAt": 1774887423401
+        },
+        "4": {
+          "checked": true,
+          "checkedAt": 1774887423401
+        },
+        "5": {
+          "checked": true,
+          "checkedAt": 1774887423402
+        },
+        "6": {
+          "checked": true,
+          "checkedAt": 1774887423402
+        }
+      }
+    }
+  },
+  "promptId": null,
+  "plan": "{\n  \"planId\": \"9280a31a-2f9a-49b2-a931-3b4770ec84b0\",\n  \"plan\": {\n    \"id\": \"9280a31a-2f9a-49b2-a931-3b4770ec84b0\",\n    \"sprintId\": \"mnddied0j3rtb8sgo\",\n    \"status\": \"review_pending\",\n    \"iteration\": 1,\n    \"stories\": [\n      {\n        \"id\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n        \"title\": \"backup_verify Tool\"\n      }\n    ],\n    \"planItems\": [\n      {\n        \"order\": 1,\n        \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n        \"title\": \"backup_verify Tool\",\n        \"approach\": \"Implement a backup_verify tool following the existing tool pattern (export a handler function + schema). The tool: (1) resolves the most recent .jsonl backup file from the configured backup directory by file creation time if backup_path is not provided, (2) reads the paired .sha256 sidecar file to get the expected hash, (3) streams the .jsonl file to compute its SHA-256 using Node's built-in crypto module, (4) counts valid JSON objects (lines) during the same streaming pass, (5) computes file_size_kb using stat.size / 1024, (6) computes backup_age_hours from stat.birthtime to now, (7) returns the full result object with verified: false on mismatch rather than throwing, and throws only when no backup file is found. Register the tool in registry.js with risk level 'read'.\",\n        \"filesCreated\": [\n          \"src/main/tools/backup_verify.js\",\n          \"src/main/tools/backup_verify.test.js\"\n        ],\n        \"filesModified\": [\n          \"src/main/tools/registry.js\"\n        ],\n        \"dependencies\": [],\n        \"complexity\": \"medium\",\n        \"notes\": \"Use fs.readdirSync + statSync birthtime to find the most recent .jsonl file in the backup directory (filter by .jsonl extension, sort descending by birthtime, take first). Read the sidecar as backup_path + '.sha256' or a co-located <stem>.sha256 file — match the convention used in backup_export.js. Stream the file through crypto.createHash('sha256') to avoid loading large files into memory; count newlines that parse as valid JSON during the same pass for row_count. file_size_kb = Math.round(stat.size / 1024 * 100) / 100 (two decimals). backup_age_hours = (Date.now() - stat.birthtimeMs) / 3600000. If backup_path is explicitly provided, skip directory scan entirely (ignore configured directory per clarification). Throw an Error with a clear message if no .jsonl file exists in the directory or if the specified backup_path does not exist.\"\n      }\n    ],\n    \"sharedComponents\": [\n      {\n        \"path\": \"src/main/tools/registry.js\",\n        \"purpose\": \"Central tool registry — backup_verify must be registered here with risk:'read' so the IPC layer and tool dispatcher can discover it\",\n        \"usedBy\": [\n          \"df040a25-3199-49ea-bd66-3cd3492df62d\"\n        ]\n      }\n    ],\n    \"risks\": [\n      \"The .sha256 sidecar naming convention must match exactly what backup_export.js writes — read backup_export.js before implementing to confirm the sidecar filename format (e.g. <name>.jsonl.sha256 vs <name>.sha256).\",\n      \"Streaming hash computation and line counting in a single pass requires careful handling of partial lines at chunk boundaries — use readline or split on newlines post-chunk to avoid miscounting rows.\",\n      \"birthtime (file creation time) is not guaranteed on all filesystems; on Linux ext4 it may fall back to ctime. This is acceptable per clarification but worth noting in code comments.\",\n      \"If the configured backup directory contains non-backup .jsonl files, the 'most recent by birthtime' heuristic may select the wrong file — consider filtering by a known filename prefix/pattern matching backup_export output.\"\n    ],\n    \"aiError\": null,\n    \"clarificationHistory\": [\n      {\n        \"questions\": [\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"How should 'most recent backup file' be determined when multiple backup files exist in the directory? By file modification time, creation time, or by filename pattern/timestamp?\",\n            \"reason\": \"The selection logic directly affects which file gets verified and could silently verify the wrong backup if disambiguation logic differs from expectations.\",\n            \"suggestions\": [\n              \"Most recently modified (mtime)\",\n              \"Most recently created (ctime)\",\n              \"Latest timestamp in filename pattern (e.g., backup_YYYYMMDD_HHMMSS.jsonl)\"\n            ],\n            \"priority\": \"high\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"What file extensions and naming patterns should the tool recognize for backup files? Are backups always uncompressed JSONL, or could they be .jsonl.gz, .tar.gz, or other formats?\",\n            \"reason\": \"File discovery and checksum computation method depend on this. If files are compressed, the hash must be computed on the compressed or decompressed version consistently with how the sidecar was generated.\",\n            \"suggestions\": [\n              \"Only *.jsonl (uncompressed)\",\n              \"*.jsonl or *.jsonl.gz (gzip-compressed)\",\n              \"Configurable pattern\"\n            ],\n            \"priority\": \"high\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"What is the expected format of the .sha256 sidecar file? Is it the standard sha256sum format ('HASH FILENAME'), just the hash, or something else? How should malformed sidecars be handled?\",\n            \"reason\": \"Parsing logic and error handling directly depend on this format. Invalid parsing could cause silent failures or unexpected exceptions.\",\n            \"suggestions\": [\n              \"Standard sha256sum format: 'abc123def... backup.jsonl'\",\n              \"Hash-only: 'abc123def...'\",\n              \"JSON: '{\\\"hash\\\": \\\"abc123def...\\\", \\\"filename\\\": \\\"...\\\"}'\",\n              \"Throw on malformed sidecar, or return verified: false\"\n            ],\n            \"priority\": \"high\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"If the backup file is compressed (e.g., .gz), should the SHA-256 checksum be computed on the compressed file or the decompressed content?\",\n            \"reason\": \"This must match how the original sidecar was generated. Computing on the wrong version will cause all verifications to fail or false-pass, defeating the corruption detection goal.\",\n            \"suggestions\": [\n              \"Always on the file as-stored (compressed if applicable)\",\n              \"Always on decompressed content\",\n              \"Determined by the .sha256 sidecar metadata (if format supports it)\"\n            ],\n            \"priority\": \"high\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"What should happen if a backup file exists but its corresponding .sha256 sidecar does not? Should the tool throw, return verified: false, or compute/return the hash anyway?\",\n            \"reason\": \"AC#6 specifies throwing only when no backup file exists. This is a different failure mode (backup exists but no sidecar) and needs explicit handling to avoid unexpected behavior.\",\n            \"suggestions\": [\n              \"Throw (treat missing sidecar as unrecoverable state)\",\n              \"Return verified: false with expected_hash: null\",\n              \"Compute hash and return it anyway (allows verification if caller has external source of truth)\"\n            ],\n            \"priority\": \"high\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"When backup_path is specified as a parameter, should the tool verify that specific file only, verify it and still search for the 'most recent' as fallback, or ignore the configured directory entirely?\",\n            \"reason\": \"This changes the API contract and behavior. If both backup_path and 'configured directory' can be provided, their precedence and interaction need to be clear.\",\n            \"suggestions\": [\n              \"If backup_path provided, verify only that file; ignore configured directory\",\n              \"If backup_path provided, verify it; if not provided, use configured directory\",\n              \"backup_path always filters within configured directory for security\"\n            ],\n            \"priority\": \"high\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"How should 'row_count' be computed for a JSONL file? Count lines, count valid JSON objects, or count something else? Should malformed/invalid lines cause an error or be silently skipped?\",\n            \"reason\": \"Affects return value accuracy and error handling. If a file is partially corrupted, should verification succeed (hash matches) but report suspicious row_count, or should it throw?\",\n            \"suggestions\": [\n              \"Count all non-empty lines\",\n              \"Count valid JSON objects only, throw if any invalid\",\n              \"Count valid JSON objects only, skip invalid lines silently\",\n              \"Count newlines as proxy for rows, don't parse JSON\"\n            ],\n            \"priority\": \"medium\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"Should 'file_size_kb' refer to the backup file as stored (potentially compressed), or always the decompressed size? If compressed, should it be 1024-byte KB or 1000-byte KB?\",\n            \"reason\": \"Affects the accuracy and usefulness of the returned metrics. Users may use file_size_kb to validate storage capacity or detect anomalies.\",\n            \"suggestions\": [\n              \"Size of file as-stored (compressed if applicable), 1024-byte KB\",\n              \"Decompressed size, 1024-byte KB\",\n              \"File size in bytes, let caller decide units\"\n            ],\n            \"priority\": \"medium\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"How should 'backup_age_hours' be calculated? Based on file mtime, creation time, or last access? Should it be rounded, truncated, or returned as a float?\",\n            \"reason\": \"Affects return value precision and interpretation. A difference between floor(1.9) and ceil(1.9) could matter for alert thresholds.\",\n            \"suggestions\": [\n              \"Hours elapsed from file mtime to current time, rounded down (floor)\",\n              \"Hours elapsed from file mtime to current time, rounded to nearest\",\n              \"Hours elapsed from file mtime to current time, as float\"\n            ],\n            \"priority\": \"medium\"\n          },\n          {\n            \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n            \"question\": \"If the backup file exists and the checksum matches, but row_count or file_size_kb cannot be computed due to an error, should the tool return verified: true with those fields null/omitted, or should it return verified: false or throw?\",\n            \"reason\": \"Affects robustness and caller expectations. A checksum match suggests the file is intact, but missing metadata could indicate a secondary corruption or access issue.\",\n            \"suggestions\": [\n              \"Return verified: true with missing fields null or omitted\",\n              \"Return verified: false if any supplementary data cannot be computed\",\n              \"Throw on any computation failure\"\n            ],\n            \"priority\": \"medium\"\n          }\n        ],\n        \"answers\": [\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"How should 'most recent backup file' be determined when multiple backup files exist in the directory? By file modification time, creation time, or by filename pattern/timestamp?\",\n              \"reason\": \"The selection logic directly affects which file gets verified and could silently verify the wrong backup if disambiguation logic differs from expectations.\",\n              \"suggestions\": [\n                \"Most recently modified (mtime)\",\n                \"Most recently created (ctime)\",\n                \"Latest timestamp in filename pattern (e.g., backup_YYYYMMDD_HHMMSS.jsonl)\"\n              ],\n              \"priority\": \"high\"\n            },\n            \"answer\": \"By file modification time, creation time, or by filename pattern/timestamp\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"What file extensions and naming patterns should the tool recognize for backup files? Are backups always uncompressed JSONL, or could they be .jsonl.gz, .tar.gz, or other formats?\",\n              \"reason\": \"File discovery and checksum computation method depend on this. If files are compressed, the hash must be computed on the compressed or decompressed version consistently with how the sidecar was generated.\",\n              \"suggestions\": [\n                \"Only *.jsonl (uncompressed)\",\n                \"*.jsonl or *.jsonl.gz (gzip-compressed)\",\n                \"Configurable pattern\"\n              ],\n              \"priority\": \"high\"\n            },\n            \"answer\": \"I don't know, pick the most appropriate answer\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"What is the expected format of the .sha256 sidecar file? Is it the standard sha256sum format ('HASH FILENAME'), just the hash, or something else? How should malformed sidecars be handled?\",\n              \"reason\": \"Parsing logic and error handling directly depend on this format. Invalid parsing could cause silent failures or unexpected exceptions.\",\n              \"suggestions\": [\n                \"Standard sha256sum format: 'abc123def... backup.jsonl'\",\n                \"Hash-only: 'abc123def...'\",\n                \"JSON: '{\\\"hash\\\": \\\"abc123def...\\\", \\\"filename\\\": \\\"...\\\"}'\",\n                \"Throw on malformed sidecar, or return verified: false\"\n              ],\n              \"priority\": \"high\"\n            },\n            \"answer\": \"I don't know, pick the most appropriate answer\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"If the backup file is compressed (e.g., .gz), should the SHA-256 checksum be computed on the compressed file or the decompressed content?\",\n              \"reason\": \"This must match how the original sidecar was generated. Computing on the wrong version will cause all verifications to fail or false-pass, defeating the corruption detection goal.\",\n              \"suggestions\": [\n                \"Always on the file as-stored (compressed if applicable)\",\n                \"Always on decompressed content\",\n                \"Determined by the .sha256 sidecar metadata (if format supports it)\"\n              ],\n              \"priority\": \"high\"\n            },\n            \"answer\": \"I don't know, pick the most appropriate answer\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"What should happen if a backup file exists but its corresponding .sha256 sidecar does not? Should the tool throw, return verified: false, or compute/return the hash anyway?\",\n              \"reason\": \"AC#6 specifies throwing only when no backup file exists. This is a different failure mode (backup exists but no sidecar) and needs explicit handling to avoid unexpected behavior.\",\n              \"suggestions\": [\n                \"Throw (treat missing sidecar as unrecoverable state)\",\n                \"Return verified: false with expected_hash: null\",\n                \"Compute hash and return it anyway (allows verification if caller has external source of truth)\"\n              ],\n              \"priority\": \"high\"\n            },\n            \"answer\": \"I don't know, pick the most appropriate answer\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"When backup_path is specified as a parameter, should the tool verify that specific file only, verify it and still search for the 'most recent' as fallback, or ignore the configured directory entirely?\",\n              \"reason\": \"This changes the API contract and behavior. If both backup_path and 'configured directory' can be provided, their precedence and interaction need to be clear.\",\n              \"suggestions\": [\n                \"If backup_path provided, verify only that file; ignore configured directory\",\n                \"If backup_path provided, verify it; if not provided, use configured directory\",\n                \"backup_path always filters within configured directory for security\"\n              ],\n              \"priority\": \"high\"\n            },\n            \"answer\": \"ignore the configured directory entirely\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"How should 'row_count' be computed for a JSONL file? Count lines, count valid JSON objects, or count something else? Should malformed/invalid lines cause an error or be silently skipped?\",\n              \"reason\": \"Affects return value accuracy and error handling. If a file is partially corrupted, should verification succeed (hash matches) but report suspicious row_count, or should it throw?\",\n              \"suggestions\": [\n                \"Count all non-empty lines\",\n                \"Count valid JSON objects only, throw if any invalid\",\n                \"Count valid JSON objects only, skip invalid lines silently\",\n                \"Count newlines as proxy for rows, don't parse JSON\"\n              ],\n              \"priority\": \"medium\"\n            },\n            \"answer\": \"count valid JSON objects\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"Should 'file_size_kb' refer to the backup file as stored (potentially compressed), or always the decompressed size? If compressed, should it be 1024-byte KB or 1000-byte KB?\",\n              \"reason\": \"Affects the accuracy and usefulness of the returned metrics. Users may use file_size_kb to validate storage capacity or detect anomalies.\",\n              \"suggestions\": [\n                \"Size of file as-stored (compressed if applicable), 1024-byte KB\",\n                \"Decompressed size, 1024-byte KB\",\n                \"File size in bytes, let caller decide units\"\n              ],\n              \"priority\": \"medium\"\n            },\n            \"answer\": \"1024-byte KB\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"How should 'backup_age_hours' be calculated? Based on file mtime, creation time, or last access? Should it be rounded, truncated, or returned as a float?\",\n              \"reason\": \"Affects return value precision and interpretation. A difference between floor(1.9) and ceil(1.9) could matter for alert thresholds.\",\n              \"suggestions\": [\n                \"Hours elapsed from file mtime to current time, rounded down (floor)\",\n                \"Hours elapsed from file mtime to current time, rounded to nearest\",\n                \"Hours elapsed from file mtime to current time, as float\"\n              ],\n              \"priority\": \"medium\"\n            },\n            \"answer\": \"file creation time\"\n          },\n          {\n            \"question\": {\n              \"storyId\": \"df040a25-3199-49ea-bd66-3cd3492df62d\",\n              \"question\": \"If the backup file exists and the checksum matches, but row_count or file_size_kb cannot be computed due to an error, should the tool return verified: true with those fields null/omitted, or should it return verified: false or throw?\",\n              \"reason\": \"Affects robustness and caller expectations. A checksum match suggests the file is intact, but missing metadata could indicate a secondary corruption or access issue.\",\n              \"suggestions\": [\n                \"Return verified: true with missing fields null or omitted\",\n                \"Return verified: false if any supplementary data cannot be computed\",\n                \"Throw on any computation failure\"\n              ],\n              \"priority\": \"medium\"\n            },\n            \"answer\": \"As long as the file is intact, it's fine.\"\n          }\n        ],\n        \"feedback\": null\n      }\n    ],\n    \"createdAt\": \"2026-03-30T16:08:49.872Z\",\n    \"updatedAt\": \"2026-03-30T16:08:49.872Z\"\n  },\n  \"sprintId\": \"mnddied0j3rtb8sgo\"\n}",
+  "createdAt": 1774886357556,
+  "crePlan": {
+    "planId": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+    "plan": {
+      "id": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+      "sprintId": "mnddied0j3rtb8sgo",
+      "status": "review_pending",
+      "iteration": 1,
+      "stories": [
+        {
+          "id": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "title": "backup_verify Tool"
+        }
+      ],
+      "planItems": [
+        {
+          "order": 1,
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "title": "backup_verify Tool",
+          "approach": "Implement a backup_verify tool following the existing tool pattern (export a handler function + schema). The tool: (1) resolves the most recent .jsonl backup file from the configured backup directory by file creation time if backup_path is not provided, (2) reads the paired .sha256 sidecar file to get the expected hash, (3) streams the .jsonl file to compute its SHA-256 using Node's built-in crypto module, (4) counts valid JSON objects (lines) during the same streaming pass, (5) computes file_size_kb using stat.size / 1024, (6) computes backup_age_hours from stat.birthtime to now, (7) returns the full result object with verified: false on mismatch rather than throwing, and throws only when no backup file is found. Register the tool in registry.js with risk level 'read'.",
+          "filesCreated": [
+            "src/main/tools/backup_verify.js",
+            "src/main/tools/backup_verify.test.js"
+          ],
+          "filesModified": [
+            "src/main/tools/registry.js"
+          ],
+          "dependencies": [],
+          "complexity": "medium",
+          "notes": "Use fs.readdirSync + statSync birthtime to find the most recent .jsonl file in the backup directory (filter by .jsonl extension, sort descending by birthtime, take first). Read the sidecar as backup_path + '.sha256' or a co-located <stem>.sha256 file — match the convention used in backup_export.js. Stream the file through crypto.createHash('sha256') to avoid loading large files into memory; count newlines that parse as valid JSON during the same pass for row_count. file_size_kb = Math.round(stat.size / 1024 * 100) / 100 (two decimals). backup_age_hours = (Date.now() - stat.birthtimeMs) / 3600000. If backup_path is explicitly provided, skip directory scan entirely (ignore configured directory per clarification). Throw an Error with a clear message if no .jsonl file exists in the directory or if the specified backup_path does not exist."
+        }
+      ],
+      "sharedComponents": [
+        {
+          "path": "src/main/tools/registry.js",
+          "purpose": "Central tool registry — backup_verify must be registered here with risk:'read' so the IPC layer and tool dispatcher can discover it",
+          "usedBy": [
+            "df040a25-3199-49ea-bd66-3cd3492df62d"
+          ]
+        }
+      ],
+      "risks": [
+        "The .sha256 sidecar naming convention must match exactly what backup_export.js writes — read backup_export.js before implementing to confirm the sidecar filename format (e.g. <name>.jsonl.sha256 vs <name>.sha256).",
+        "Streaming hash computation and line counting in a single pass requires careful handling of partial lines at chunk boundaries — use readline or split on newlines post-chunk to avoid miscounting rows.",
+        "birthtime (file creation time) is not guaranteed on all filesystems; on Linux ext4 it may fall back to ctime. This is acceptable per clarification but worth noting in code comments.",
+        "If the configured backup directory contains non-backup .jsonl files, the 'most recent by birthtime' heuristic may select the wrong file — consider filtering by a known filename prefix/pattern matching backup_export output."
+      ],
+      "aiError": null,
+      "clarificationHistory": [
+        {
+          "questions": [
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "How should 'most recent backup file' be determined when multiple backup files exist in the directory? By file modification time, creation time, or by filename pattern/timestamp?",
+              "reason": "The selection logic directly affects which file gets verified and could silently verify the wrong backup if disambiguation logic differs from expectations.",
+              "suggestions": [
+                "Most recently modified (mtime)",
+                "Most recently created (ctime)",
+                "Latest timestamp in filename pattern (e.g., backup_YYYYMMDD_HHMMSS.jsonl)"
+              ],
+              "priority": "high"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "What file extensions and naming patterns should the tool recognize for backup files? Are backups always uncompressed JSONL, or could they be .jsonl.gz, .tar.gz, or other formats?",
+              "reason": "File discovery and checksum computation method depend on this. If files are compressed, the hash must be computed on the compressed or decompressed version consistently with how the sidecar was generated.",
+              "suggestions": [
+                "Only *.jsonl (uncompressed)",
+                "*.jsonl or *.jsonl.gz (gzip-compressed)",
+                "Configurable pattern"
+              ],
+              "priority": "high"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "What is the expected format of the .sha256 sidecar file? Is it the standard sha256sum format ('HASH FILENAME'), just the hash, or something else? How should malformed sidecars be handled?",
+              "reason": "Parsing logic and error handling directly depend on this format. Invalid parsing could cause silent failures or unexpected exceptions.",
+              "suggestions": [
+                "Standard sha256sum format: 'abc123def... backup.jsonl'",
+                "Hash-only: 'abc123def...'",
+                "JSON: '{\"hash\": \"abc123def...\", \"filename\": \"...\"}'",
+                "Throw on malformed sidecar, or return verified: false"
+              ],
+              "priority": "high"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "If the backup file is compressed (e.g., .gz), should the SHA-256 checksum be computed on the compressed file or the decompressed content?",
+              "reason": "This must match how the original sidecar was generated. Computing on the wrong version will cause all verifications to fail or false-pass, defeating the corruption detection goal.",
+              "suggestions": [
+                "Always on the file as-stored (compressed if applicable)",
+                "Always on decompressed content",
+                "Determined by the .sha256 sidecar metadata (if format supports it)"
+              ],
+              "priority": "high"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "What should happen if a backup file exists but its corresponding .sha256 sidecar does not? Should the tool throw, return verified: false, or compute/return the hash anyway?",
+              "reason": "AC#6 specifies throwing only when no backup file exists. This is a different failure mode (backup exists but no sidecar) and needs explicit handling to avoid unexpected behavior.",
+              "suggestions": [
+                "Throw (treat missing sidecar as unrecoverable state)",
+                "Return verified: false with expected_hash: null",
+                "Compute hash and return it anyway (allows verification if caller has external source of truth)"
+              ],
+              "priority": "high"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "When backup_path is specified as a parameter, should the tool verify that specific file only, verify it and still search for the 'most recent' as fallback, or ignore the configured directory entirely?",
+              "reason": "This changes the API contract and behavior. If both backup_path and 'configured directory' can be provided, their precedence and interaction need to be clear.",
+              "suggestions": [
+                "If backup_path provided, verify only that file; ignore configured directory",
+                "If backup_path provided, verify it; if not provided, use configured directory",
+                "backup_path always filters within configured directory for security"
+              ],
+              "priority": "high"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "How should 'row_count' be computed for a JSONL file? Count lines, count valid JSON objects, or count something else? Should malformed/invalid lines cause an error or be silently skipped?",
+              "reason": "Affects return value accuracy and error handling. If a file is partially corrupted, should verification succeed (hash matches) but report suspicious row_count, or should it throw?",
+              "suggestions": [
+                "Count all non-empty lines",
+                "Count valid JSON objects only, throw if any invalid",
+                "Count valid JSON objects only, skip invalid lines silently",
+                "Count newlines as proxy for rows, don't parse JSON"
+              ],
+              "priority": "medium"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "Should 'file_size_kb' refer to the backup file as stored (potentially compressed), or always the decompressed size? If compressed, should it be 1024-byte KB or 1000-byte KB?",
+              "reason": "Affects the accuracy and usefulness of the returned metrics. Users may use file_size_kb to validate storage capacity or detect anomalies.",
+              "suggestions": [
+                "Size of file as-stored (compressed if applicable), 1024-byte KB",
+                "Decompressed size, 1024-byte KB",
+                "File size in bytes, let caller decide units"
+              ],
+              "priority": "medium"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "How should 'backup_age_hours' be calculated? Based on file mtime, creation time, or last access? Should it be rounded, truncated, or returned as a float?",
+              "reason": "Affects return value precision and interpretation. A difference between floor(1.9) and ceil(1.9) could matter for alert thresholds.",
+              "suggestions": [
+                "Hours elapsed from file mtime to current time, rounded down (floor)",
+                "Hours elapsed from file mtime to current time, rounded to nearest",
+                "Hours elapsed from file mtime to current time, as float"
+              ],
+              "priority": "medium"
+            },
+            {
+              "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+              "question": "If the backup file exists and the checksum matches, but row_count or file_size_kb cannot be computed due to an error, should the tool return verified: true with those fields null/omitted, or should it return verified: false or throw?",
+              "reason": "Affects robustness and caller expectations. A checksum match suggests the file is intact, but missing metadata could indicate a secondary corruption or access issue.",
+              "suggestions": [
+                "Return verified: true with missing fields null or omitted",
+                "Return verified: false if any supplementary data cannot be computed",
+                "Throw on any computation failure"
+              ],
+              "priority": "medium"
+            }
+          ],
+          "answers": [
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "How should 'most recent backup file' be determined when multiple backup files exist in the directory? By file modification time, creation time, or by filename pattern/timestamp?",
+                "reason": "The selection logic directly affects which file gets verified and could silently verify the wrong backup if disambiguation logic differs from expectations.",
+                "suggestions": [
+                  "Most recently modified (mtime)",
+                  "Most recently created (ctime)",
+                  "Latest timestamp in filename pattern (e.g., backup_YYYYMMDD_HHMMSS.jsonl)"
+                ],
+                "priority": "high"
+              },
+              "answer": "By file modification time, creation time, or by filename pattern/timestamp"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "What file extensions and naming patterns should the tool recognize for backup files? Are backups always uncompressed JSONL, or could they be .jsonl.gz, .tar.gz, or other formats?",
+                "reason": "File discovery and checksum computation method depend on this. If files are compressed, the hash must be computed on the compressed or decompressed version consistently with how the sidecar was generated.",
+                "suggestions": [
+                  "Only *.jsonl (uncompressed)",
+                  "*.jsonl or *.jsonl.gz (gzip-compressed)",
+                  "Configurable pattern"
+                ],
+                "priority": "high"
+              },
+              "answer": "I don't know, pick the most appropriate answer"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "What is the expected format of the .sha256 sidecar file? Is it the standard sha256sum format ('HASH FILENAME'), just the hash, or something else? How should malformed sidecars be handled?",
+                "reason": "Parsing logic and error handling directly depend on this format. Invalid parsing could cause silent failures or unexpected exceptions.",
+                "suggestions": [
+                  "Standard sha256sum format: 'abc123def... backup.jsonl'",
+                  "Hash-only: 'abc123def...'",
+                  "JSON: '{\"hash\": \"abc123def...\", \"filename\": \"...\"}'",
+                  "Throw on malformed sidecar, or return verified: false"
+                ],
+                "priority": "high"
+              },
+              "answer": "I don't know, pick the most appropriate answer"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "If the backup file is compressed (e.g., .gz), should the SHA-256 checksum be computed on the compressed file or the decompressed content?",
+                "reason": "This must match how the original sidecar was generated. Computing on the wrong version will cause all verifications to fail or false-pass, defeating the corruption detection goal.",
+                "suggestions": [
+                  "Always on the file as-stored (compressed if applicable)",
+                  "Always on decompressed content",
+                  "Determined by the .sha256 sidecar metadata (if format supports it)"
+                ],
+                "priority": "high"
+              },
+              "answer": "I don't know, pick the most appropriate answer"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "What should happen if a backup file exists but its corresponding .sha256 sidecar does not? Should the tool throw, return verified: false, or compute/return the hash anyway?",
+                "reason": "AC#6 specifies throwing only when no backup file exists. This is a different failure mode (backup exists but no sidecar) and needs explicit handling to avoid unexpected behavior.",
+                "suggestions": [
+                  "Throw (treat missing sidecar as unrecoverable state)",
+                  "Return verified: false with expected_hash: null",
+                  "Compute hash and return it anyway (allows verification if caller has external source of truth)"
+                ],
+                "priority": "high"
+              },
+              "answer": "I don't know, pick the most appropriate answer"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "When backup_path is specified as a parameter, should the tool verify that specific file only, verify it and still search for the 'most recent' as fallback, or ignore the configured directory entirely?",
+                "reason": "This changes the API contract and behavior. If both backup_path and 'configured directory' can be provided, their precedence and interaction need to be clear.",
+                "suggestions": [
+                  "If backup_path provided, verify only that file; ignore configured directory",
+                  "If backup_path provided, verify it; if not provided, use configured directory",
+                  "backup_path always filters within configured directory for security"
+                ],
+                "priority": "high"
+              },
+              "answer": "ignore the configured directory entirely"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "How should 'row_count' be computed for a JSONL file? Count lines, count valid JSON objects, or count something else? Should malformed/invalid lines cause an error or be silently skipped?",
+                "reason": "Affects return value accuracy and error handling. If a file is partially corrupted, should verification succeed (hash matches) but report suspicious row_count, or should it throw?",
+                "suggestions": [
+                  "Count all non-empty lines",
+                  "Count valid JSON objects only, throw if any invalid",
+                  "Count valid JSON objects only, skip invalid lines silently",
+                  "Count newlines as proxy for rows, don't parse JSON"
+                ],
+                "priority": "medium"
+              },
+              "answer": "count valid JSON objects"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "Should 'file_size_kb' refer to the backup file as stored (potentially compressed), or always the decompressed size? If compressed, should it be 1024-byte KB or 1000-byte KB?",
+                "reason": "Affects the accuracy and usefulness of the returned metrics. Users may use file_size_kb to validate storage capacity or detect anomalies.",
+                "suggestions": [
+                  "Size of file as-stored (compressed if applicable), 1024-byte KB",
+                  "Decompressed size, 1024-byte KB",
+                  "File size in bytes, let caller decide units"
+                ],
+                "priority": "medium"
+              },
+              "answer": "1024-byte KB"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "How should 'backup_age_hours' be calculated? Based on file mtime, creation time, or last access? Should it be rounded, truncated, or returned as a float?",
+                "reason": "Affects return value precision and interpretation. A difference between floor(1.9) and ceil(1.9) could matter for alert thresholds.",
+                "suggestions": [
+                  "Hours elapsed from file mtime to current time, rounded down (floor)",
+                  "Hours elapsed from file mtime to current time, rounded to nearest",
+                  "Hours elapsed from file mtime to current time, as float"
+                ],
+                "priority": "medium"
+              },
+              "answer": "file creation time"
+            },
+            {
+              "question": {
+                "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+                "question": "If the backup file exists and the checksum matches, but row_count or file_size_kb cannot be computed due to an error, should the tool return verified: true with those fields null/omitted, or should it return verified: false or throw?",
+                "reason": "Affects robustness and caller expectations. A checksum match suggests the file is intact, but missing metadata could indicate a secondary corruption or access issue.",
+                "suggestions": [
+                  "Return verified: true with missing fields null or omitted",
+                  "Return verified: false if any supplementary data cannot be computed",
+                  "Throw on any computation failure"
+                ],
+                "priority": "medium"
+              },
+              "answer": "As long as the file is intact, it's fine."
+            }
+          ],
+          "feedback": null
+        }
+      ],
+      "createdAt": "2026-03-30T16:08:49.872Z",
+      "updatedAt": "2026-03-30T16:08:49.872Z"
+    },
+    "sprintId": "mnddied0j3rtb8sgo"
+  },
+  "crePlanId": null,
+  "implementationOrder": [
+    "df040a25-3199-49ea-bd66-3cd3492df62d"
+  ],
+  "branchAssignments": {
+    "df040a25-3199-49ea-bd66-3cd3492df62d": "fullstack"
+  },
+  "risMap": {
+    "df040a25-3199-49ea-bd66-3cd3492df62d": {
+      "id": "48dfe047-3179-458e-963d-b12540ae6626",
+      "markdown": "## Context\n\n- **Branch:** unknown\n- **Dependencies:** none\n- **Code Model Version:** 1.0.0\n\n## Objective\n\nImplement \"backup_verify Tool\": As COSA, I want to verify the most recent backup's checksum so that I can detect corruption before it becomes an unrecoverable data loss.\n\n## Instructions\n\n1. Implement according to acceptance criteria\n\n## Conventions\n\n- Follow camelCase naming\n- Use JSDoc for public interfaces\n- Follow existing patterns in the codebase",
+      "status": "generated",
+      "prompt": {
+        "system": "You are generating a Refined Implementation Specification (RIS) document. The RIS is the SOLE instruction document given to a coding agent (Claude Code CLI) to implement a user story. The coding agent has NO other context — it relies entirely on the RIS for what to build, how to build it, and how to verify it.\n\nYour RIS must be a complete, detailed, unambiguous implementation guide. Think of it as a senior developer writing step-by-step instructions for a capable but context-less implementor. Every file, every function, every data flow must be spelled out.\n",
+        "task": "Generate a detailed RIS document for the following story and plan item.\n\n--- BEGIN STORY ---\nTitle: backup_verify Tool [df040a25-3199-49ea-bd66-3cd3492df62d]\nDescription: As COSA, I want to verify the most recent backup's checksum so that I can detect corruption before it becomes an unrecoverable data loss.\nAcceptance Criteria:\n  1. Reads the most recent backup file from the configured directory if backup_path is not specified\n  2. Re-computes the SHA-256 checksum of the JSONL file\n  3. Compares against the expected hash from the .sha256 sidecar\n  4. Returns verified, backup_path, expected_hash, actual_hash, row_count, file_size_kb, backup_age_hours\n  5. Returns verified: false (not a throw) when checksums do not match\n  6. Throws if no backup file is found at all\n  7. Risk level is 'read'\n--- END STORY ---\n\n--- BEGIN PLAN ITEM ---\nOrder: 0\nApproach: \nFiles to create: none\nFiles to modify: none\nDependencies: none\n--- END PLAN ITEM ---\n\nPROJECT CONFIG:\nBranch: unknown\nCoding style: camelCase/JSDoc",
+        "constraints": "OUTPUT FORMAT — respond with ONLY a valid JSON object:\n{\n  \"markdown\": \"<the full RIS markdown document>\",\n  \"sections\": {\n    \"context\": \"<context section content>\",\n    \"objective\": \"<objective section content>\",\n    \"navigation\": \"<codebase navigation tool guidance>\",\n    \"instructions\": \"<instructions section content>\",\n    \"conventions\": \"<conventions section content>\"\n  }\n}\n\nRIS MARKDOWN STRUCTURE:\nThe \"markdown\" field must contain ALL of these sections, in order:\n\n## Context\n- Branch: <branch name>\n- Dependencies: <list of story dependencies that must be completed first>\n- Code model version / relevant existing files\n\n## Objective\nA clear, 2-3 sentence statement of what this implementation achieves and why it matters. Reference the user story title and key acceptance criteria.\n\n## Acceptance Criteria\nReproduce ALL acceptance criteria from the user story verbatim as a numbered list. The coding agent needs these to verify completeness.\n\n## Codebase Navigation\nINCLUDE THIS SECTION to tell the implementing agent how to use Code Model tools:\n- Before creating new files, run `hdsl_search` with relevant keywords to find existing patterns\n- Before modifying shared modules, run `hdsl_impact` to understand ripple effects\n- When integrating with existing code, run `hdsl_peek` to understand module interfaces\n- Prefer Code Model queries (hdsl_*) over Grep/Glob for faster, more accurate navigation\n\nInclude specific tool invocations relevant to this story, e.g.:\n- \"Run hdsl_search pattern='authentication' to see how auth is handled elsewhere\"\n- \"Run hdsl_deps path='src/main/plugin-manager.js' before modifying plugin registration\"\n\n## Implementation Instructions\nThis is the MOST IMPORTANT section. Provide exhaustive, step-by-step instructions:\n\nFor EACH file to create or modify:\n1. **File path** — exact path relative to project root\n2. **Purpose** — what this file does and why\n3. **Exports / public API** — function signatures, class methods, parameters and return types\n4. **Internal logic** — describe the algorithm, data flow, error handling. Be specific about:\n   - What functions to implement and what they do\n   - What parameters they accept and what they return\n   - How they interact with other modules (imports, calls, events)\n   - Edge cases and error conditions to handle\n5. **Integration** — how this file connects to existing code (imports, registrations, event wiring)\n\nFor modifications to existing files, specify:\n- Exactly what to add, change, or remove\n- Where in the file the changes go (after which function, in which section)\n\nInclude data structures, state shapes, and IPC contracts where relevant.\n\n## Conventions\n- Naming conventions, coding patterns to follow\n- Reference existing patterns in the codebase that should be matched\n- Testing expectations (if any)\n\nQUALITY RULES:\n- Be DETAILED and SPECIFIC — the coding agent cannot ask follow-up questions\n- Include ALL acceptance criteria — do not summarize or skip any\n- Reference exact file paths, function names, class names, and module exports\n- Describe data structures with field names and types\n- Include error handling requirements\n- Keep total markdown under 12000 characters\n- Do NOT use markdown code blocks in the JSON — output raw JSON only"
+      }
+    }
+  },
+  "planApprovedAt": 1774887187495,
+  "implementationMode": "automated",
+  "implementationModeSelectedAt": 1774887192643,
+  "orchestration": {
+    "status": "running",
+    "currentStoryId": null,
+    "completedStories": [
+      "df040a25-3199-49ea-bd66-3cd3492df62d"
+    ],
+    "storyOrder": [
+      "df040a25-3199-49ea-bd66-3cd3492df62d"
+    ],
+    "incidents": [],
+    "phase": "implementation",
+    "startedAt": 1774887194471,
+    "currentStoryStartedAt": null,
+    "storySessions": {
+      "df040a25-3199-49ea-bd66-3cd3492df62d": {
+        "status": "completed",
+        "startedAt": 1774887195144,
+        "completedAt": 1774887423400,
+        "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+        "completionSummary": {
+          "summary": "Completed normally",
+          "testStatus": "unknown",
+          "criteriaStatus": [],
+          "filesModified": [],
+          "turns": 15,
+          "cost": 1.3004702999999997,
+          "duration": 213278
+        }
+      }
+    },
+    "introspectionCompleted": [
+      "df040a25-3199-49ea-bd66-3cd3492df62d"
+    ]
+  },
+  "automationStartedAt": 1774887194471,
+  "completedAt": 1774887423400
+}

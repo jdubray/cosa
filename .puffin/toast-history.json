@@ -868,6 +868,111 @@
       "message": "Code review started on Code Reviews branch",
       "type": "info",
       "source": "app"
+    },
+    {
+      "id": "toast-1774886359899-t2n22kz",
+      "timestamp": 1774886359899,
+      "message": "Branch \"backupverify-tool\" created and checked out",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774886363499-zqvfl4j",
+      "timestamp": 1774886363499,
+      "message": "CRE Planning Failed: Claude CLI process is busy. Wait for the current operation to complete.",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774886363575-16eg0uk",
+      "timestamp": 1774886363575,
+      "message": "Sprint Error: Claude CLI process is busy. Wait for the current operation to complete.",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774886850555-vx2gn43",
+      "timestamp": 1774886850555,
+      "message": "CRE: Generating plan with your answers...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887187533-5ul4kms",
+      "timestamp": 1774887187533,
+      "message": "CRE: Plan approved, RIS generated, and assertions ready",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887195147-s25y73r",
+      "timestamp": 1774887195147,
+      "message": "Implementing: backup_verify Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887425723-8vnjlzl",
+      "timestamp": 1774887425723,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887425934-dvkg5ie",
+      "timestamp": 1774887425934,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887426901-coam6o0",
+      "timestamp": 1774887426901,
+      "message": "All stories completed! Starting code review...",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887558988-i5ky3qz",
+      "timestamp": 1774887558988,
+      "message": "Code review complete: 4 findings. Starting bug fixes...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887561033-ll3jk4f",
+      "timestamp": 1774887561033,
+      "message": "Fixing: No timeout on sshBackend.exec(). backup_run.js imp...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887717559-ka3ci5q",
+      "timestamp": 1774887717559,
+      "message": "Fixing: The backup_path input is accepted from the model w...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887774368-z9mvga7",
+      "timestamp": 1774887774368,
+      "message": "Fixing: backup_age_hours calculation is not tested for cor...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887809557-ym4278i",
+      "timestamp": 1774887809557,
+      "message": "Fixing: No test for the case where backup_path override co...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774887862519-2u3to5i",
+      "timestamp": 1774887862519,
+      "message": "Orchestration complete! Fixed 4/4 issues.",
+      "type": "success",
+      "source": "app"
     }
   ]
 }

@@ -1,0 +1,312 @@
+{
+  "id": "9280a31a-2f9a-49b2-a931-3b4770ec84b0",
+  "sprintId": "mnddied0j3rtb8sgo",
+  "status": "approved",
+  "iteration": 1,
+  "stories": [
+    {
+      "id": "df040a25-3199-49ea-bd66-3cd3492df62d",
+      "title": "backup_verify Tool"
+    }
+  ],
+  "planItems": [
+    {
+      "order": 1,
+      "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+      "title": "backup_verify Tool",
+      "approach": "Implement a backup_verify tool following the existing tool pattern (export a handler function + schema). The tool: (1) resolves the most recent .jsonl backup file from the configured backup directory by file creation time if backup_path is not provided, (2) reads the paired .sha256 sidecar file to get the expected hash, (3) streams the .jsonl file to compute its SHA-256 using Node's built-in crypto module, (4) counts valid JSON objects (lines) during the same streaming pass, (5) computes file_size_kb using stat.size / 1024, (6) computes backup_age_hours from stat.birthtime to now, (7) returns the full result object with verified: false on mismatch rather than throwing, and throws only when no backup file is found. Register the tool in registry.js with risk level 'read'.",
+      "filesCreated": [
+        "src/main/tools/backup_verify.js",
+        "src/main/tools/backup_verify.test.js"
+      ],
+      "filesModified": [
+        "src/main/tools/registry.js"
+      ],
+      "dependencies": [],
+      "complexity": "medium",
+      "notes": "Use fs.readdirSync + statSync birthtime to find the most recent .jsonl file in the backup directory (filter by .jsonl extension, sort descending by birthtime, take first). Read the sidecar as backup_path + '.sha256' or a co-located <stem>.sha256 file — match the convention used in backup_export.js. Stream the file through crypto.createHash('sha256') to avoid loading large files into memory; count newlines that parse as valid JSON during the same pass for row_count. file_size_kb = Math.round(stat.size / 1024 * 100) / 100 (two decimals). backup_age_hours = (Date.now() - stat.birthtimeMs) / 3600000. If backup_path is explicitly provided, skip directory scan entirely (ignore configured directory per clarification). Throw an Error with a clear message if no .jsonl file exists in the directory or if the specified backup_path does not exist."
+    }
+  ],
+  "sharedComponents": [
+    {
+      "path": "src/main/tools/registry.js",
+      "purpose": "Central tool registry — backup_verify must be registered here with risk:'read' so the IPC layer and tool dispatcher can discover it",
+      "usedBy": [
+        "df040a25-3199-49ea-bd66-3cd3492df62d"
+      ]
+    }
+  ],
+  "risks": [
+    "The .sha256 sidecar naming convention must match exactly what backup_export.js writes — read backup_export.js before implementing to confirm the sidecar filename format (e.g. <name>.jsonl.sha256 vs <name>.sha256).",
+    "Streaming hash computation and line counting in a single pass requires careful handling of partial lines at chunk boundaries — use readline or split on newlines post-chunk to avoid miscounting rows.",
+    "birthtime (file creation time) is not guaranteed on all filesystems; on Linux ext4 it may fall back to ctime. This is acceptable per clarification but worth noting in code comments.",
+    "If the configured backup directory contains non-backup .jsonl files, the 'most recent by birthtime' heuristic may select the wrong file — consider filtering by a known filename prefix/pattern matching backup_export output."
+  ],
+  "aiError": null,
+  "clarificationHistory": [
+    {
+      "questions": [
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "How should 'most recent backup file' be determined when multiple backup files exist in the directory? By file modification time, creation time, or by filename pattern/timestamp?",
+          "reason": "The selection logic directly affects which file gets verified and could silently verify the wrong backup if disambiguation logic differs from expectations.",
+          "suggestions": [
+            "Most recently modified (mtime)",
+            "Most recently created (ctime)",
+            "Latest timestamp in filename pattern (e.g., backup_YYYYMMDD_HHMMSS.jsonl)"
+          ],
+          "priority": "high"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "What file extensions and naming patterns should the tool recognize for backup files? Are backups always uncompressed JSONL, or could they be .jsonl.gz, .tar.gz, or other formats?",
+          "reason": "File discovery and checksum computation method depend on this. If files are compressed, the hash must be computed on the compressed or decompressed version consistently with how the sidecar was generated.",
+          "suggestions": [
+            "Only *.jsonl (uncompressed)",
+            "*.jsonl or *.jsonl.gz (gzip-compressed)",
+            "Configurable pattern"
+          ],
+          "priority": "high"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "What is the expected format of the .sha256 sidecar file? Is it the standard sha256sum format ('HASH FILENAME'), just the hash, or something else? How should malformed sidecars be handled?",
+          "reason": "Parsing logic and error handling directly depend on this format. Invalid parsing could cause silent failures or unexpected exceptions.",
+          "suggestions": [
+            "Standard sha256sum format: 'abc123def... backup.jsonl'",
+            "Hash-only: 'abc123def...'",
+            "JSON: '{\"hash\": \"abc123def...\", \"filename\": \"...\"}'",
+            "Throw on malformed sidecar, or return verified: false"
+          ],
+          "priority": "high"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "If the backup file is compressed (e.g., .gz), should the SHA-256 checksum be computed on the compressed file or the decompressed content?",
+          "reason": "This must match how the original sidecar was generated. Computing on the wrong version will cause all verifications to fail or false-pass, defeating the corruption detection goal.",
+          "suggestions": [
+            "Always on the file as-stored (compressed if applicable)",
+            "Always on decompressed content",
+            "Determined by the .sha256 sidecar metadata (if format supports it)"
+          ],
+          "priority": "high"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "What should happen if a backup file exists but its corresponding .sha256 sidecar does not? Should the tool throw, return verified: false, or compute/return the hash anyway?",
+          "reason": "AC#6 specifies throwing only when no backup file exists. This is a different failure mode (backup exists but no sidecar) and needs explicit handling to avoid unexpected behavior.",
+          "suggestions": [
+            "Throw (treat missing sidecar as unrecoverable state)",
+            "Return verified: false with expected_hash: null",
+            "Compute hash and return it anyway (allows verification if caller has external source of truth)"
+          ],
+          "priority": "high"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "When backup_path is specified as a parameter, should the tool verify that specific file only, verify it and still search for the 'most recent' as fallback, or ignore the configured directory entirely?",
+          "reason": "This changes the API contract and behavior. If both backup_path and 'configured directory' can be provided, their precedence and interaction need to be clear.",
+          "suggestions": [
+            "If backup_path provided, verify only that file; ignore configured directory",
+            "If backup_path provided, verify it; if not provided, use configured directory",
+            "backup_path always filters within configured directory for security"
+          ],
+          "priority": "high"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "How should 'row_count' be computed for a JSONL file? Count lines, count valid JSON objects, or count something else? Should malformed/invalid lines cause an error or be silently skipped?",
+          "reason": "Affects return value accuracy and error handling. If a file is partially corrupted, should verification succeed (hash matches) but report suspicious row_count, or should it throw?",
+          "suggestions": [
+            "Count all non-empty lines",
+            "Count valid JSON objects only, throw if any invalid",
+            "Count valid JSON objects only, skip invalid lines silently",
+            "Count newlines as proxy for rows, don't parse JSON"
+          ],
+          "priority": "medium"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "Should 'file_size_kb' refer to the backup file as stored (potentially compressed), or always the decompressed size? If compressed, should it be 1024-byte KB or 1000-byte KB?",
+          "reason": "Affects the accuracy and usefulness of the returned metrics. Users may use file_size_kb to validate storage capacity or detect anomalies.",
+          "suggestions": [
+            "Size of file as-stored (compressed if applicable), 1024-byte KB",
+            "Decompressed size, 1024-byte KB",
+            "File size in bytes, let caller decide units"
+          ],
+          "priority": "medium"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "How should 'backup_age_hours' be calculated? Based on file mtime, creation time, or last access? Should it be rounded, truncated, or returned as a float?",
+          "reason": "Affects return value precision and interpretation. A difference between floor(1.9) and ceil(1.9) could matter for alert thresholds.",
+          "suggestions": [
+            "Hours elapsed from file mtime to current time, rounded down (floor)",
+            "Hours elapsed from file mtime to current time, rounded to nearest",
+            "Hours elapsed from file mtime to current time, as float"
+          ],
+          "priority": "medium"
+        },
+        {
+          "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+          "question": "If the backup file exists and the checksum matches, but row_count or file_size_kb cannot be computed due to an error, should the tool return verified: true with those fields null/omitted, or should it return verified: false or throw?",
+          "reason": "Affects robustness and caller expectations. A checksum match suggests the file is intact, but missing metadata could indicate a secondary corruption or access issue.",
+          "suggestions": [
+            "Return verified: true with missing fields null or omitted",
+            "Return verified: false if any supplementary data cannot be computed",
+            "Throw on any computation failure"
+          ],
+          "priority": "medium"
+        }
+      ],
+      "answers": [
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "How should 'most recent backup file' be determined when multiple backup files exist in the directory? By file modification time, creation time, or by filename pattern/timestamp?",
+            "reason": "The selection logic directly affects which file gets verified and could silently verify the wrong backup if disambiguation logic differs from expectations.",
+            "suggestions": [
+              "Most recently modified (mtime)",
+              "Most recently created (ctime)",
+              "Latest timestamp in filename pattern (e.g., backup_YYYYMMDD_HHMMSS.jsonl)"
+            ],
+            "priority": "high"
+          },
+          "answer": "By file modification time, creation time, or by filename pattern/timestamp"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "What file extensions and naming patterns should the tool recognize for backup files? Are backups always uncompressed JSONL, or could they be .jsonl.gz, .tar.gz, or other formats?",
+            "reason": "File discovery and checksum computation method depend on this. If files are compressed, the hash must be computed on the compressed or decompressed version consistently with how the sidecar was generated.",
+            "suggestions": [
+              "Only *.jsonl (uncompressed)",
+              "*.jsonl or *.jsonl.gz (gzip-compressed)",
+              "Configurable pattern"
+            ],
+            "priority": "high"
+          },
+          "answer": "I don't know, pick the most appropriate answer"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "What is the expected format of the .sha256 sidecar file? Is it the standard sha256sum format ('HASH FILENAME'), just the hash, or something else? How should malformed sidecars be handled?",
+            "reason": "Parsing logic and error handling directly depend on this format. Invalid parsing could cause silent failures or unexpected exceptions.",
+            "suggestions": [
+              "Standard sha256sum format: 'abc123def... backup.jsonl'",
+              "Hash-only: 'abc123def...'",
+              "JSON: '{\"hash\": \"abc123def...\", \"filename\": \"...\"}'",
+              "Throw on malformed sidecar, or return verified: false"
+            ],
+            "priority": "high"
+          },
+          "answer": "I don't know, pick the most appropriate answer"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "If the backup file is compressed (e.g., .gz), should the SHA-256 checksum be computed on the compressed file or the decompressed content?",
+            "reason": "This must match how the original sidecar was generated. Computing on the wrong version will cause all verifications to fail or false-pass, defeating the corruption detection goal.",
+            "suggestions": [
+              "Always on the file as-stored (compressed if applicable)",
+              "Always on decompressed content",
+              "Determined by the .sha256 sidecar metadata (if format supports it)"
+            ],
+            "priority": "high"
+          },
+          "answer": "I don't know, pick the most appropriate answer"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "What should happen if a backup file exists but its corresponding .sha256 sidecar does not? Should the tool throw, return verified: false, or compute/return the hash anyway?",
+            "reason": "AC#6 specifies throwing only when no backup file exists. This is a different failure mode (backup exists but no sidecar) and needs explicit handling to avoid unexpected behavior.",
+            "suggestions": [
+              "Throw (treat missing sidecar as unrecoverable state)",
+              "Return verified: false with expected_hash: null",
+              "Compute hash and return it anyway (allows verification if caller has external source of truth)"
+            ],
+            "priority": "high"
+          },
+          "answer": "I don't know, pick the most appropriate answer"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "When backup_path is specified as a parameter, should the tool verify that specific file only, verify it and still search for the 'most recent' as fallback, or ignore the configured directory entirely?",
+            "reason": "This changes the API contract and behavior. If both backup_path and 'configured directory' can be provided, their precedence and interaction need to be clear.",
+            "suggestions": [
+              "If backup_path provided, verify only that file; ignore configured directory",
+              "If backup_path provided, verify it; if not provided, use configured directory",
+              "backup_path always filters within configured directory for security"
+            ],
+            "priority": "high"
+          },
+          "answer": "ignore the configured directory entirely"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "How should 'row_count' be computed for a JSONL file? Count lines, count valid JSON objects, or count something else? Should malformed/invalid lines cause an error or be silently skipped?",
+            "reason": "Affects return value accuracy and error handling. If a file is partially corrupted, should verification succeed (hash matches) but report suspicious row_count, or should it throw?",
+            "suggestions": [
+              "Count all non-empty lines",
+              "Count valid JSON objects only, throw if any invalid",
+              "Count valid JSON objects only, skip invalid lines silently",
+              "Count newlines as proxy for rows, don't parse JSON"
+            ],
+            "priority": "medium"
+          },
+          "answer": "count valid JSON objects"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "Should 'file_size_kb' refer to the backup file as stored (potentially compressed), or always the decompressed size? If compressed, should it be 1024-byte KB or 1000-byte KB?",
+            "reason": "Affects the accuracy and usefulness of the returned metrics. Users may use file_size_kb to validate storage capacity or detect anomalies.",
+            "suggestions": [
+              "Size of file as-stored (compressed if applicable), 1024-byte KB",
+              "Decompressed size, 1024-byte KB",
+              "File size in bytes, let caller decide units"
+            ],
+            "priority": "medium"
+          },
+          "answer": "1024-byte KB"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "How should 'backup_age_hours' be calculated? Based on file mtime, creation time, or last access? Should it be rounded, truncated, or returned as a float?",
+            "reason": "Affects return value precision and interpretation. A difference between floor(1.9) and ceil(1.9) could matter for alert thresholds.",
+            "suggestions": [
+              "Hours elapsed from file mtime to current time, rounded down (floor)",
+              "Hours elapsed from file mtime to current time, rounded to nearest",
+              "Hours elapsed from file mtime to current time, as float"
+            ],
+            "priority": "medium"
+          },
+          "answer": "file creation time"
+        },
+        {
+          "question": {
+            "storyId": "df040a25-3199-49ea-bd66-3cd3492df62d",
+            "question": "If the backup file exists and the checksum matches, but row_count or file_size_kb cannot be computed due to an error, should the tool return verified: true with those fields null/omitted, or should it return verified: false or throw?",
+            "reason": "Affects robustness and caller expectations. A checksum match suggests the file is intact, but missing metadata could indicate a secondary corruption or access issue.",
+            "suggestions": [
+              "Return verified: true with missing fields null or omitted",
+              "Return verified: false if any supplementary data cannot be computed",
+              "Throw on any computation failure"
+            ],
+            "priority": "medium"
+          },
+          "answer": "As long as the file is intact, it's fine."
+        }
+      ],
+      "feedback": null
+    }
+  ],
+  "createdAt": "2026-03-30T16:08:49.872Z",
+  "updatedAt": "2026-03-30T16:11:10.859Z",
+  "approvedAt": "2026-03-30T16:11:10.859Z"
+}
