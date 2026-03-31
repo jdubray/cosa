@@ -1,6 +1,5 @@
 'use strict';
 
-const path = require('path');
 const sshBackend = require('../ssh-backend');
 const { getConfig } = require('../../config/cosa.config');
 
@@ -85,7 +84,7 @@ function buildScript(backupDir, backupPathOverride) {
       ].join('\n');
 
   return [
-    'set -euo pipefail',
+    'set -uo pipefail',
     '',
     locateBlock,
     '',
@@ -183,29 +182,28 @@ async function handler({ backup_path: backupPathArg } = {}) {
   const timeoutMs = (appliance.tools?.backup_run?.timeout_s ?? 120) * 1000;
 
   // ── Validate backup_path when caller supplies one ─────────────────────────
-  // Normalise using POSIX rules (paths live on the remote Linux appliance).
-  // This resolves '..' segments and double slashes before any checks, so
-  // inputs like '/tmp/cosa-backups/../secret.jsonl' are caught by the
-  // prefix test rather than requiring a separate '..' scan.
-  const normalisedPath = backupPathArg != null
-    ? path.posix.normalize(backupPathArg)
-    : null;
-
-  if (normalisedPath != null) {
-    if (!normalisedPath.endsWith('.jsonl')) {
+  if (backupPathArg != null) {
+    if (!backupPathArg.endsWith('.jsonl')) {
       throw new Error(
         `backup_verify: backup_path must end with .jsonl (got: ${backupPathArg})`
       );
     }
-    const safeDir = path.posix.normalize(backupDir);
-    if (!normalisedPath.startsWith(safeDir + '/')) {
+    // Reject path-traversal segments before prefix-checking.
+    if (backupPathArg.includes('..')) {
+      throw new Error(
+        `backup_verify: backup_path must not contain '..' (got: ${backupPathArg})`
+      );
+    }
+    // Normalise away any trailing slash on backupDir before comparing.
+    const safeDir = backupDir.replace(/\/$/, '');
+    if (!backupPathArg.startsWith(safeDir + '/')) {
       throw new Error(
         `backup_verify: backup_path must be inside ${safeDir} (got: ${backupPathArg})`
       );
     }
   }
 
-  const script = buildScript(backupDir, normalisedPath);
+  const script = buildScript(backupDir, backupPathArg ?? null);
 
   // ── Execute via SSH ────────────────────────────────────────────────────────
   let execResult;
