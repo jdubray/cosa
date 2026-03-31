@@ -320,6 +320,7 @@ describe('backup_verify — backup_path validation', () => {
   });
 
   it('rejects a path that traverses above backup_dir', async () => {
+    // path.posix.normalize resolves the '..' before the prefix check fires.
     await expect(
       handler({ backup_path: '/tmp/cosa-backups/../secret.jsonl' })
     ).rejects.toThrow(/must be inside \/tmp\/cosa-backups/);
