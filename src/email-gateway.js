@@ -59,6 +59,25 @@ let _onNewSession = null;
 // ---------------------------------------------------------------------------
 
 /**
+ * Return true if the parsed email's Authentication-Results header indicates
+ * DKIM passed for the given domain.
+ *
+ * Gmail injects this header before delivering to IMAP:
+ *   "Authentication-Results: mx.google.com; dkim=pass header.d=gmail.com ..."
+ *
+ * A spoofed email routed through a third-party server will either lack the
+ * header or show dkim=fail/dkim=none. A legitimate Gmail send always passes.
+ *
+ * @param {import('mailparser').ParsedMail} parsed
+ * @param {string} domain - operator's email domain, e.g. "gmail.com"
+ * @returns {boolean}
+ */
+function _dkimPasses(parsed, domain) {
+  const authHeader = (parsed.headers.get('authentication-results') ?? '').toLowerCase();
+  return /dkim=pass/i.test(authHeader) && authHeader.includes(domain.toLowerCase());
+}
+
+/**
  * Build a new ImapFlow client using credentials from config.
  *
  * @returns {ImapFlow}
@@ -197,29 +216,44 @@ async function _runPoll() {
         continue;
       }
 
-      const fromAddr = (fetched.envelope?.from?.[0]?.address ?? '').toLowerCase();
-
       // Mark seen immediately — before dispatching — so that long-running
       // sessions (e.g. waiting for operator approval) don't cause the next
       // poll cycle to pick up the same message and spawn a duplicate session.
       await client.messageFlagsAdd(String(seq), ['\\Seen']);
 
+      // Parse full source to access both headers (DKIM) and body text.
+      const parsed  = await simpleParser(fetched.source ?? Buffer.alloc(0));
+      const fromAddr = (
+        parsed.from?.value?.[0]?.address ??
+        fetched.envelope?.from?.[0]?.address ?? ''
+      ).toLowerCase();
+
+      // Layer 1 — From-address allowlist (trivially spoofable but fast first gate)
       if (fromAddr !== operatorEmail) {
         log.warn(`Ignored message from non-operator: <${fromAddr}>`);
-      } else {
-        const parsed = await simpleParser(fetched.source ?? Buffer.alloc(0));
-        const body   = parsed.text?.trim() ?? '';
-        const msg = {
-          from:      fromAddr,
-          subject:   fetched.envelope?.subject  ?? '',
-          body,
-          messageId: fetched.envelope?.messageId ?? null,
-        };
-        log.info(`Email received — subject: "${msg.subject}", body length: ${body.length}`);
-        _dispatchMessage(msg).catch(err =>
-          log.error(`Session dispatch error: ${err.message}`)
-        );
+        continue;
       }
+
+      // Layer 2 — DKIM check
+      // Gmail injects Authentication-Results before IMAP delivery; a spoofed
+      // message routed through any other server will fail or lack this header.
+      const operatorDomain = operatorEmail.split('@')[1] ?? '';
+      if (operatorDomain && !_dkimPasses(parsed, operatorDomain)) {
+        log.warn(`Ignored message: DKIM check failed for <${fromAddr}> (possible spoofed email)`);
+        continue;
+      }
+
+      const body = parsed.text?.trim() ?? '';
+      const msg = {
+        from:      fromAddr,
+        subject:   fetched.envelope?.subject  ?? '',
+        body,
+        messageId: fetched.envelope?.messageId ?? null,
+      };
+      log.info(`Email received — subject: "${msg.subject}", body length: ${body.length}`);
+      _dispatchMessage(msg).catch(err =>
+        log.error(`Session dispatch error: ${err.message}`)
+      );
     }
   } finally {
     if (lock) lock.release();

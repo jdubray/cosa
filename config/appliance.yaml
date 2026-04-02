@@ -59,6 +59,20 @@ tools:
   post_session_hook:
     enabled: true
     min_tool_calls_for_skill: 3
+  cloudflare_kill:
+    enabled: true
+  network_scan:
+    enabled: true
+  webhook_hmac_verify:
+    enabled: true
+    endpoint: "/api/webhooks/pos/test-merchant"
+  compliance_verify:
+    enabled: true
+    sensitive_files:
+      - "/home/weather/.env"
+      - "/home/weather/merchant.db"
+  pci_assessment:
+    enabled: true
   settings_write:
     enabled: true
     allowed_keys:
@@ -67,6 +81,44 @@ tools:
       - timezone
       - station_notes
       - maintenance_mode
+  credential_audit:
+    enabled: true
+    repo_path: "/home/weather"
+  access_log_scan:
+    enabled: true
+    log_path: "/var/log/nginx/access.log"
+    lookback_minutes: 380
+  git_audit:
+    enabled: true
+    repo_path: "/home/weather"
+    lookback_hours: 8
+    expected_authors:
+      - "weather-station@local"
+
+network:
+  # MAC addresses of devices that are authorized on the local network.
+  # Each entry has a mac (colon-separated, lowercase) and an optional name.
+  known_mac_addresses:
+    - mac: "b8:27:eb:00:00:01"
+      name: "Baanbaan Pi"
+    - mac: "dc:a6:32:00:00:02"
+      name: "Router"
+
+monitoring:
+  # Processes expected to be running at all times on this appliance.
+  # Each entry is matched against the COMMAND column of `ps aux` output
+  # using substring containment (case-sensitive).
+  # Add any additional legitimate processes your appliance runs.
+  expected_processes:
+    - node
+    - sshd
+    - systemd
+    - bash
+    - ps
+  # Ports that are legitimately open on this appliance (numeric).
+  known_ports:
+    - 22    # sshd
+    - 3000  # appliance API
 
 security:
   dangerous_commands:

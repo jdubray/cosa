@@ -1,0 +1,725 @@
+{
+  "version": 1,
+  "lifecycles": [
+    {
+      "id": "9f27bc9a-d07b-4ca8-818e-c5e3ebb344bb",
+      "title": "external access is immediately cut off during a high or critical intrusion.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "3303ae77-29ff-4d74-9e94-8581c6ff36b1"
+      ],
+      "createdAt": "2026-04-01T02:39:33.416Z",
+      "updatedAt": "2026-04-01T02:39:33.422Z"
+    },
+    {
+      "id": "ac689d7e-a8d7-4853-87e8-d0e6d2cbd43c",
+      "title": "the appliance can be taken offline when a threat is inside the process itself.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "ea08b50d-084e-4c42-81b2-420682830797"
+      ],
+      "createdAt": "2026-04-01T02:39:33.424Z",
+      "updatedAt": "2026-04-01T02:39:33.429Z"
+    },
+    {
+      "id": "0f6f94ba-231c-4fc5-b865-e515dddea8d7",
+      "title": "intrusion detection, response, and recovery transitions are guarded and testable.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "7b32c3a5-b957-4222-9c0a-4d75a3861c52"
+      ],
+      "createdAt": "2026-04-01T02:39:33.430Z",
+      "updatedAt": "2026-04-01T02:39:33.434Z"
+    },
+    {
+      "id": "730b1dba-768d-4b36-80c7-2354ca35d8b6",
+      "title": "secret exposure is detected before it causes harm.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "7e6e7391-a604-4932-85ab-5eed623b024f"
+      ],
+      "createdAt": "2026-04-01T02:39:33.435Z",
+      "updatedAt": "2026-04-01T02:39:33.440Z"
+    },
+    {
+      "id": "8fd3e0c5-b21c-43f8-be2e-4520eaed3ce8",
+      "title": "SSH misconfigurations and exposed services are caught weekly.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "407c1a4a-b2da-4616-bb41-e7659de3a5d7"
+      ],
+      "createdAt": "2026-04-01T02:39:33.442Z",
+      "updatedAt": "2026-04-01T02:39:33.446Z"
+    },
+    {
+      "id": "250b50e4-6c68-450f-a7d6-80b447f07942",
+      "title": "compliance status is automatically verified and reported.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "471a23c5-7be5-4810-830e-97c9b6a03926"
+      ],
+      "createdAt": "2026-04-01T02:39:33.447Z",
+      "updatedAt": "2026-04-01T02:39:33.452Z"
+    },
+    {
+      "id": "a80e5fc3-8c39-4d44-b13c-59a80148aab8",
+      "title": "weak or stale secrets are caught before they become a vulnerability.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "2b5c43e9-0ff4-4559-a156-7af384470ebf"
+      ],
+      "createdAt": "2026-04-01T02:39:33.453Z",
+      "updatedAt": "2026-04-01T02:39:33.458Z"
+    },
+    {
+      "id": "33498731-4bdc-49e9-818c-7cf4892ad12a",
+      "title": "webhook spoofing is not possible.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "405af0b4-daf1-4c53-b1ad-7a30b942b7ef"
+      ],
+      "createdAt": "2026-04-01T02:39:33.459Z",
+      "updatedAt": "2026-04-01T02:39:33.463Z"
+    },
+    {
+      "id": "4cd2f0c5-b2ea-4d76-b0be-435d30e4f8c6",
+      "title": "stale credentials are replaced on schedule.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "c95067fc-3c98-4130-be9e-6d8b46e96af8"
+      ],
+      "createdAt": "2026-04-01T02:39:33.464Z",
+      "updatedAt": "2026-04-01T02:39:33.469Z"
+    },
+    {
+      "id": "a0485a30-c76f-4869-a308-f84322682072",
+      "title": "monitoring, auditing, and compliance checks run automatically.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "64962aad-d1c4-43cb-9485-558755912d26"
+      ],
+      "createdAt": "2026-04-01T02:39:33.470Z",
+      "updatedAt": "2026-04-01T02:39:33.475Z"
+    },
+    {
+      "id": "16f94542-fb16-46fc-adb8-cb3114cda2a3",
+      "title": "the operator has a regular consolidated view of the security posture.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "901efd47-b050-477e-94eb-5f6ba6f40ca8"
+      ],
+      "createdAt": "2026-04-01T02:39:33.476Z",
+      "updatedAt": "2026-04-01T02:39:33.484Z"
+    },
+    {
+      "id": "f296aa95-7468-46bd-be64-4eecd8f75c31",
+      "title": "the complete intrusion detection and response pipeline is verified before declaring Phase 3 complete.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "b95ada1d-4b2c-46af-a7fd-f2285366e48a"
+      ],
+      "createdAt": "2026-04-01T02:39:33.487Z",
+      "updatedAt": "2026-04-01T02:39:33.492Z"
+    },
+    {
+      "id": "558a7e8b-577e-43c2-8014-d6f99eac236a",
+      "title": "all secrets are protected at rest and never appear in logs or tool outputs.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "0bcb6bf7-dc06-4742-8a63-10c79835236b"
+      ],
+      "createdAt": "2026-04-01T02:39:33.494Z",
+      "updatedAt": "2026-04-01T02:39:33.498Z"
+    },
+    {
+      "id": "c4c0c22e-2bfc-4b4a-b538-10f286eca8a0",
+      "title": "credentials are never exposed to the LLM or logged.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "ccbb9395-26f5-4ab3-b59b-5ab9a2b6cb40"
+      ],
+      "createdAt": "2026-04-01T02:39:33.499Z",
+      "updatedAt": "2026-04-01T02:39:33.504Z"
+    },
+    {
+      "id": "7508306a-7e29-40bd-9365-b74584816428",
+      "title": "content-level threats are blocked before dangerous-cmd detection and approval.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "4a7dcd3b-2324-4de8-9482-c6559e37877f"
+      ],
+      "createdAt": "2026-04-01T02:39:33.506Z",
+      "updatedAt": "2026-04-01T02:39:33.510Z"
+    },
+    {
+      "id": "805b1f79-37cb-48f2-9a98-9e5a5387a015",
+      "title": "I can detect code tampering.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "de038e75-f441-4cbb-af1e-5e6010429321"
+      ],
+      "createdAt": "2026-04-01T02:39:33.511Z",
+      "updatedAt": "2026-04-01T02:39:33.515Z"
+    },
+    {
+      "id": "c8009d9b-330a-4eb4-8f7c-cda173f5e64d",
+      "title": "I can detect unauthorized software.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "32d46881-5c40-4205-88fd-a1c4a6bbdfba"
+      ],
+      "createdAt": "2026-04-01T02:39:33.516Z",
+      "updatedAt": "2026-04-01T02:39:33.521Z"
+    },
+    {
+      "id": "49741eac-2f5c-40fc-9861-93df57d4e241",
+      "title": "I can detect unauthorized devices.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "3b686c02-b17f-412c-9fab-5f02fadb3fce"
+      ],
+      "createdAt": "2026-04-01T02:39:33.522Z",
+      "updatedAt": "2026-04-01T02:39:33.526Z"
+    },
+    {
+      "id": "cc4acae1-e8dd-4971-afa6-05812575541a",
+      "title": "I can detect active intrusion attempts.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "ae8bdf40-8331-4e18-b84f-64c92c7f64b3"
+      ],
+      "createdAt": "2026-04-01T02:39:33.527Z",
+      "updatedAt": "2026-04-01T02:39:33.531Z"
+    },
+    {
+      "id": "a251a8a4-1437-4e83-88bf-3b101618dc02",
+      "title": "the escalation FSM receives consistent, LLM-free severity decisions.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "ff452331-3692-4bf4-bc3d-9d14cf3b673b"
+      ],
+      "createdAt": "2026-04-01T02:39:33.532Z",
+      "updatedAt": "2026-04-01T02:39:33.537Z"
+    },
+    {
+      "id": "a8658418-7c80-4660-9c61-bcf613e3cf88",
+      "title": "the operator can act on security events.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "in_progress",
+      "dependencies": [],
+      "storyMappings": [
+        "b5870a6f-dae5-4727-bf04-70fc6a137da6"
+      ],
+      "createdAt": "2026-04-01T02:39:33.538Z",
+      "updatedAt": "2026-04-01T02:39:33.542Z"
+    },
+    {
+      "id": "8e46c89f-26bf-4d2f-a73b-ec45cb64278f",
+      "title": "session_search returns up-to-date results without manual rebuilds.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "d4c4e3d7-6895-48c8-a9af-2d73e501b347"
+      ],
+      "createdAt": "2026-04-01T02:39:33.543Z",
+      "updatedAt": "2026-04-01T02:39:33.547Z"
+    },
+    {
+      "id": "18dae1f1-1d93-4a4a-8ab3-738dcd5c8629",
+      "title": "the skill library is available from the first run.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "7f455725-f02a-49ba-a4f4-4c1f006db860"
+      ],
+      "createdAt": "2026-04-01T02:39:33.548Z",
+      "updatedAt": "2026-04-01T02:39:33.553Z"
+    },
+    {
+      "id": "3ce15e9f-3113-4676-af37-acbc4b6ff8eb",
+      "title": "COSA has operational knowledge from day one.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "8c595301-573a-43f4-ab63-0686f330a423"
+      ],
+      "createdAt": "2026-04-01T02:39:33.554Z",
+      "updatedAt": "2026-04-01T02:39:33.558Z"
+    },
+    {
+      "id": "1633cf10-46be-4732-8fa0-bc44a02d098b",
+      "title": "COSA's persistent memory never grows unbounded.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "1311482a-07c8-4ce8-824c-2b3162980fba"
+      ],
+      "createdAt": "2026-04-01T02:39:33.559Z",
+      "updatedAt": "2026-04-01T02:39:33.564Z"
+    },
+    {
+      "id": "b31a2110-d9bc-433a-bfcd-b0c100020ac2",
+      "title": "Layers 0–4 cache on every session.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "ef487849-c15b-4fc7-8021-9812586e3024"
+      ],
+      "createdAt": "2026-04-01T02:39:33.565Z",
+      "updatedAt": "2026-04-01T02:39:33.571Z"
+    },
+    {
+      "id": "eae70438-97d3-497f-9d80-660e0c3f8661",
+      "title": "long sessions never exceed context limits.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "fe1d2400-87df-46be-8b59-dd3b8244318f"
+      ],
+      "createdAt": "2026-04-01T02:39:33.572Z",
+      "updatedAt": "2026-04-01T02:39:33.578Z"
+    },
+    {
+      "id": "29af162f-db32-4661-8f50-276c80afbdf3",
+      "title": "I can generate and send the daily shift report email.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "cc7fc2bf-4f94-461e-af89-6e77b64334b3"
+      ],
+      "createdAt": "2026-04-01T02:39:33.579Z",
+      "updatedAt": "2026-04-01T02:39:33.583Z"
+    },
+    {
+      "id": "00098a25-b14c-4dc0-944f-8d766b45698a",
+      "title": "I can recall prior incident resolutions when handling repeat issues.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "b40887f6-6aac-4d7a-b444-cdda2b20acb6"
+      ],
+      "createdAt": "2026-04-01T02:39:33.584Z",
+      "updatedAt": "2026-04-01T02:39:33.588Z"
+    },
+    {
+      "id": "09525708-a663-408f-81aa-14c273f0ea97",
+      "title": "data is preserved and can be verified afterward.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "6326e96e-513b-4e10-b7d5-2d63bba66459"
+      ],
+      "createdAt": "2026-04-01T02:39:33.589Z",
+      "updatedAt": "2026-04-01T02:39:33.592Z"
+    },
+    {
+      "id": "6e365669-0799-48e3-8c0c-7d61b70a8b25",
+      "title": "I can detect corruption before it becomes an unrecoverable data loss.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "df040a25-3199-49ea-bd66-3cd3492df62d"
+      ],
+      "createdAt": "2026-04-01T02:39:33.593Z",
+      "updatedAt": "2026-04-01T02:39:33.597Z"
+    },
+    {
+      "id": "02ff5b47-76ec-4cc1-af63-aeb3aea72203",
+      "title": "operator-requested configuration changes can be applied safely.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "1e778e8b-df23-40b1-ace6-01a589845500"
+      ],
+      "createdAt": "2026-04-01T02:39:33.598Z",
+      "updatedAt": "2026-04-01T02:39:33.602Z"
+    },
+    {
+      "id": "ec78d3e4-94f0-4e72-ac6f-9a39fba61e06",
+      "title": "the appliance can be restarted after configuration changes or when it becomes unresponsive.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "07b6a91e-177d-41dd-8b63-84d6203683b1"
+      ],
+      "createdAt": "2026-04-01T02:39:33.603Z",
+      "updatedAt": "2026-04-01T02:39:33.606Z"
+    },
+    {
+      "id": "f0367639-1a84-47c7-bda7-52861db9117d",
+      "title": "I can recall past incident resolutions and operator instructions when handling current issues.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "9f0238f0-f3d5-4839-ad39-a08d3a315b5b"
+      ],
+      "createdAt": "2026-04-01T02:39:33.607Z",
+      "updatedAt": "2026-04-01T02:39:33.611Z"
+    },
+    {
+      "id": "81617c83-c003-40ef-9d41-516506141890",
+      "title": "MEMORY.md is updated and novel incidents trigger skill creation.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "76fe6e30-996f-4548-bbeb-3de335462945"
+      ],
+      "createdAt": "2026-04-01T02:39:33.612Z",
+      "updatedAt": "2026-04-01T02:39:33.615Z"
+    },
+    {
+      "id": "bc5f8dd5-dc3d-4ae5-be79-66faae2acbc9",
+      "title": "long sessions are automatically compressed without losing context.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "fcd86b2e-967f-4cf9-922c-81450fbf63fb"
+      ],
+      "createdAt": "2026-04-01T02:39:33.616Z",
+      "updatedAt": "2026-04-01T02:39:33.620Z"
+    },
+    {
+      "id": "e375b2d9-2f79-48bb-b7b2-66376dbaed0f",
+      "title": "all state transitions are guarded and testable.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "867e2704-56d6-4138-8d48-8419c028f965"
+      ],
+      "createdAt": "2026-04-01T02:39:33.621Z",
+      "updatedAt": "2026-04-01T02:39:33.624Z"
+    },
+    {
+      "id": "42e50c24-f278-4a8e-a9be-8a85ad85978c",
+      "title": "the novel incident detection, search, generation, and persistence steps are guarded.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "089908dd-9b60-457b-b199-ad218e666b67"
+      ],
+      "createdAt": "2026-04-01T02:39:33.625Z",
+      "updatedAt": "2026-04-01T02:39:33.630Z"
+    },
+    {
+      "id": "a4634d61-5831-420a-bb28-3c7c2b276bc5",
+      "title": "backup, reporting, and digest automation run on schedule without operator intervention.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "38a89896-2250-4afa-a3d8-98a926c35ec6"
+      ],
+      "createdAt": "2026-04-01T02:39:33.631Z",
+      "updatedAt": "2026-04-01T02:39:33.635Z"
+    },
+    {
+      "id": "39741544-dde6-4f89-9501-53f3c0af7b78",
+      "title": "COSA can be used interactively for debugging and setup.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "baf7449b-96e6-451a-9eb9-9e5f9d1ac9ca"
+      ],
+      "createdAt": "2026-04-01T02:39:33.636Z",
+      "updatedAt": "2026-04-01T02:39:33.640Z"
+    },
+    {
+      "id": "72658b89-b928-4588-b758-d98676d10bbd",
+      "title": "COSA understands normal appliance behavior from the first session.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "21f7d238-d253-4cc6-9241-b1defb4ebefb"
+      ],
+      "createdAt": "2026-04-01T02:39:33.641Z",
+      "updatedAt": "2026-04-01T02:39:33.644Z"
+    },
+    {
+      "id": "dbf4447d-0dec-4882-8843-1d0c32e86f28",
+      "title": "they receive a daily summary without requesting it.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "559af815-86f0-4fe9-9cfc-e196c12fd9f8"
+      ],
+      "createdAt": "2026-04-01T02:39:33.645Z",
+      "updatedAt": "2026-04-01T02:39:33.649Z"
+    },
+    {
+      "id": "2f0bcccd-d4f9-47b5-ac97-86b0294761fe",
+      "title": "the operator has a regular overview without requesting it.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "aeee2331-74e1-48aa-84c8-28845a375779"
+      ],
+      "createdAt": "2026-04-01T02:39:33.650Z",
+      "updatedAt": "2026-04-01T02:39:33.654Z"
+    },
+    {
+      "id": "47f454eb-42ff-4558-9346-780906507caf",
+      "title": "Phase 2 exit criteria are verified before declaring the implementation complete.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "429aa51d-62ff-4447-a6c8-71b3a8d65c26"
+      ],
+      "createdAt": "2026-04-01T02:39:33.656Z",
+      "updatedAt": "2026-04-01T02:39:33.660Z"
+    },
+    {
+      "id": "58f168e2-096b-4783-acbd-38fe72f24569",
+      "title": "the agent has all required parameters before starting any services.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "bcb32788-1a62-4e61-beda-5c8975086870"
+      ],
+      "createdAt": "2026-04-01T02:39:33.662Z",
+      "updatedAt": "2026-04-01T02:39:33.668Z"
+    },
+    {
+      "id": "ecfeab39-d8da-40e1-81c4-9740d6881b1c",
+      "title": "all agent activity can be persisted from the first run.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "7997f4fd-3b2a-4f09-92e3-4b1846476506"
+      ],
+      "createdAt": "2026-04-01T02:39:33.669Z",
+      "updatedAt": "2026-04-01T02:39:33.674Z"
+    },
+    {
+      "id": "6f62728e-f4aa-43be-9d21-e7483f7d6b01",
+      "title": "other modules never interact with the database directly.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "fa61fbc2-c231-4f23-8af7-29457672cfdb"
+      ],
+      "createdAt": "2026-04-01T02:39:33.676Z",
+      "updatedAt": "2026-04-01T02:39:33.681Z"
+    },
+    {
+      "id": "5915481c-07df-4102-9d8d-25aca93f3569",
+      "title": "tools can reliably execute remote commands.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "92ad5a2e-5aca-4281-b258-abf93318a5ad"
+      ],
+      "createdAt": "2026-04-01T02:39:33.682Z",
+      "updatedAt": "2026-04-01T02:39:33.687Z"
+    },
+    {
+      "id": "b377876d-e378-4720-886f-7acd4da0f570",
+      "title": "destructive or sensitive operations never reach the appliance or the LLM conversation.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "4769b5e3-83ff-4bbb-bf06-9184351a70c6"
+      ],
+      "createdAt": "2026-04-01T02:39:33.688Z",
+      "updatedAt": "2026-04-01T02:39:33.693Z"
+    },
+    {
+      "id": "26fd86a9-9760-46f6-9893-17f1bcf32fc6",
+      "title": "the orchestrator has a single, consistent interface for all tool invocations.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "efccf5c1-681d-4434-8f3e-5bb1827b38be"
+      ],
+      "createdAt": "2026-04-01T02:39:33.695Z",
+      "updatedAt": "2026-04-01T02:39:33.699Z"
+    },
+    {
+      "id": "216b0dbc-c6a7-4e6a-b4dd-ea02be766d33",
+      "title": "I can report its status to the operator or trigger an alert.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "9f8d0cd9-42f6-4b01-90d0-6e6c123147aa"
+      ],
+      "createdAt": "2026-04-01T02:39:33.701Z",
+      "updatedAt": "2026-04-01T02:39:33.706Z"
+    },
+    {
+      "id": "8d2ac6a0-b038-4d86-8eba-33c6271c054c",
+      "title": "I can answer operational questions about orders, revenue, and application state.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "cdeba860-62b9-44f4-bb1e-1a2bb2c42cbb"
+      ],
+      "createdAt": "2026-04-01T02:39:33.708Z",
+      "updatedAt": "2026-04-01T02:39:33.713Z"
+    },
+    {
+      "id": "78c71592-efdf-4638-9f48-89c774f15300",
+      "title": "I can detect corruption early and report database health.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "53697764-cefc-48fb-a838-c195b91c4de7"
+      ],
+      "createdAt": "2026-04-01T02:39:33.714Z",
+      "updatedAt": "2026-04-01T02:39:33.719Z"
+    },
+    {
+      "id": "1b0bf695-018c-4f12-ad82-66835e59bb7a",
+      "title": "high-impact actions are never executed without operator consent.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "ddf9bbff-174a-4c5c-a7f5-76b2079df756"
+      ],
+      "createdAt": "2026-04-01T02:39:33.720Z",
+      "updatedAt": "2026-04-01T02:39:33.726Z"
+    },
+    {
+      "id": "2e24e620-46d0-4091-b2ed-0231203b6ab9",
+      "title": "the operator can interact with COSA via email.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "66226ed1-d80f-42d2-93fd-b09ca583ff28"
+      ],
+      "createdAt": "2026-04-01T02:39:33.727Z",
+      "updatedAt": "2026-04-01T02:39:33.732Z"
+    },
+    {
+      "id": "844a8bef-1fe6-4a1b-a3f1-31dbde739556",
+      "title": "health checks run autonomously every hour without operator intervention.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "e0b0390e-7c34-4a13-9fb6-60ea8dec1c6e"
+      ],
+      "createdAt": "2026-04-01T02:39:33.733Z",
+      "updatedAt": "2026-04-01T02:39:33.738Z"
+    },
+    {
+      "id": "2375d0d5-0dff-4f81-b7a9-b34bd5fafe17",
+      "title": "the full agent workflow runs end-to-end.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "6df93778-3de5-4493-a3ff-636757cabd6a"
+      ],
+      "createdAt": "2026-04-01T02:39:33.740Z",
+      "updatedAt": "2026-04-01T02:39:33.744Z"
+    },
+    {
+      "id": "4223e715-d5e1-4478-93c1-351b9ced94a5",
+      "title": "COSA always has the correct identity, appliance context, and tool schemas when calling the Claude API.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "85166206-04c0-49ff-b400-ffbfc69636b8"
+      ],
+      "createdAt": "2026-04-01T02:39:33.746Z",
+      "updatedAt": "2026-04-01T02:39:33.751Z"
+    },
+    {
+      "id": "9c58ac22-92c4-4418-89b0-a825a11c9d8d",
+      "title": "operational issues can be diagnosed from log output.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "7662d0e2-8231-44cc-8870-c7e588a3d7e7"
+      ],
+      "createdAt": "2026-04-01T02:39:33.753Z",
+      "updatedAt": "2026-04-01T02:39:33.759Z"
+    },
+    {
+      "id": "77fa06ac-f296-411f-a8ba-effe9931e095",
+      "title": "Phase 1 exit criteria are verified before declaring the implementation complete.",
+      "description": "Auto-extracted from 1 story(ies)",
+      "status": "achieved",
+      "dependencies": [],
+      "storyMappings": [
+        "f686bf68-7a29-43a3-b536-ea495f9163b2"
+      ],
+      "createdAt": "2026-04-01T02:39:33.760Z",
+      "updatedAt": "2026-04-01T02:39:33.766Z"
+    }
+  ]
+}

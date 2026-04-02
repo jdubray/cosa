@@ -11,6 +11,8 @@ const cronScheduler    = require('./cron-scheduler');
 const { runSession }   = require('./orchestrator');
 const { createLogger } = require('./logger');
 const { startCli }     = require('./cli');
+const credentialStore  = require('./credential-store');
+const securityGate     = require('./security-gate');
 
 const log = createLogger('main');
 
@@ -25,6 +27,90 @@ const backupVerifyTool  = require('./tools/backup-verify');
 const settingsWriteTool     = require('./tools/settings-write');
 const restartApplianceTool  = require('./tools/restart-appliance');
 const sessionSearchTool     = require('./tools/session-search');
+const jwtSecretCheckTool    = require('./tools/jwt-secret-check');
+const processMonitorTool    = require('./tools/process-monitor');
+const cloudflareKillTool    = require('./tools/cloudflare-kill');
+const networkScanTool       = require('./tools/network-scan');
+const webhookHmacVerifyTool  = require('./tools/webhook-hmac-verify');
+const complianceVerifyTool   = require('./tools/compliance-verify');
+const pciAssessmentTool      = require('./tools/pci-assessment');
+const credentialAuditTool    = require('./tools/credential-audit');
+const accessLogScanTool      = require('./tools/access-log-scan');
+const ipsAlertTool           = require('./tools/ips-alert');
+const tokenRotationRemindTool = require('./tools/token-rotation-remind');
+const pauseApplianceTool      = require('./tools/pause-appliance');
+
+// ---------------------------------------------------------------------------
+// Credential store CLI subcommand
+// Invoked when process.argv[2] === 'credentials'.
+// Usage:
+//   node src/main.js credentials set <name> <value>
+//   node src/main.js credentials list
+//   node src/main.js credentials import <file.json>
+// ---------------------------------------------------------------------------
+
+function runCredentialsCli() {
+  const sub  = process.argv[3];
+  const args = process.argv.slice(4);
+
+  try {
+    if (sub === 'set') {
+      const [name, value] = args;
+      if (!name || !value) {
+        process.stderr.write('Usage: credentials set <name> <value>\n');
+        process.exit(1);
+      }
+      credentialStore.set(name, value);
+      process.stdout.write(`Stored: ${name}\n`);
+
+    } else if (sub === 'list') {
+      const rows = credentialStore.list();
+      if (rows.length === 0) {
+        process.stdout.write('No credentials stored.\n');
+      } else {
+        for (const row of rows) {
+          const accessed = row.last_accessed
+            ? new Date(row.last_accessed).toISOString()
+            : 'never';
+          process.stdout.write(
+            `${row.name}  created=${new Date(row.created_at).toISOString()}  last_accessed=${accessed}\n`
+          );
+        }
+      }
+
+    } else if (sub === 'import') {
+      const [filePath] = args;
+      if (!filePath) {
+        process.stderr.write('Usage: credentials import <file.json>\n');
+        process.exit(1);
+      }
+      const fs   = require('fs');
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      if (typeof data !== 'object' || Array.isArray(data)) {
+        process.stderr.write('Import file must be a JSON object mapping names to values.\n');
+        process.exit(1);
+      }
+      for (const [name, value] of Object.entries(data)) {
+        credentialStore.set(name, String(value));
+      }
+      process.stdout.write(`Imported ${Object.keys(data).length} credential(s).\n`);
+
+    } else {
+      process.stderr.write(
+        'Usage:\n' +
+        '  credentials set <name> <value>\n' +
+        '  credentials list\n' +
+        '  credentials import <file.json>\n'
+      );
+      process.exit(1);
+    }
+  } catch (err) {
+    process.stderr.write(`Error: ${err.message}\n`);
+    process.exit(1);
+  }
+
+  process.exit(0);
+}
 
 /**
  * Bootstrap COSA: load config, run migrations, test SSH connectivity,
@@ -66,8 +152,20 @@ async function boot() {
     process.exit(1);
   }
 
+  // 2c. Validate credential store — fails fast if COSA_CREDENTIAL_KEY is absent.
+  try {
+    credentialStore.validateOnStartup();
+  } catch (err) {
+    log.error(`Credential store initialisation failed: ${err.message}`);
+    process.exit(1);
+  }
+
   // 3. Test SSH connectivity. Failure is logged as a warning; does not crash.
   await sshBackend.init();
+
+  // 3b. Initialise Tirith pre-execution scanner (optional). If the binary is
+  //     absent a warning is logged and COSA falls back to dangerous-cmd only.
+  securityGate.initTirith();
 
   // 4. Register tools with the tool registry.
   toolRegistry.register(
@@ -125,10 +223,82 @@ async function boot() {
     restartApplianceTool.riskLevel
   );
   toolRegistry.register(
+    jwtSecretCheckTool.name,
+    jwtSecretCheckTool.schema,
+    jwtSecretCheckTool.handler,
+    jwtSecretCheckTool.riskLevel
+  );
+  toolRegistry.register(
+    processMonitorTool.name,
+    processMonitorTool.schema,
+    processMonitorTool.handler,
+    processMonitorTool.riskLevel
+  );
+  toolRegistry.register(
     sessionSearchTool.name,
     sessionSearchTool.schema,
     sessionSearchTool.handler,
     sessionSearchTool.riskLevel
+  );
+  toolRegistry.register(
+    cloudflareKillTool.name,
+    cloudflareKillTool.schema,
+    cloudflareKillTool.handler,
+    cloudflareKillTool.riskLevel
+  );
+  toolRegistry.register(
+    networkScanTool.name,
+    networkScanTool.schema,
+    networkScanTool.handler,
+    networkScanTool.riskLevel
+  );
+  toolRegistry.register(
+    webhookHmacVerifyTool.name,
+    webhookHmacVerifyTool.schema,
+    webhookHmacVerifyTool.handler,
+    webhookHmacVerifyTool.riskLevel
+  );
+  toolRegistry.register(
+    complianceVerifyTool.name,
+    complianceVerifyTool.schema,
+    complianceVerifyTool.handler,
+    complianceVerifyTool.riskLevel
+  );
+  toolRegistry.register(
+    pciAssessmentTool.name,
+    pciAssessmentTool.schema,
+    pciAssessmentTool.handler,
+    pciAssessmentTool.riskLevel
+  );
+  toolRegistry.register(
+    credentialAuditTool.name,
+    credentialAuditTool.schema,
+    credentialAuditTool.handler,
+    credentialAuditTool.riskLevel
+  );
+  toolRegistry.register(
+    accessLogScanTool.name,
+    accessLogScanTool.schema,
+    accessLogScanTool.handler,
+    accessLogScanTool.riskLevel
+  );
+  toolRegistry.register(
+    ipsAlertTool.name,
+    ipsAlertTool.schema,
+    ipsAlertTool.handler,
+    ipsAlertTool.riskLevel
+  );
+  toolRegistry.register(
+    tokenRotationRemindTool.name,
+    tokenRotationRemindTool.schema,
+    tokenRotationRemindTool.handler,
+    tokenRotationRemindTool.riskLevel
+  );
+  toolRegistry.register(
+    pauseApplianceTool.name,
+    pauseApplianceTool.schema,
+    pauseApplianceTool.handler,
+    pauseApplianceTool.riskLevel
   );
   log.info(`Tools registered: ${toolRegistry.getSchemas().map(t => t.name).join(', ')}`);
 
@@ -180,4 +350,8 @@ async function boot() {
   log.info('COSA ready.');
 }
 
-boot();
+if (process.argv[2] === 'credentials') {
+  runCredentialsCli();
+} else {
+  boot();
+}

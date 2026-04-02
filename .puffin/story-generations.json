@@ -724,9 +724,413 @@
       ],
       "timestamp": "2026-03-30T00:56:52.736Z",
       "model_used": "sonnet"
+    },
+    {
+      "id": "mndyxuxn1vo6ydd3o",
+      "user_prompt": "Let's proceed",
+      "project_context": null,
+      "generated_stories": [
+        {
+          "id": "0bcb6bf7-dc06-4742-8a63-10c79835236b",
+          "title": "Encrypted Credential Store",
+          "description": "As a developer, I want an AES-256-GCM encrypted SQLite credential store on the COSA Pi so that all secrets are protected at rest and never appear in logs or tool outputs.",
+          "acceptance_criteria": [
+            "credentials.enc.db is created at ~/.cosa/credentials.enc.db",
+            "Encryption key is derived from COSA_CREDENTIAL_KEY env var via PBKDF2-SHA256 (100k iterations, 32-byte output)",
+            "get(name) retrieves a credential by symbolic name and updates last_accessed timestamp",
+            "get(name) throws if credential not found",
+            "Credentials are never logged to session.db (only symbolic names appear)",
+            "COSA startup fails with a clear error if COSA_CREDENTIAL_KEY is not set",
+            "Seed credentials for clover_api_key, s3_access_key, jwt_secret, cloudflare_tunnel_token, smtp_password are importable via CLI"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "ccbb9395-26f5-4ab3-b59b-5ab9a2b6cb40",
+          "title": "Output Sanitizer",
+          "description": "As a developer, I want all tool outputs sanitized before they enter the conversation context so that credentials are never exposed to the LLM or logged.",
+          "acceptance_criteria": [
+            "sanitizeOutput(output) redacts Clover live key pattern (sk_live_...)",
+            "sanitizeOutput(output) redacts AWS access key pattern (AKIA...)",
+            "sanitizeOutput(output) redacts base64 encoded secrets (40+ chars)",
+            "sanitizeOutput(output) redacts password= and token= patterns",
+            "Clean output passes through unchanged",
+            "Sanitizer is called on every tool output before it is appended to conversation history",
+            "Redacted segments are replaced with [REDACTED]"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "4a7dcd3b-2324-4de8-9482-c6559e37877f",
+          "title": "Tirith Pre-Execution Scanner Integration",
+          "description": "As a developer, I want Tirith integrated as step 1 of the tool execution gate so that content-level threats are blocked before dangerous-cmd detection and approval.",
+          "acceptance_criteria": [
+            "On startup, COSA checks for ~/.cosa/bin/tirith and logs a warning if absent, falling back to dangerous-cmd detection only",
+            "Tirith is invoked on every tool call before dangerous-cmd regex checks",
+            "If Tirith returns a threat, the tool call is blocked, the reason is explained to the LLM, and the event is logged to session.db",
+            "tirith.yaml config is read from ~/.cosa/tirith.yaml with mode: block as default",
+            "Tirith exceptions for db_query and bun_test tools are respected",
+            "Tirith unavailability does not crash COSA — it degrades gracefully to dangerous-cmd only"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "de038e75-f441-4cbb-af1e-5e6010429321",
+          "title": "git_audit Tool",
+          "description": "As COSA, I want to audit the Baanbaan git repository for unauthorized commits, force-pushes, and unexpected authors so that I can detect code tampering.",
+          "acceptance_criteria": [
+            "Accepts repoPath, lookbackHours (default 8), and expectedAuthors from APPLIANCE.md",
+            "Executes git log --since via SSH with hash, author, timestamp, subject, and refs columns",
+            "Returns commits array with suspicious flag and reason for each anomalous commit",
+            "Returns forcePushDetected boolean and unknownBranches array",
+            "Severity is 'clean' when all commits are from expected authors with no force push",
+            "Commit from unexpected author returns severity 'medium'",
+            "Force push on main returns severity 'high'",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "32d46881-5c40-4205-88fd-a1c4a6bbdfba",
+          "title": "process_monitor Tool",
+          "description": "As COSA, I want to list all running processes on Baanbaan and flag unexpected PIDs so that I can detect unauthorized software.",
+          "acceptance_criteria": [
+            "Executes ps aux via SSH and parses user, pid, cpu, mem, command columns",
+            "Compares each process against expectedProcesses from APPLIANCE.md",
+            "Returns processes array with expected and suspicious flags per process",
+            "Returns unknownProcesses array and listeningPorts array for unexpected open ports",
+            "Unknown process returns severity 'medium'",
+            "Unknown process listening on a port returns severity 'high'",
+            "Unknown binary executing as root returns severity 'critical'",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "3b686c02-b17f-412c-9fab-5f02fadb3fce",
+          "title": "network_scan Tool",
+          "description": "As COSA, I want to enumerate all devices on the local network and flag unknown MACs so that I can detect unauthorized devices.",
+          "acceptance_criteria": [
+            "Executes arp -a via SSH on Baanbaan Pi",
+            "Compares each device MAC against knownMacAddresses from APPLIANCE.md",
+            "Returns devices array with known flag and name for matched devices",
+            "Returns unknownDevices array",
+            "Unknown MAC on network returns severity 'medium'",
+            "Unknown device connecting to appliance port returns severity 'high'",
+            "Multiple unknown MACs appearing simultaneously returns severity 'high'",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "ae8bdf40-8331-4e18-b84f-64c92c7f64b3",
+          "title": "access_log_scan Tool",
+          "description": "As COSA, I want to scan Baanbaan HTTP access logs for brute force attempts, injection probes, and path scanning so that I can detect active intrusion attempts.",
+          "acceptance_criteria": [
+            "Accepts logPath and lookbackMinutes (default 380) from config",
+            "Detects SSH brute force pattern (>5 failed logins in 5 min from same IP) at severity 'high'",
+            "Detects SQL injection patterns in query params at severity 'high'",
+            "Detects path scanning (>50 404s in 10 min) at severity 'medium'",
+            "Detects known scanner user agents (sqlmap, nikto) at severity 'high'",
+            "Returns anomalies array with type, sourceIp, endpoint, count, windowMinutes, sample, severity",
+            "Returns errorRatePercent and totalRequests",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "ff452331-3692-4bf4-bc3d-9d14cf3b673b",
+          "title": "Anomaly Classifier",
+          "description": "As a developer, I want a deterministic anomaly classifier that scores tool outputs to a severity level so that the escalation FSM receives consistent, LLM-free severity decisions.",
+          "acceptance_criteria": [
+            "classifyAnomaly(report) accepts findings from any SECURE tool and returns 'clean' | 'low' | 'medium' | 'high' | 'critical'",
+            "Severity escalates to the highest finding present across all inputs",
+            "Force push on main maps to 'high'",
+            "Unknown process with open port maps to 'high'",
+            "Unknown binary executing as root maps to 'critical'",
+            "SSH brute force pattern maps to 'high'",
+            "Known false positive patterns (pm2 restart, cert renewal) are logged but not escalated",
+            "No LLM inference is used in the classifier — it is purely deterministic"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "b5870a6f-dae5-4727-bf04-70fc6a137da6",
+          "title": "ips_alert Tool",
+          "description": "As COSA, I want to send immediate escalation emails with incident context and operator response codes so that the operator can act on security events.",
+          "acceptance_criteria": [
+            "Accepts severity, incidentType, evidence array, actionsAlreadyTaken, responseOptions, optional approvalToken, and autoExpireMinutes",
+            "Email subject is '[COSA SECURITY] {severity}: {incidentType}'",
+            "Email body includes what happened, evidence, actions already taken, and response codes",
+            "Email states expiry time for the alert",
+            "Email includes session ID for audit reference",
+            "Risk level is 'medium'",
+            "Alert is sent immediately (not queued for next cron tick)"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "3303ae77-29ff-4d74-9e94-8581c6ff36b1",
+          "title": "cloudflare_kill Tool",
+          "description": "As COSA, I want to kill the Cloudflare tunnel process on Baanbaan so that external access is immediately cut off during a high or critical intrusion.",
+          "acceptance_criteria": [
+            "Attempts systemctl stop first, falls back to pm2 stop, falls back to kill $(pgrep cloudflared)",
+            "Waits 2 seconds and verifies the process is dead",
+            "Returns success, method, verificationPass, and timestamp",
+            "Returns success: false if process is still running after kill attempt",
+            "Risk level is 'high' (approval required via standard gate)",
+            "Post-execution: logs to session.db and updates MEMORY.md with tunnel kill event",
+            "Post-execution: triggers ips_alert immediately without waiting for next poll"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "ea08b50d-084e-4c42-81b2-420682830797",
+          "title": "pause_appliance Tool (Phase 3)",
+          "description": "As COSA, I want to stop the Baanbaan service via pm2 or systemd so that the appliance can be taken offline when a threat is inside the process itself.",
+          "acceptance_criteria": [
+            "Supports supervisor: 'pm2' | 'systemd' from APPLIANCE.md config",
+            "Executes pm2 stop or systemctl stop for the configured service name",
+            "Verifies the service is stopped by checking the health endpoint",
+            "Returns success, supervisor, verificationPass, and timestamp",
+            "Risk level is 'critical' — always requires explicit operator approval, no auto-permit ever",
+            "Logs to session.db with full incident context"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "7b32c3a5-b957-4222-9c0a-4d75a3861c52",
+          "title": "Intrusion Escalation FSM",
+          "description": "As a developer, I want the security incident lifecycle managed by a @cognitive-fab/sam-fsm machine so that intrusion detection, response, and recovery transitions are guarded and testable.",
+          "acceptance_criteria": [
+            "FSM has all 6 states: monitoring, classifying, alerting_operator, responding, awaiting_clearance, recovering",
+            "ANOMALY_DETECTED from monitoring transitions to classifying",
+            "FALSE_POSITIVE from classifying transitions back to monitoring",
+            "CLASSIFY_LOW and CLASSIFY_MEDIUM from classifying transition to alerting_operator",
+            "CLASSIFY_HIGH and CLASSIFY_CRITICAL from classifying transition to responding",
+            "NAP in responding state: executes cloudflare_kill if not yet killed",
+            "NAP in responding state: sends ips_alert after cloudflare_kill completes",
+            "NAP in alerting_operator: sends alert if not yet sent; triggers ALERT_TIMEOUT after 15 minutes",
+            "CLEAR_THREAT from awaiting_clearance transitions to recovering",
+            "HEALTH_CHECK_PASS from recovering transitions to monitoring",
+            "All security incidents persisted to security_incidents table in session.db",
+            "Invalid transitions throw rather than silently failing"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "7e6e7391-a604-4932-85ab-5eed623b024f",
+          "title": "credential_audit Tool",
+          "description": "As COSA, I want to scan the Baanbaan git working tree for accidentally committed credentials so that secret exposure is detected before it causes harm.",
+          "acceptance_criteria": [
+            "Scans tracked .ts, .js, .json, .env, .yaml, .yml files via git grep over SSH",
+            "Detects Clover live key pattern (sk_live_)",
+            "Detects AWS access key pattern (AKIA...)",
+            "Detects base64 encoded secrets and password= patterns",
+            "Checks .gitignore covers .env and secrets directories",
+            "Returns findings array with file, line, pattern, severity, and redacted snippet",
+            "Returns gitignoreCoverage object",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "407c1a4a-b2da-4616-bb41-e7659de3a5d7",
+          "title": "compliance_verify Tool",
+          "description": "As COSA, I want to verify the Baanbaan server configuration against a hardening baseline so that SSH misconfigurations and exposed services are caught weekly.",
+          "acceptance_criteria": [
+            "Checks PasswordAuthentication no in sshd_config",
+            "Checks PermitRootLogin in sshd_config",
+            "Checks MaxAuthTries 3 in sshd_config",
+            "Checks file permissions on .env and merchant.db",
+            "Lists all listening services and compares against expected ports",
+            "Returns findings array with check name, status (pass/fail/warning), and evidence",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "471a23c5-7be5-4810-830e-97c9b6a03926",
+          "title": "pci_assessment Tool",
+          "description": "As COSA, I want to run a PCI-DSS SAQ-A self-assessment checklist monthly so that compliance status is automatically verified and reported.",
+          "acceptance_criteria": [
+            "Covers all 13 SAQ-A requirements from §4.8 of the Phase 3 spec",
+            "Each requirement returns status: 'pass' | 'fail' | 'warning' | 'manual'",
+            "Manual checks are flagged with a clear note rather than auto-failing",
+            "Returns overallStatus: 'compliant' | 'non_compliant' | 'needs_review'",
+            "Returns actionItems array for any non-compliant or warning items",
+            "Includes assessmentDate and scope: 'SAQ-A' in output",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "2b5c43e9-0ff4-4559-a156-7af384470ebf",
+          "title": "jwt_secret_check Tool",
+          "description": "As COSA, I want to verify the JWT secret entropy and rotation age so that weak or stale secrets are caught before they become a vulnerability.",
+          "acceptance_criteria": [
+            "Reads JWT secret from credential store by symbolic name (never via SSH)",
+            "Computes Shannon entropy of the secret",
+            "Returns entropyBits, ageDays, lastRotated, needsRotation",
+            "needsRotation is true if age > 90 days or entropy < 128 bits",
+            "Returns a recommendation string when rotation is needed",
+            "Secret value never appears in output, logs, or session.db",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "405af0b4-daf1-4c53-b1ad-7a30b942b7ef",
+          "title": "webhook_hmac_verify Tool",
+          "description": "As COSA, I want to verify that HMAC signature validation is active on the POS webhook endpoint so that webhook spoofing is not possible.",
+          "acceptance_criteria": [
+            "Sends a POST request to /api/webhooks/pos/test-merchant with an invalid X-Signature header",
+            "Returns verified: true if the response is HTTP 401",
+            "Returns verified: false with severity 'critical' if the response is HTTP 200 (HMAC not enforced)",
+            "Test is performed via HTTP from COSA Pi to Baanbaan Pi on the local network",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "c95067fc-3c98-4130-be9e-6d8b46e96af8",
+          "title": "token_rotation_remind Tool",
+          "description": "As COSA, I want to check whether rotatable credentials are due for rotation and generate operator reminders so that stale credentials are replaced on schedule.",
+          "acceptance_criteria": [
+            "Checks Clover API key age against 180-day rotation policy",
+            "Checks JWT secret age against 90-day rotation policy",
+            "Checks S3 access key age against 90-day rotation policy",
+            "Returns reminders array with credential name, last rotated date, days until due, and overdue flag",
+            "Sends ips_alert at severity 'low' for any credential overdue for rotation",
+            "Rotation dates are read from APPLIANCE.md, not from the credential store",
+            "Risk level is 'read'"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "64962aad-d1c4-43cb-9485-558755912d26",
+          "title": "Phase 3 Cron Schedule Additions",
+          "description": "As a developer, I want the cron scheduler updated with all Phase 3 security tasks so that monitoring, auditing, and compliance checks run automatically.",
+          "acceptance_criteria": [
+            "git_audit task fires every 6 hours and triggers ips_alert if severity >= medium",
+            "process_monitor task fires every 6 hours and triggers escalation FSM if severity >= medium",
+            "network_scan task fires every 6 hours and triggers ips_alert if unknown device found",
+            "access_log_scan task fires every 6 hours and feeds results to anomaly classifier",
+            "Weekly security digest fires Monday 2:00 AM and sends formatted digest email",
+            "credential_audit fires Monday 2:00 AM and sends ips_alert if any finding",
+            "compliance_verify fires Monday 2:00 AM and is included in weekly digest",
+            "webhook_hmac_verify fires Monday 2:00 AM and sends critical alert if HMAC inactive",
+            "jwt_secret_check fires Monday 2:00 AM and sends reminder if rotation due",
+            "pci_assessment fires monthly on the 1st at 2:00 AM and emails full report",
+            "token_rotation_remind fires monthly on the 1st at 2:00 AM"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "901efd47-b050-477e-94eb-5f6ba6f40ca8",
+          "title": "Weekly Security Digest Email",
+          "description": "As COSA, I want to compile and send a weekly security digest email every Monday so that the operator has a regular consolidated view of the security posture.",
+          "acceptance_criteria": [
+            "Subject line is '[COSA] Weekly Security Digest — {appliance_name} — {date}'",
+            "Email body includes sections for git audit, process monitor, network scan, access logs, credential audit, compliance verification",
+            "Each section shows checkmark (✓) for clean or warning (⚠) with details for anomalies",
+            "JWT secret rotation due date is included in compliance section",
+            "Security incidents this week count is included",
+            "Next scan and next PCI assessment dates are included",
+            "Email is plain text — no HTML",
+            "No second digest is sent if one was sent within the past 6 days"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        },
+        {
+          "id": "b95ada1d-4b2c-46af-a7fd-f2285366e48a",
+          "title": "Phase 3 End-to-End Staging Test: Simulated Intrusion",
+          "description": "As a developer, I want the Phase 3 exit criteria test to pass against the WeatherStation mock so that the complete intrusion detection and response pipeline is verified before declaring Phase 3 complete.",
+          "acceptance_criteria": [
+            "access_log_scan detects simulated brute force pattern within 5 minutes of attack",
+            "Anomaly classifier returns severity 'high' within 5 seconds of detection",
+            "Escalation FSM enters 'responding' state within 5 seconds of classification",
+            "cloudflare_kill executes within 30 seconds of FSM entering responding",
+            "Alert email is sent to operator within 30 seconds of cloudflare_kill",
+            "Alert email contains attack evidence, IP address, actions taken, and CLEAR-THREAT response code",
+            "CLEAR-THREAT email reply is parsed and FSM advances to recovering",
+            "Cloudflare tunnel is confirmed killed and restarted",
+            "Health check passes and FSM returns to monitoring",
+            "Full incident is recorded in security_incidents table with all steps and timestamps",
+            "No credentials appear in any log, email, or session.db entry",
+            "Running all SECURE tools against a clean state returns severity 'clean' with no alerts sent"
+          ],
+          "user_action": "pending",
+          "modification_diff": null,
+          "rejection_reason": null,
+          "backlog_story_id": null
+        }
+      ],
+      "timestamp": "2026-03-31T01:59:10.811Z",
+      "model_used": "sonnet"
     }
   ],
   "implementation_journeys": [],
   "createdAt": "2026-03-28T21:33:40.813Z",
-  "updatedAt": "2026-03-30T00:56:52.874Z"
+  "updatedAt": "2026-03-31T01:59:10.912Z"
 }

@@ -1,0 +1,100 @@
+{
+  "id": "5d561eee-a506-4c13-8c9e-73e7c80ae6e6",
+  "sprintId": "mne1a8tg93dc6ltyu",
+  "status": "approved",
+  "iteration": 1,
+  "stories": [
+    {
+      "id": "0bcb6bf7-dc06-4742-8a63-10c79835236b",
+      "title": "Encrypted Credential Store"
+    },
+    {
+      "id": "2b5c43e9-0ff4-4559-a156-7af384470ebf",
+      "title": "jwt_secret_check Tool"
+    },
+    {
+      "id": "32d46881-5c40-4205-88fd-a1c4a6bbdfba",
+      "title": "process_monitor Tool"
+    },
+    {
+      "id": "3303ae77-29ff-4d74-9e94-8581c6ff36b1",
+      "title": "cloudflare_kill Tool"
+    },
+    {
+      "id": "3b686c02-b17f-412c-9fab-5f02fadb3fce",
+      "title": "network_scan Tool"
+    },
+    {
+      "id": "405af0b4-daf1-4c53-b1ad-7a30b942b7ef",
+      "title": "webhook_hmac_verify Tool"
+    },
+    {
+      "id": "407c1a4a-b2da-4616-bb41-e7659de3a5d7",
+      "title": "compliance_verify Tool"
+    },
+    {
+      "id": "471a23c5-7be5-4810-830e-97c9b6a03926",
+      "title": "pci_assessment Tool"
+    },
+    {
+      "id": "4a7dcd3b-2324-4de8-9482-c6559e37877f",
+      "title": "Tirith Pre-Execution Scanner Integration"
+    },
+    {
+      "id": "64962aad-d1c4-43cb-9485-558755912d26",
+      "title": "Phase 3 Cron Schedule Additions"
+    },
+    {
+      "id": "7b32c3a5-b957-4222-9c0a-4d75a3861c52",
+      "title": "Intrusion Escalation FSM"
+    },
+    {
+      "id": "7e6e7391-a604-4932-85ab-5eed623b024f",
+      "title": "credential_audit Tool"
+    },
+    {
+      "id": "901efd47-b050-477e-94eb-5f6ba6f40ca8",
+      "title": "Weekly Security Digest Email"
+    },
+    {
+      "id": "ae8bdf40-8331-4e18-b84f-64c92c7f64b3",
+      "title": "access_log_scan Tool"
+    },
+    {
+      "id": "b5870a6f-dae5-4727-bf04-70fc6a137da6",
+      "title": "ips_alert Tool"
+    },
+    {
+      "id": "b95ada1d-4b2c-46af-a7fd-f2285366e48a",
+      "title": "Phase 3 End-to-End Staging Test: Simulated Intrusion"
+    },
+    {
+      "id": "c95067fc-3c98-4130-be9e-6d8b46e96af8",
+      "title": "token_rotation_remind Tool"
+    },
+    {
+      "id": "ccbb9395-26f5-4ab3-b59b-5ab9a2b6cb40",
+      "title": "Output Sanitizer"
+    },
+    {
+      "id": "de038e75-f441-4cbb-af1e-5e6010429321",
+      "title": "git_audit Tool"
+    },
+    {
+      "id": "ea08b50d-084e-4c42-81b2-420682830797",
+      "title": "pause_appliance Tool (Phase 3)"
+    },
+    {
+      "id": "ff452331-3692-4bf4-bc3d-9d14cf3b673b",
+      "title": "Anomaly Classifier"
+    }
+  ],
+  "planItems": [],
+  "sharedComponents": [],
+  "risks": [],
+  "aiError": "Request timed out",
+  "clarificationHistory": [],
+  "createdAt": "2026-03-31T04:53:14.971Z",
+  "updatedAt": "2026-03-31T04:53:33.763Z",
+  "approvedAt": "2026-03-31T04:53:33.763Z"
+}

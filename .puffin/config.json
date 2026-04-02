@@ -29,8 +29,8 @@
     }
   },
   "codingStandard": {
-    "language": "none",
-    "content": ""
+    "language": "javascript",
+    "content": "# JavaScript/TypeScript Coding Standards\n\nWhen reviewing or generating JavaScript/TypeScript code, follow these rules:\n\n## File Naming\n- **Source files:** Use kebab-case (e.g., `user-service.js`, `api-client.ts`)\n- **Component files:** Use kebab-case (e.g., `user-profile.js`, `data-table.tsx`)\n- **Test files:** Use `.test.js` or `.spec.js` suffix (e.g., `user-service.test.js`)\n\n## Variable Naming\n- **Variables:** camelCase (e.g., `userName`, `isActive`, `totalCount`)\n- **Constants:** UPPER_SNAKE_CASE for true constants (e.g., `MAX_RETRIES`, `API_BASE_URL`)\n- **Boolean variables:** Prefix with `is`, `has`, `can`, `should` (e.g., `isLoading`, `hasError`)\n\n## Function Naming\n- **Functions:** camelCase (e.g., `calculateTotal()`, `fetchUserData()`)\n- **Event handlers:** Prefix with `handle` or `on` (e.g., `handleClick`, `onSubmit`)\n\n## Class/Constructor Naming\n- **Classes:** PascalCase (e.g., `UserService`, `DataProcessor`, `ApiClient`)\n- **Interfaces (TS):** PascalCase (e.g., `IUserService` or `UserService`)\n\n## Private Members\n- **Private fields:** Prefix with underscore (e.g., `_privateData`, `_internalState`)"
   },
   "cre": {
     "sprintEnd": {
@@ -61,7 +61,7 @@
     }
   },
   "createdAt": "2026-03-28T21:33:40.809Z",
-  "updatedAt": "2026-03-29T04:18:17.728Z",
+  "updatedAt": "2026-04-02T04:18:33.699Z",
   "defaultModel": "sonnet",
   "websiteEdition": false,
   "websitePort": 5000,
@@ -69,5 +69,12 @@
   "speechApiKey": "",
   "speechModel": "gpt-4o-mini-transcribe",
   "speechApiUrl": "",
-  "debugMode": false
+  "debugMode": false,
+  "helpMode": true,
+  "mistralApiKey": "Ic0FWo6GUVMlCxPOCqIzcmDs0XupdWl3",
+  "vibeModel": "",
+  "defaultProvider": "vibe",
+  "deepagentsCmd": "",
+  "ollamaHost": "",
+  "ollamaModel": ""
 }

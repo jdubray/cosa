@@ -1,6 +1,13 @@
 'use strict';
 
+const fs            = require('fs');
+const os            = require('os');
+const path          = require('path');
+const { execFile }  = require('child_process');
 const { getConfig } = require('../config/cosa.config');
+const { createLogger } = require('./logger');
+
+const log = createLogger('security-gate');
 
 // ---------------------------------------------------------------------------
 // Output sanitization patterns — hardcoded, not from appliance config
@@ -17,20 +24,123 @@ const { getConfig } = require('../config/cosa.config');
 const SANITIZE_PATTERNS = [
   // Anthropic API keys  (sk-ant-api03-...)
   { label: 'Anthropic API key', pattern: /sk-ant-[A-Za-z0-9\-_]+/g },
-  // password=<value>
-  { label: 'password',          pattern: /password\s*=\s*\S+/gi },
-  // token=<value>
-  { label: 'token',             pattern: /token\s*=\s*\S+/gi },
+  // Clover live payment key  (sk_live_<24+ alphanum>)
+  { label: 'Clover live key',   pattern: /sk_live_[a-zA-Z0-9]{24,}/g },
+  // AWS IAM access key ID  (AKIA<16 uppercase alphanum>)
+  { label: 'AWS access key',    pattern: /AKIA[0-9A-Z]{16}/g },
+  // Base64-encoded secrets — 40+ chars (covers JWT secrets, S3 secret keys, etc.)
+  { label: 'Base64 secret',     pattern: /[a-zA-Z0-9+/]{40}={0,2}/g },
+  // password key=value or key: value with optional quotes  (≥8 char value)
+  { label: 'password',          pattern: /password["'\s]*[:=]["'\s]*\S{8,}/gi },
+  // token key=value or key: value with optional quotes  (≥16 char value)
+  { label: 'token',             pattern: /token["'\s]*[:=]["'\s]*\S{16,}/gi },
   // secret=<value>  (generic credential key)
   { label: 'secret',            pattern: /secret\s*=\s*\S+/gi },
 ];
+
+// ---------------------------------------------------------------------------
+// Tirith integration
+// ---------------------------------------------------------------------------
+
+const TIRITH_BIN    = path.join(os.homedir(), '.cosa', 'bin', 'tirith');
+const TIRITH_CONFIG = path.join(os.homedir(), '.cosa', 'tirith.yaml');
+
+// Tirith runtime state — populated by initTirith()
+let tirithAvailable = false;
+let tirithConfig    = { mode: 'block', exceptions: [] };
+
+/**
+ * Attempt to locate the Tirith binary and load its YAML config.
+ * Called once during boot().  If the binary is absent, COSA falls back to
+ * dangerous-cmd detection only.
+ *
+ * @returns {void}
+ */
+function initTirith() {
+  if (!fs.existsSync(TIRITH_BIN)) {
+    log.warn(`Tirith binary not found at ${TIRITH_BIN} — falling back to dangerous-cmd detection only`);
+    tirithAvailable = false;
+    return;
+  }
+
+  // Load optional tirith.yaml
+  if (fs.existsSync(TIRITH_CONFIG)) {
+    try {
+      // Require js-yaml lazily — it's an optional dependency for this path.
+      // If unavailable, use defaults silently.
+      const yaml = require('js-yaml');
+      const raw  = fs.readFileSync(TIRITH_CONFIG, 'utf8');
+      const parsed = yaml.load(raw);
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.mode)       tirithConfig.mode       = String(parsed.mode);
+        if (Array.isArray(parsed.exceptions)) {
+          tirithConfig.exceptions = parsed.exceptions.map(String);
+        }
+      }
+      log.info(`Tirith config loaded: mode=${tirithConfig.mode}, exceptions=[${tirithConfig.exceptions.join(', ')}]`);
+    } catch (err) {
+      log.warn(`Tirith config parse error (${TIRITH_CONFIG}): ${err.message} — using defaults`);
+    }
+  } else {
+    log.info(`No Tirith config at ${TIRITH_CONFIG} — using defaults (mode=block, no exceptions)`);
+  }
+
+  tirithAvailable = true;
+  log.info(`Tirith pre-execution scanner ready: ${TIRITH_BIN}`);
+}
+
+/**
+ * Invoke the Tirith binary synchronously (via child_process.execFile with a
+ * tight timeout) with the serialised tool call as stdin / argument JSON.
+ *
+ * Tirith exit codes:
+ *   0 — clean, allow
+ *   1 — threat detected
+ *   other — invocation error, treated as clean (fail-open for availability)
+ *
+ * @param {{ tool_name: string, input: object }} toolCall
+ * @returns {Promise<{ blocked: false } | { blocked: true, reason: string }>}
+ */
+function runTirith(toolCall) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify(toolCall);
+    const opts = {
+      timeout: 5000,   // 5-second hard ceiling — never block execution indefinitely
+      maxBuffer: 64 * 1024,
+    };
+
+    execFile(TIRITH_BIN, ['--json'], opts, (err, stdout, stderr) => {
+      if (!err) {
+        // Exit 0 — clean
+        resolve({ blocked: false });
+        return;
+      }
+
+      if (err.code === 1) {
+        // Threat detected — parse reason from stdout if present
+        let reason = 'Tirith threat detected';
+        try {
+          const parsed = JSON.parse(stdout || '{}');
+          if (parsed.reason) reason = String(parsed.reason);
+        } catch (_) { /* ignore parse error, use default reason */ }
+        resolve({ blocked: true, reason });
+        return;
+      }
+
+      // Any other exit (binary crash, timeout, etc.) — fail-open
+      log.warn(`Tirith invocation error (code=${err.code ?? 'timeout'}): ${err.message}`);
+      resolve({ blocked: false });
+    }).stdin?.end(payload);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Check a tool call against every dangerous-command pattern defined in
+ * Check a tool call first against Tirith (when available and not in the
+ * exceptions list), then against every dangerous-command pattern defined in
  * `config/appliance.yaml` under `security.dangerous_commands`.
  *
  * The entire tool input is JSON-serialised before matching so that patterns
@@ -38,10 +148,25 @@ const SANITIZE_PATTERNS = [
  * case-insensitive.
  *
  * @param {{ tool_name: string, input: object }} toolCall
- * @returns {{ blocked: false }
- *          | { blocked: true, reason: string, pattern: string }}
+ * @returns {Promise<{ blocked: false }
+ *           | { blocked: true, reason: string, pattern?: string }>}
  */
-function check(toolCall) {
+async function check(toolCall) {
+  // ── Step 1: Tirith pre-execution scan ────────────────────────────────────
+  if (tirithAvailable) {
+    const toolName = toolCall.tool_name ?? '';
+    const isExcepted = tirithConfig.exceptions.includes(toolName);
+
+    if (!isExcepted) {
+      const tirithResult = await runTirith(toolCall);
+      if (tirithResult.blocked) {
+        log.warn(`Tirith blocked tool call: ${toolName} — ${tirithResult.reason}`);
+        return { blocked: true, reason: tirithResult.reason };
+      }
+    }
+  }
+
+  // ── Step 2: dangerous-cmd regex detection ─────────────────────────────────
   const { appliance } = getConfig();
   const dangerousCommands = appliance.security?.dangerous_commands ?? [];
 
@@ -75,4 +200,4 @@ function sanitizeOutput(output) {
   );
 }
 
-module.exports = { check, sanitizeOutput };
+module.exports = { initTirith, check, sanitizeOutput };

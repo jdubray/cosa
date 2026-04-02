@@ -74,7 +74,7 @@ async function processToolUse(sessionId, toolUse, triggerType) {
   const toolCallRecord      = { tool_name: name, input };
 
   // ── 1. Security gate ────────────────────────────────────────────────────────
-  const gateResult = securityGate.check(toolCallRecord);
+  const gateResult = await securityGate.check(toolCallRecord);
   if (gateResult.blocked) {
     recordBlockedToolCall(sessionId, toolCallRecord, gateResult.reason);
     return {
