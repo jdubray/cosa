@@ -2317,6 +2317,69 @@
       "message": "Orchestration complete! Fixed 4/4 issues.",
       "type": "success",
       "source": "app"
+    },
+    {
+      "id": "toast-1775127616236-vitp24v",
+      "timestamp": 1775127616236,
+      "message": "Sprint closed and committed: 2a0a2f1",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775127621031-xt54o0a",
+      "timestamp": 1775127621031,
+      "message": "Code review started on Code Reviews branch",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775129150836-pcwp8nn",
+      "timestamp": 1775129150836,
+      "message": "Claude Error: Vibe CLI exited with code 1: Error: API error from mistral (model: devstral-2): LLM backend error [mistral]\r\n  status: 400 Bad Request\r\n  reason: Bad Request\r\n  request_id: N/A\r\n  endpoint: https://api.mistral.ai\r\n  model: devstral-2\r\n  provider_message: Invalid model: devstral-2\r\n  body_excerpt: {\"object\":\"error\",\"message\":\"Invalid model: devstral-2\",\"type\":\"invalid_model\",\"param\":null,\"code\":\"1500\",\"raw_status_code\":400}\r\n  payload_summary: {\"model\":\"devstral-2\",\"message_count\":2,\"approx_chars\":24080,\"temperature\":0.2,\"has_tools\":true,\"tool_choice\":\"auto\"}\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775129365144-3f8um0f",
+      "timestamp": 1775129365144,
+      "message": "Claude Error: Vibe CLI exited with code 2: usage: vibe [-h] [-v] [-p [TEXT]] [--max-turns N] [--max-price DOLLARS]\r\n            [--enabled-tools TOOL] [--output {text,json,streaming}]\r\n            [--agent NAME] [--setup] [--workdir DIR]\r\n            [-c | --resume [SESSION_ID]]\r\n            [PROMPT]\r\nvibe: error: unrecognized arguments: --model\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775129505588-pkf2z23",
+      "timestamp": 1775129505588,
+      "message": "Claude Error: Vibe CLI exited with code 1: Traceback (most recent call last):\r\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\r\n  File \"<frozen runpy>\", line 88, in _run_code\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\vibe.exe\\__main__.py\", line 7, in <module>\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\cli\\entrypoint.py\", line 162, in main\r\n    run_cli(args)\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\cli\\cli.py\", line 177, in run_cli\r\n    final_response = run_programmatic(\r\n                     ^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\programmatic.py\", line 36, in run_programmatic\r\n    agent_loop = AgentLoop(\r\n                 ^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 179, in __init__\r\n    self.backend = self.backend_factory()\r\n                   ^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 178, in <lambda>\r\n    self.backend_factory = lambda: backend or self._select_backend()\r\n                                              ^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 333, in _select_backend\r\n    active_model = self.config.get_active_model()\r\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\config\\_settings.py\", line 583, in get_active_model\r\n    raise ValueError(\r\nValueError: Active model 'devstral-2512' not found in configuration.\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775130068999-95ofnx4",
+      "timestamp": 1775130068999,
+      "message": "Claude Error: Vibe CLI exited with code 1: Error: API error from mistral (model: devstral-2): LLM backend error [mistral]\r\n  status: 400 Bad Request\r\n  reason: Bad Request\r\n  request_id: N/A\r\n  endpoint: https://api.mistral.ai\r\n  model: devstral-2\r\n  provider_message: Invalid model: devstral-2\r\n  body_excerpt: {\"object\":\"error\",\"message\":\"Invalid model: devstral-2\",\"type\":\"invalid_model\",\"param\":null,\"code\":\"1500\",\"raw_status_code\":400}\r\n  payload_summary: {\"model\":\"devstral-2\",\"message_count\":2,\"approx_chars\":24080,\"temperature\":0.2,\"has_tools\":true,\"tool_choice\":\"auto\"}\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775130198926-o9m9ae3",
+      "timestamp": 1775130198926,
+      "message": "Claude Error: Vibe CLI exited with code 1: Traceback (most recent call last):\r\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\r\n  File \"<frozen runpy>\", line 88, in _run_code\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\vibe.exe\\__main__.py\", line 7, in <module>\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\cli\\entrypoint.py\", line 162, in main\r\n    run_cli(args)\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\cli\\cli.py\", line 177, in run_cli\r\n    final_response = run_programmatic(\r\n                     ^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\programmatic.py\", line 36, in run_programmatic\r\n    agent_loop = AgentLoop(\r\n                 ^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 179, in __init__\r\n    self.backend = self.backend_factory()\r\n                   ^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 178, in <lambda>\r\n    self.backend_factory = lambda: backend or self._select_backend()\r\n                                              ^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 333, in _select_backend\r\n    active_model = self.config.get_active_model()\r\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\config\\_settings.py\", line 583, in get_active_model\r\n    raise ValueError(\r\nValueError: Active model 'devstral-2512' not found in configuration.\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775130790375-szlcedm",
+      "timestamp": 1775130790375,
+      "message": "Claude Error: Vibe CLI exited with code 1: Error: API error from mistral (model: devstral-2): LLM backend error [mistral]\r\n  status: 400 Bad Request\r\n  reason: Bad Request\r\n  request_id: N/A\r\n  endpoint: https://api.mistral.ai\r\n  model: devstral-2\r\n  provider_message: Invalid model: devstral-2\r\n  body_excerpt: {\"object\":\"error\",\"message\":\"Invalid model: devstral-2\",\"type\":\"invalid_model\",\"param\":null,\"code\":\"1500\",\"raw_status_code\":400}\r\n  payload_summary: {\"model\":\"devstral-2\",\"message_count\":2,\"approx_chars\":24080,\"temperature\":0.2,\"has_tools\":true,\"tool_choice\":\"auto\"}\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775234952548-9uprqsu",
+      "timestamp": 1775234952548,
+      "message": "Welcome! Fill in your project details to get started.",
+      "type": "info",
+      "source": "app"
     }
   ]
 }

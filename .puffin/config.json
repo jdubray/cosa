@@ -61,7 +61,7 @@
     }
   },
   "createdAt": "2026-03-28T21:33:40.809Z",
-  "updatedAt": "2026-04-02T04:18:33.699Z",
+  "updatedAt": "2026-04-02T12:09:17.367Z",
   "defaultModel": "sonnet",
   "websiteEdition": false,
   "websitePort": 5000,
@@ -73,7 +73,7 @@
   "helpMode": true,
   "mistralApiKey": "Ic0FWo6GUVMlCxPOCqIzcmDs0XupdWl3",
   "vibeModel": "",
-  "defaultProvider": "vibe",
+  "defaultProvider": "claude",
   "deepagentsCmd": "",
   "ollamaHost": "",
   "ollamaModel": ""

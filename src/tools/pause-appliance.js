@@ -1,7 +1,13 @@
 'use strict';
 
-const sshBackend = require('../ssh-backend');
-const { getConfig } = require('../../config/cosa.config');
+const sshBackend                  = require('../ssh-backend');
+const { getConfig }               = require('../../config/cosa.config');
+const { createAlert }             = require('../session-store');
+const { createLogger }            = require('../logger');
+
+const log = createLogger('pause-appliance');
+
+const PAUSE_APPLIANCE_CATEGORY = 'pause_appliance';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -87,6 +93,42 @@ async function issueStop(supervisorType, serviceName) {
 }
 
 // ---------------------------------------------------------------------------
+// Audit persistence
+// ---------------------------------------------------------------------------
+
+/**
+ * Write a pause_appliance event to the alerts table in session.db.
+ * session_id is null because tool handlers have no direct access to the
+ * orchestrator session; the full session context is queryable via session.db.
+ *
+ * @param {object} result
+ * @param {string} supervisorType
+ * @param {string} serviceName
+ * @param {string} stopIssuedAt
+ */
+function _persistAuditRecord(result, supervisorType, serviceName, stopIssuedAt) {
+  try {
+    const severity = result.success ? 'critical' : 'critical';
+    const title    = result.success
+      ? `pause_appliance: ${serviceName} stopped successfully`
+      : `pause_appliance: ${serviceName} stop attempted — verification ${result.verificationPass ? 'passed' : 'FAILED'}`;
+
+    createAlert({
+      session_id: null,
+      severity,
+      category:   PAUSE_APPLIANCE_CATEGORY,
+      title,
+      body:       JSON.stringify({ ...result, stop_issued_at: stopIssuedAt, supervisor: supervisorType }),
+      sent_at:    new Date().toISOString(),
+      email_to:   null,
+    });
+  } catch (err) {
+    // Never let audit persistence failures surface to the caller.
+    log.warn(`pause_appliance: audit record write failed — ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tool handler
 // ---------------------------------------------------------------------------
 
@@ -112,11 +154,17 @@ async function handler() {
 
   const stopIssuedAt = new Date().toISOString();
 
+  log.warn(
+    `pause_appliance: issuing stop — supervisor=${supervisorType} service=${serviceName}`
+  );
+
   // ── Issue stop command ────────────────────────────────────────────────────
   try {
     await issueStop(supervisorType, serviceName);
   } catch (err) {
-    return {
+    log.error(`pause_appliance: stop command failed — ${err.message}`);
+
+    const result = {
       success:          false,
       supervisor:       supervisorType,
       service_name:     serviceName,
@@ -125,6 +173,9 @@ async function handler() {
       health_after:     { reachable: false, status_code: null, body: null },
       error:            err.message,
     };
+
+    _persistAuditRecord(result, supervisorType, serviceName, stopIssuedAt);
+    return result;
   }
 
   // ── Single health check — expect unreachable ──────────────────────────────
@@ -144,8 +195,12 @@ async function handler() {
     result.error =
       `Service '${serviceName}' still appears reachable after stop ` +
       `(HTTP ${healthAfter.status_code}).`;
+    log.error(`pause_appliance: verification failed — service still reachable`);
+  } else {
+    log.info(`pause_appliance: service stopped and verified unreachable`);
   }
 
+  _persistAuditRecord(result, supervisorType, serviceName, stopIssuedAt);
   return result;
 }
 

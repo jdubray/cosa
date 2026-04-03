@@ -773,7 +773,7 @@ async function runNetworkScanTask() {
   const { session_id: sessionId }  = await orchestrator.runSession(trigger);
 
   const scanResult    = getLastToolOutput(sessionId, 'network_scan') ?? {};
-  const unknownCount  = (scanResult.unknown_devices ?? []).length;
+  const unknownCount  = (scanResult.unknownDevices ?? []).length;
 
   if (unknownCount > 0) {
     createAlert({
@@ -901,11 +901,17 @@ async function runComplianceVerifyTask() {
   const { session_id: sessionId }  = await orchestrator.runSession(trigger);
 
   const verifyResult  = getLastToolOutput(sessionId, 'compliance_verify') ?? {};
-  const overallStatus = verifyResult.overallStatus ?? 'unknown';
+  const failCount     = verifyResult.fail_count    ?? 0;
+  const warningCount  = verifyResult.warning_count ?? 0;
+  const overallStatus = failCount > 0
+    ? 'non_compliant'
+    : warningCount > 0
+      ? 'needs_review'
+      : 'compliant';
 
   createAlert({
     session_id: sessionId,
-    severity:   overallStatus === 'non_compliant' ? 'warning' : 'info',
+    severity:   failCount > 0 ? 'warning' : 'info',
     category:   COMPLIANCE_VERIFY_CATEGORY,
     title:      `Compliance verify: ${overallStatus}`,
     body:       JSON.stringify(verifyResult),
@@ -925,22 +931,22 @@ async function runWebhookHmacVerifyTask() {
   const trigger                    = buildWebhookHmacTrigger();
   const { session_id: sessionId }  = await orchestrator.runSession(trigger);
 
-  const verifyResult = getLastToolOutput(sessionId, 'webhook_hmac_verify') ?? {};
-  const inactiveCount = (verifyResult.inactive ?? []).length;
+  const verifyResult   = getLastToolOutput(sessionId, 'webhook_hmac_verify') ?? {};
+  const hmacNotEnforced = verifyResult.verified === false && verifyResult.status_code === 200;
 
-  if (inactiveCount > 0) {
+  if (hmacNotEnforced) {
     createAlert({
       session_id: sessionId,
       severity:   'critical',
       category:   WEBHOOK_HMAC_CATEGORY,
-      title:      `Webhook HMAC: ${inactiveCount} endpoint(s) unprotected`,
+      title:      'Webhook HMAC: endpoint accepted invalid signature (HTTP 200)',
       body:       JSON.stringify(verifyResult),
       sent_at:    new Date().toISOString(),
       email_to:   null,
     });
   }
 
-  log.info(`Webhook HMAC verify complete: ${inactiveCount} inactive endpoint(s)`);
+  log.info(`Webhook HMAC verify complete: hmacNotEnforced=${hmacNotEnforced}`);
 }
 
 /**

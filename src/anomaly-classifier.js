@@ -148,50 +148,50 @@ function extractJwtSecretCheck(data) {
 
 /**
  * webhook_hmac_verify probes the appliance with an invalid HMAC and checks
- * the response status.  The tool returns `{ invalidHmacStatus: number, ... }`.
+ * the response status.  The tool returns `{ verified: boolean, status_code: number, ... }`.
  * - 401 (rejected)  → clean (HMAC enforcement working)
- * - anything else   → critical (HMAC enforcement bypassed)
+ * - 200 (accepted)  → critical (HMAC enforcement bypassed)
+ * - other / absent  → unknown (endpoint unreachable or inconclusive)
  *
  * @param {object} data
  * @returns {string[]}
  */
 function extractWebhookHmacVerify(data) {
-  if (data.invalidHmacStatus === 401) return ['clean'];
-  if (typeof data.invalidHmacStatus === 'number') return ['critical'];
-  // If the field is absent (probe failed to reach endpoint) treat as unknown.
+  if (data.status_code === 401) return ['clean'];
+  if (data.status_code === 200) return ['critical'];
+  // Any other numeric code (e.g. 500, 404) or absent (unreachable) → inconclusive.
   return [];
 }
 
 /**
- * token_rotation_remind returns `{ overdueCredentials: string[], ... }`.
- * Any overdue credential → medium.
+ * token_rotation_remind returns `{ dueCount: number, checked: [...], ... }`.
+ * Any overdue credential (dueCount > 0) → medium.
  *
  * @param {object} data
  * @returns {string[]}
  */
 function extractTokenRotationRemind(data) {
-  if (Array.isArray(data.overdueCredentials) && data.overdueCredentials.length > 0) {
+  if (typeof data.dueCount === 'number' && data.dueCount > 0) {
     return ['medium'];
   }
   return [];
 }
 
 /**
- * compliance_verify returns `{ status: 'pass'|'fail'|'warning', ... }`.
- * - pass    → clean
- * - warning → medium
- * - fail    → high
+ * compliance_verify returns `{ fail_count, warning_count, pass_count, ... }`.
+ * - any failures → high
+ * - any warnings → medium
+ * - all pass     → clean
+ * - result absent (counts not numbers) → unknown
  *
  * @param {object} data
  * @returns {string[]}
  */
 function extractComplianceVerify(data) {
-  switch (data.status) {
-    case 'pass':    return ['clean'];
-    case 'warning': return ['medium'];
-    case 'fail':    return ['high'];
-    default:        return [];
-  }
+  if (typeof data.fail_count !== 'number') return [];
+  if (data.fail_count > 0)    return ['high'];
+  if (data.warning_count > 0) return ['medium'];
+  return ['clean'];
 }
 
 // ---------------------------------------------------------------------------
