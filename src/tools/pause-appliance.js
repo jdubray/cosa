@@ -29,7 +29,7 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Stop the WeatherStation appliance service via systemd or pm2 (determined by ' +
+    'Stop the appliance service via systemd or pm2 (determined by ' +
     'the process_supervisor config), then perform a single GET /health check to ' +
     'confirm the service is no longer reachable. Returns success=true only when ' +
     'the health endpoint is unreachable after the stop command completes.',
@@ -133,7 +133,7 @@ function _persistAuditRecord(result, supervisorType, serviceName, stopIssuedAt) 
 // ---------------------------------------------------------------------------
 
 /**
- * Stop the WeatherStation appliance service and verify it is no longer reachable.
+ * Stop the appliance service and verify it is no longer reachable.
  *
  * @returns {Promise<{
  *   success:          boolean,

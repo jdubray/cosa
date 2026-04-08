@@ -43,7 +43,7 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Aggregate WeatherStation readings for the previous shift period into a ' +
+    'Aggregate appliance data for the previous shift period into a ' +
     'structured summary.  Accepts a lookback window in hours (default 24, max 48) ' +
     'or an explicit UTC date override (YYYY-MM-DD).  Returns temperature, humidity, ' +
     'condition breakdown, and anomaly list.  Errors if no readings exist for the period.',
@@ -189,7 +189,7 @@ function detectAnomalies({ temp_min, temp_max, humidity_max }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Aggregate WeatherStation readings into a structured shift report.
+ * Aggregate appliance data into a structured shift report.
  *
  * @param {{ lookback_hours?: number, date?: string }} input
  * @returns {Promise<{

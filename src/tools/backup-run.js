@@ -26,7 +26,7 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Export the WeatherStation readings table to a timestamped JSONL file on ' +
+    'Export the appliance database to a timestamped JSONL file on ' +
     'the appliance, then write a .sha256 sidecar.  Returns the backup path, ' +
     'row count, SHA-256 checksum, and timing.  Returns success: false with an ' +
     'error message on SSH or script failure — does not throw.',
@@ -72,7 +72,7 @@ function shEscape(value) {
  *   6. Prints row-count and checksum on stdout (two lines) for the caller.
  *
  * Node.js is used as the JSON-array → JSONL transformer because it is
- * guaranteed to be installed on the WeatherStation appliance.
+ * guaranteed to be installed on the appliance.
  *
  * SQL is embedded directly (static string — no user input involved) to avoid
  * the stdin-consumed-by-bash-s problem that would prevent piping.
