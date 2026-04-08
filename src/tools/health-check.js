@@ -148,7 +148,7 @@ function parseStartTimestamp(timestamp) {
  */
 function determineOverallStatus({ sshConnected, httpCheckEnabled, httpHealth, httpReady, procInfo }) {
   if (!sshConnected) return 'unreachable';
-  if (httpCheckEnabled && (!httpHealth.reachable || !httpReady.reachable)) {
+  if (httpCheckEnabled && (httpHealth.reachable === false || httpReady.reachable === false)) {
     return 'unreachable';
   }
 
@@ -202,7 +202,7 @@ async function handler() {
   if (!sshConnected) errors.push('SSH not connected after 3 retries');
 
   // ── Steps 2 & 3: HTTP health checks (parallel, skipped when disabled) ────
-  const SKIPPED = { reachable: true, status_code: null, body: null, skipped: true };
+  const SKIPPED = { reachable: null, status_code: null, body: null, skipped: true };
   const [httpHealth, httpReady] = httpCheckEnabled
     ? await Promise.all([
         httpGet(`${base_url}${health_endpoint}`,      timeoutMs),
