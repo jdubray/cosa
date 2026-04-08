@@ -6,6 +6,85 @@ Format: [Semantic Versioning](https://semver.org). Sections: **Added**, **Change
 
 ---
 
+## [1.0.0] — 2026-04-08
+
+Phase 2 & 3 — Full production release. Completes the tool suite (17 new tools including `pause_appliance`, `backup_verify`, and the full Phase 3 set), hardens every core subsystem, and ships the cron session timeout, dead-letter queue, watchers table, and per-installation credential isolation.
+
+### Added
+
+**New tools (Phase 2 & 3)**
+- `backup_verify` — verifies backup integrity over SSH; integrated into cron with alert email on failure
+- `pause_appliance` and 16 additional Phase 3 tools — full tool output shape alignment and audit persistence for all tool calls
+
+**Session store (`src/session-store.js`)**
+- `dead_letters` table — persists emails that triggered a dispatch error so they can be reviewed without loss
+- `watchers` table — stores persistent monitoring rules (`id`, `code`, `trigger_count`, `last_alerted_at`, `enabled`)
+
+**Cron scheduler (`src/cron-scheduler.js`)**
+- 10-minute hard timeout (`CRON_SESSION_TIMEOUT_MS`) on all cron-triggered orchestrator sessions via `runSessionWithTimeout()`; prevents a hung tool call or approval wait from blocking subsequent scheduled tasks indefinitely
+- `backup_verify`, archive check, shift report, weekly digest, git audit, and process monitor tasks all wrapped with the new timeout
+
+**Security gate (`src/security-gate.js`)**
+- IPv4 address sanitization pattern — redacts internal network topology from tool output before it reaches the LLM
+- Unix path sanitization — strips absolute paths under `/home`, `/root`, `/etc`, `/var`, `/opt`, `/tmp`, `/proc`, `/sys`
+
+**Email gateway (`src/email-gateway.js`)**
+- Failed dispatch errors now saved to `dead_letters` via `saveDeadLetter()` — no inbound email is silently lost
+- `_resetSmtpTransport()` exported for test isolation (allows verifying `createTransport` config per-test)
+
+**Tests**
+- `tests/context-compressor-guard.test.js` — isolated unit tests for the empty-middle-slice guard and role-alternation logic; runs on Win32 without `better-sqlite3`
+- `tests/memory-manager.test.js` — unit tests for truncation passes 1–4 and `_applyPatch`; fully mocked fs and config
+
+### Changed
+
+**Orchestrator (`src/orchestrator.js`)**
+- `MAX_TOKENS` raised from 4096 → 8192 to prevent security/compliance digests from being silently truncated mid-sentence
+- `extractFinalText()` now concatenates all `text`-type content blocks instead of returning only the first, so multi-block responses are never partially dropped
+- Dynamic risk resolution for `appliance_api_call`: the orchestrator resolves `'dynamic'` risk at call time from the endpoint's configured `risk` field (falls back to `'high'` for unknown endpoints)
+- Approval request emails now include a richer `action_summary` — `appliance_api_call` requests show the endpoint name and caller-supplied `reason` field
+
+**Approval engine (`src/approval-engine.js`)**
+- `requestApproval()` catches email send failure and returns `{ approved: false }` immediately instead of hanging the session
+- `_resolve` is now stored alongside FSM intents so `processInboundReply` and `_runExpiryCheck` can force-resolve the outer Promise if an FSM intent throws — prevents approval-limbo sessions
+- Operator receives a feedback email when replying to a token that has already been approved, denied, or expired
+
+**Context compressor (`src/context-compressor.js`)**
+- Early-return guard: if `protectFirstN + protectLastN ≥ messages.length` there is nothing in the middle to summarise; returns the original array instead of calling Haiku with an empty payload
+- Summary role is now computed to maintain the strict user/assistant alternation invariant required by the Anthropic API (`headLastRole` determines `summaryRole`)
+- When middle turn count is even, a minimal bridge message (`[Context acknowledged]`) is injected at the summary→tail boundary to prevent consecutive same-role messages
+
+**Memory manager (`src/memory-manager.js`)**
+- Hard-slice in `_enforceLimit()` now appends `<!-- END MEMORY -->` so readers can detect a truncated document
+- `_applyPatch()` extracted as a shared helper used by both `updateMemory()` and `makeMemoryAcceptor()` — patch logic now lives in a single place
+
+**Session store (`src/session-store.js`)**
+- `saveTurn()` SELECT + INSERT wrapped in a SQLite transaction — eliminates a race condition where concurrent email-triggered and cron-triggered sessions could produce duplicate `turn_index` values
+- `searchTurns()` now catches FTS5 query syntax errors (unbalanced quotes, bare `AND`, etc.) and returns `[]` instead of throwing
+
+**Email gateway (`src/email-gateway.js`)**
+- DKIM check is now opt-out via `appliance.security.dkim_check: false` in `appliance.yaml` — enables non-Gmail providers (Outlook, custom domain) that do not inject `Authentication-Results` headers
+
+**Tool registry (`src/tool-registry.js`)**
+- `getRiskLevel()` logs a `console.warn` for unknown tool names before defaulting to `'read'`, making mis-named tools visible in logs before `dispatch()` throws `TOOL_NOT_FOUND`
+
+### Fixed
+
+**Credential store (`src/credential-store.js`)**
+- Replaced static KDF salt (`cosa-credential-store-v1`) with a per-installation random 32-byte salt generated on first use and stored in the `_meta` table — two operators sharing the same `COSA_CREDENTIAL_KEY` no longer derive identical AES keys
+
+**Security gate (`src/security-gate.js`)**
+- Base64 secret pattern narrowed with a lookahead requiring at least one `+` or `/` character — eliminates false positives on 40-character hex strings (git SHAs, SHA-256 hashes)
+- Tirith stdin guard: `child.stdin` is checked for existence before `.end(payload)` is called; if the pipe was not created the gate fails open with a warning instead of throwing
+
+### Security
+
+- Per-installation KDF salt in `credential-store.js` eliminates shared-key risk across multi-appliance deployments
+- IPv4 address and Unix path sanitization in `security-gate.js` prevents internal topology leakage into LLM context
+- Base64 pattern fix removes false-positive redaction of git SHAs in tool output
+
+---
+
 ## [0.1.0] — 2026-03-29
 
 Phase 1 — Foundation. Initial implementation of the COSA agent core, all three Phase 1 tools, and the full email-based operator interface.

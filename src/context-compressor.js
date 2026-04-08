@@ -36,6 +36,9 @@ function _getConfig() {
       maxTurnsBeforeCompress: cc.max_turns_before_compress ?? 12,
       protectFirstN:          cc.protect_first_n           ?? 3,
       protectLastN:           cc.protect_last_n            ?? 4,
+      // Default is the Haiku model current at the time of writing.  Set
+      // context_compression.compression_model in appliance.yaml explicitly so
+      // that future Haiku releases do not silently change compression behaviour.
       compressionModel:       cc.compression_model         ?? 'claude-haiku-4-5-20251001',
     };
   } catch {
@@ -92,6 +95,11 @@ async function _runCompression(messages, sessionId, apiKey) {
   const middle = messages.slice(protectFirstN, messages.length - protectLastN);
   const tail   = messages.slice(messages.length - protectLastN);
 
+  // Guard: if protectFirstN + protectLastN ≥ messages.length, there is nothing
+  // in the middle to summarise.  Return early rather than calling Haiku with an
+  // empty payload and injecting a vacuous summary.
+  if (middle.length === 0) return messages;
+
   const prompt   = _buildCompressionPrompt(middle);
   const client   = new Anthropic({ apiKey });
   const response = await client.messages.create({
@@ -105,12 +113,23 @@ async function _runCompression(messages, sessionId, apiKey) {
     .map(b => b.text)
     .join('');
 
-  const summaryMessage = {
-    role:    'user',
-    content: `${SUMMARY_PREFIX}\n\n${summaryText}`,
-  };
+  // The summary role must be opposite to head[-1].role to preserve the strict
+  // user/assistant alternation invariant required by the Anthropic API.
+  const headLastRole  = head.length > 0 ? head[head.length - 1].role : 'assistant';
+  const tailFirstRole = tail.length > 0 ? tail[0].role : 'user';
+  const summaryRole   = headLastRole === 'user' ? 'assistant' : 'user';
 
-  const compressed = [...head, summaryMessage, ...tail];
+  const injected = [{ role: summaryRole, content: `${SUMMARY_PREFIX}\n\n${summaryText}` }];
+
+  // When middle.length is even, the summary role equals tail[0].role, producing
+  // two consecutive same-role messages.  A minimal bridge message is inserted to
+  // restore alternation across the summary → tail boundary.
+  if (summaryRole === tailFirstRole) {
+    const bridgeRole = summaryRole === 'user' ? 'assistant' : 'user';
+    injected.push({ role: bridgeRole, content: '[Context acknowledged]' });
+  }
+
+  const compressed = [...head, ...injected, ...tail];
 
   // ── Log to session.db ──────────────────────────────────────────────────────
   saveTurn(
@@ -150,8 +169,9 @@ function needsCompression(messages) {
  * `protectLastN` (default: 4) at the tail.  The summary is injected as a
  * single `user` message prefixed with {@link SUMMARY_PREFIX}.
  *
- * The returned array length equals `protectFirstN + 1 + protectLastN` (8
- * with default config).
+ * The returned array length is `protectFirstN + protectLastN + 1` when the
+ * middle turn count is odd, or `protectFirstN + protectLastN + 2` when even
+ * (an extra bridge message is injected to preserve strict role alternation).
  *
  * @param {Array} messages - Full current message array.
  * @param {string} sessionId - Used to log and mark the session in session.db.

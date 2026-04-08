@@ -13,6 +13,13 @@ const log = createLogger('cron-scheduler');
 // Constants
 // ---------------------------------------------------------------------------
 
+/**
+ * Hard timeout for any single cron-triggered orchestrator session.
+ * Prevents a hung tool call or approval wait from blocking the cron worker
+ * indefinitely and starving subsequent scheduled tasks.
+ */
+const CRON_SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
 /** Suppress a repeat alert for the same category + severity within this window. */
 const ALERT_DEDUP_WINDOW_MS = 60 * 60 * 1000;
 
@@ -44,6 +51,30 @@ const WEBHOOK_HMAC_CATEGORY       = 'webhook_hmac_verify';
 const JWT_SECRET_CATEGORY         = 'jwt_secret_check';
 const PCI_ASSESSMENT_CATEGORY     = 'pci_assessment';
 const TOKEN_ROTATION_CATEGORY     = 'token_rotation_remind';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Run an orchestrator session with a hard timeout.
+ * If the session does not complete within CRON_SESSION_TIMEOUT_MS, the returned
+ * promise rejects so the cron task can log and move on rather than hanging.
+ *
+ * @param {{ type: string, source: string, message: string }} trigger
+ * @returns {Promise<{ session_id: string }>}
+ */
+function runSessionWithTimeout(trigger) {
+  return Promise.race([
+    orchestrator.runSession(trigger),
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Cron session timed out after ${CRON_SESSION_TIMEOUT_MS / 1000}s (source: ${trigger.source})`)),
+        CRON_SESSION_TIMEOUT_MS
+      )
+    ),
+  ]);
+}
 
 // ---------------------------------------------------------------------------
 // Trigger builders
@@ -401,7 +432,7 @@ async function runHealthCheckTask() {
   const operatorEmail = appliance.operator.email;
 
   const trigger                    = buildHealthCheckTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const healthResult   = getLastToolOutput(sessionId, 'health_check') ?? {};
   const overall_status = healthResult.overall_status ?? 'unreachable';
@@ -456,7 +487,7 @@ async function runBackupTask() {
   const operatorEmail = appliance.operator.email;
 
   const trigger                    = buildBackupTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const backupResult = getLastToolOutput(sessionId, 'backup_run') ?? {};
 
@@ -516,7 +547,7 @@ async function runBackupVerifyTask() {
   const operatorEmail = appliance.operator.email;
 
   const trigger                    = buildBackupVerifyTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const verifyResult = getLastToolOutput(sessionId, 'backup_verify') ?? {};
 
@@ -587,7 +618,7 @@ async function runArchiveCheckTask() {
   }
 
   const trigger                    = buildArchiveCheckTrigger();
-  const { session_id: sessionId, response } = await orchestrator.runSession(trigger);
+  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
 
   // If COSA's response contains an alert indicator, record it for dedup.
   // COSA is instructed to report "ALERT:" when a recurring pattern is found.
@@ -632,7 +663,7 @@ async function runShiftReportTask() {
   }
 
   const trigger                    = buildShiftReportTrigger();
-  const { session_id: sessionId, response } = await orchestrator.runSession(trigger);
+  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
 
   // Use the orchestrator's final response as the email body.
   // COSA is instructed to format the full plain-text report as its response.
@@ -681,7 +712,7 @@ async function runWeeklyDigestTask() {
   }
 
   const trigger                    = buildWeeklyDigestTrigger();
-  const { session_id: sessionId, response } = await orchestrator.runSession(trigger);
+  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
 
   const body   = response || '(No digest data available.)';
   const sentAt = new Date().toISOString();
@@ -716,7 +747,7 @@ async function runWeeklyDigestTask() {
  */
 async function runGitAuditTask() {
   const trigger                    = buildGitAuditTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const auditResult = getLastToolOutput(sessionId, 'git_audit') ?? {};
   const severity    = auditResult.severity ?? 'none';
@@ -743,7 +774,7 @@ async function runGitAuditTask() {
  */
 async function runProcessMonitorTask() {
   const trigger                    = buildProcessMonitorTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const monitorResult = getLastToolOutput(sessionId, 'process_monitor') ?? {};
   const severity      = monitorResult.severity ?? 'none';
@@ -770,7 +801,7 @@ async function runProcessMonitorTask() {
  */
 async function runNetworkScanTask() {
   const trigger                    = buildNetworkScanTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const scanResult    = getLastToolOutput(sessionId, 'network_scan') ?? {};
   const unknownCount  = (scanResult.unknownDevices ?? []).length;
@@ -797,7 +828,7 @@ async function runNetworkScanTask() {
  */
 async function runAccessLogScanTask() {
   const trigger                    = buildAccessLogScanTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const scanResult  = getLastToolOutput(sessionId, 'access_log_scan') ?? {};
   const anomalyCount = (scanResult.anomalies ?? []).length;
@@ -840,7 +871,7 @@ async function runWeeklySecurityDigestTask() {
   }
 
   const trigger                    = buildWeeklySecurityDigestTrigger();
-  const { session_id: sessionId, response } = await orchestrator.runSession(trigger);
+  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
 
   const body   = response || '(No security digest data available.)';
   const sentAt = new Date().toISOString();
@@ -871,7 +902,7 @@ async function runWeeklySecurityDigestTask() {
  */
 async function runCredentialAuditTask() {
   const trigger                    = buildCredentialAuditTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const auditResult  = getLastToolOutput(sessionId, 'credential_audit') ?? {};
   const findingCount = (auditResult.findings ?? []).length;
@@ -898,7 +929,7 @@ async function runCredentialAuditTask() {
  */
 async function runComplianceVerifyTask() {
   const trigger                    = buildComplianceVerifyTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const verifyResult  = getLastToolOutput(sessionId, 'compliance_verify') ?? {};
   const failCount     = verifyResult.fail_count    ?? 0;
@@ -929,7 +960,7 @@ async function runComplianceVerifyTask() {
  */
 async function runWebhookHmacVerifyTask() {
   const trigger                    = buildWebhookHmacTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const verifyResult   = getLastToolOutput(sessionId, 'webhook_hmac_verify') ?? {};
   const hmacNotEnforced = verifyResult.verified === false && verifyResult.status_code === 200;
@@ -956,7 +987,7 @@ async function runWebhookHmacVerifyTask() {
  */
 async function runJwtSecretCheckTask() {
   const trigger                    = buildJwtSecretCheckTrigger();
-  const { session_id: sessionId }  = await orchestrator.runSession(trigger);
+  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
 
   const checkResult  = getLastToolOutput(sessionId, 'jwt_secret_check') ?? {};
   const dueCount     = (checkResult.rotation_due ?? []).length;
@@ -998,7 +1029,7 @@ async function runPciAssessmentTask() {
   }
 
   const trigger                    = buildPciAssessmentTrigger();
-  const { session_id: sessionId, response } = await orchestrator.runSession(trigger);
+  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
 
   const body   = response || '(No PCI assessment data available.)';
   const sentAt = new Date().toISOString();
@@ -1042,7 +1073,7 @@ async function runTokenRotationRemindTask() {
   }
 
   const trigger                    = buildTokenRotationRemindTrigger();
-  const { session_id: sessionId, response } = await orchestrator.runSession(trigger);
+  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
 
   const monthOf = new Date().toISOString().slice(0, 7);
   const subject = `[COSA] Token Rotation Reminder: ${monthOf}`;

@@ -38,7 +38,13 @@ const credentialAuditTool    = require('./tools/credential-audit');
 const accessLogScanTool      = require('./tools/access-log-scan');
 const ipsAlertTool           = require('./tools/ips-alert');
 const tokenRotationRemindTool = require('./tools/token-rotation-remind');
-const pauseApplianceTool      = require('./tools/pause-appliance');
+const pauseApplianceTool         = require('./tools/pause-appliance');
+const applianceStatusPollTool    = require('./tools/appliance-status-poll');
+const applianceApiCallTool       = require('./tools/appliance-api-call');
+const watcherRegisterTool        = require('./tools/watcher-register');
+const watcherListTool            = require('./tools/watcher-list');
+const watcherRemoveTool          = require('./tools/watcher-remove');
+const watcherSetEnabledTool      = require('./tools/watcher-set-enabled');
 
 // ---------------------------------------------------------------------------
 // Credential store CLI subcommand
@@ -84,7 +90,13 @@ function runCredentialsCli() {
         process.stderr.write('Usage: credentials import <file.json>\n');
         process.exit(1);
       }
-      const fs   = require('fs');
+      const fs    = require('fs');
+      const MAX_IMPORT_BYTES = 1 * 1024 * 1024; // 1 MiB
+      const { size } = fs.statSync(filePath);
+      if (size > MAX_IMPORT_BYTES) {
+        process.stderr.write(`Import file too large (${size} bytes; max ${MAX_IMPORT_BYTES}).\n`);
+        process.exit(1);
+      }
       const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       if (typeof data !== 'object' || Array.isArray(data)) {
         process.stderr.write('Import file must be a JSON object mapping names to values.\n');
@@ -168,138 +180,18 @@ async function boot() {
   securityGate.initTirith();
 
   // 4. Register tools with the tool registry.
-  toolRegistry.register(
-    healthCheckTool.name,
-    healthCheckTool.schema,
-    healthCheckTool.handler,
-    healthCheckTool.riskLevel
-  );
-  toolRegistry.register(
-    dbQueryTool.name,
-    dbQueryTool.schema,
-    dbQueryTool.handler,
-    dbQueryTool.riskLevel
-  );
-  toolRegistry.register(
-    dbIntegrityTool.name,
-    dbIntegrityTool.schema,
-    dbIntegrityTool.handler,
-    dbIntegrityTool.riskLevel
-  );
-  toolRegistry.register(
-    shiftReportTool.name,
-    shiftReportTool.schema,
-    shiftReportTool.handler,
-    shiftReportTool.riskLevel
-  );
-  toolRegistry.register(
-    archiveSearchTool.name,
-    archiveSearchTool.schema,
-    archiveSearchTool.handler,
-    archiveSearchTool.riskLevel
-  );
-  toolRegistry.register(
-    backupRunTool.name,
-    backupRunTool.schema,
-    backupRunTool.handler,
-    backupRunTool.riskLevel
-  );
-  toolRegistry.register(
-    backupVerifyTool.name,
-    backupVerifyTool.schema,
-    backupVerifyTool.handler,
-    backupVerifyTool.riskLevel
-  );
-  toolRegistry.register(
-    settingsWriteTool.name,
-    settingsWriteTool.schema,
-    settingsWriteTool.handler,
-    settingsWriteTool.riskLevel
-  );
-  toolRegistry.register(
-    restartApplianceTool.name,
-    restartApplianceTool.schema,
-    restartApplianceTool.handler,
-    restartApplianceTool.riskLevel
-  );
-  toolRegistry.register(
-    jwtSecretCheckTool.name,
-    jwtSecretCheckTool.schema,
-    jwtSecretCheckTool.handler,
-    jwtSecretCheckTool.riskLevel
-  );
-  toolRegistry.register(
-    processMonitorTool.name,
-    processMonitorTool.schema,
-    processMonitorTool.handler,
-    processMonitorTool.riskLevel
-  );
-  toolRegistry.register(
-    sessionSearchTool.name,
-    sessionSearchTool.schema,
-    sessionSearchTool.handler,
-    sessionSearchTool.riskLevel
-  );
-  toolRegistry.register(
-    cloudflareKillTool.name,
-    cloudflareKillTool.schema,
-    cloudflareKillTool.handler,
-    cloudflareKillTool.riskLevel
-  );
-  toolRegistry.register(
-    networkScanTool.name,
-    networkScanTool.schema,
-    networkScanTool.handler,
-    networkScanTool.riskLevel
-  );
-  toolRegistry.register(
-    webhookHmacVerifyTool.name,
-    webhookHmacVerifyTool.schema,
-    webhookHmacVerifyTool.handler,
-    webhookHmacVerifyTool.riskLevel
-  );
-  toolRegistry.register(
-    complianceVerifyTool.name,
-    complianceVerifyTool.schema,
-    complianceVerifyTool.handler,
-    complianceVerifyTool.riskLevel
-  );
-  toolRegistry.register(
-    pciAssessmentTool.name,
-    pciAssessmentTool.schema,
-    pciAssessmentTool.handler,
-    pciAssessmentTool.riskLevel
-  );
-  toolRegistry.register(
-    credentialAuditTool.name,
-    credentialAuditTool.schema,
-    credentialAuditTool.handler,
-    credentialAuditTool.riskLevel
-  );
-  toolRegistry.register(
-    accessLogScanTool.name,
-    accessLogScanTool.schema,
-    accessLogScanTool.handler,
-    accessLogScanTool.riskLevel
-  );
-  toolRegistry.register(
-    ipsAlertTool.name,
-    ipsAlertTool.schema,
-    ipsAlertTool.handler,
-    ipsAlertTool.riskLevel
-  );
-  toolRegistry.register(
-    tokenRotationRemindTool.name,
-    tokenRotationRemindTool.schema,
-    tokenRotationRemindTool.handler,
-    tokenRotationRemindTool.riskLevel
-  );
-  toolRegistry.register(
-    pauseApplianceTool.name,
-    pauseApplianceTool.schema,
-    pauseApplianceTool.handler,
-    pauseApplianceTool.riskLevel
-  );
+  for (const t of [
+    healthCheckTool, dbQueryTool, dbIntegrityTool, shiftReportTool,
+    archiveSearchTool, backupRunTool, backupVerifyTool, settingsWriteTool,
+    restartApplianceTool, sessionSearchTool, jwtSecretCheckTool, processMonitorTool,
+    cloudflareKillTool, networkScanTool, webhookHmacVerifyTool, complianceVerifyTool,
+    pciAssessmentTool, credentialAuditTool, accessLogScanTool, ipsAlertTool,
+    tokenRotationRemindTool, pauseApplianceTool,
+    applianceStatusPollTool, applianceApiCallTool,
+    watcherRegisterTool, watcherListTool, watcherRemoveTool, watcherSetEnabledTool,
+  ]) {
+    toolRegistry.register(t.name, t.schema, t.handler, t.riskLevel);
+  }
   log.info(`Tools registered: ${toolRegistry.getSchemas().map(t => t.name).join(', ')}`);
 
   // In CLI mode skip email polling and cron — use interactive REPL instead.

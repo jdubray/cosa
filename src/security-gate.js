@@ -28,8 +28,16 @@ const SANITIZE_PATTERNS = [
   { label: 'Clover live key',   pattern: /sk_live_[a-zA-Z0-9]{24,}/g },
   // AWS IAM access key ID  (AKIA<16 uppercase alphanum>)
   { label: 'AWS access key',    pattern: /AKIA[0-9A-Z]{16}/g },
-  // Base64-encoded secrets — 40+ chars (covers JWT secrets, S3 secret keys, etc.)
-  { label: 'Base64 secret',     pattern: /[a-zA-Z0-9+/]{40}={0,2}/g },
+  // Base64-encoded secrets — 40+ chars that contain at least one '+' or '/'
+  // (required Base64 alphabet characters).  The lookahead ensures the matched
+  // segment includes a '+' or '/', which hex SHA-256 hashes and 40-char git
+  // SHAs (purely [0-9a-f]) never contain, avoiding those false positives.
+  { label: 'Base64 secret',     pattern: /(?=[a-zA-Z0-9+/]*[+/])[a-zA-Z0-9+/]{40,}={0,2}/g },
+  // IPv4 addresses — may appear in SSH error messages, connection strings, etc.
+  // Redacted to avoid leaking internal network topology into LLM context.
+  { label: 'IPv4 address',      pattern: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g },
+  // Absolute Unix paths under sensitive directories.
+  { label: 'Unix path',         pattern: /\/(?:home|root|etc|var|opt|tmp|proc|sys)(?:\/\S+)+/g },
   // password key=value or key: value with optional quotes  (≥8 char value)
   { label: 'password',          pattern: /password["'\s]*[:=]["'\s]*\S{8,}/gi },
   // token key=value or key: value with optional quotes  (≥16 char value)
@@ -109,7 +117,7 @@ function runTirith(toolCall) {
       maxBuffer: 64 * 1024,
     };
 
-    execFile(TIRITH_BIN, ['--json'], opts, (err, stdout, stderr) => {
+    const child = execFile(TIRITH_BIN, ['--json'], opts, (err, stdout, stderr) => {
       if (!err) {
         // Exit 0 — clean
         resolve({ blocked: false });
@@ -130,7 +138,16 @@ function runTirith(toolCall) {
       // Any other exit (binary crash, timeout, etc.) — fail-open
       log.warn(`Tirith invocation error (code=${err.code ?? 'timeout'}): ${err.message}`);
       resolve({ blocked: false });
-    }).stdin?.end(payload);
+    });
+
+    if (child.stdin) {
+      child.stdin.end(payload);
+    } else {
+      // stdin unavailable (process error before pipe was created) — fail-open so
+      // tool execution is not permanently blocked by a Tirith infrastructure fault.
+      log.warn('Tirith stdin unavailable — payload not delivered, treating as clean');
+      resolve({ blocked: false });
+    }
   });
 }
 

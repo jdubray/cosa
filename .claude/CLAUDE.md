@@ -57,35 +57,32 @@ When reviewing or generating JavaScript/TypeScript code, follow these rules:
 
 ---
 
-## Branch Focus: Specifications
+## Branch Focus: Code Reviews
 
-You are working on the **specifications thread**. Focus on:
-- Requirements gathering and clarification
-- Feature definitions and scope
-- User stories and acceptance criteria
-- Business logic and rules
-- Edge cases and constraints
+You are working on the **code review thread**. Focus on:
+- Code quality and maintainability
+- Security vulnerabilities
+- Performance issues
+- Adherence to project conventions
+- Test coverage gaps
 
-**IMPORTANT: NO CODE CHANGES ALLOWED**
+## Review Checklist
 
-This is a planning-only thread. You must NOT:
-- Create, modify, or delete any source code files
-- Make changes to implementation files (.js, .ts, .py, .css, .html, etc.)
-- Execute code or run build/test commands
+### Security
+- [ ] No XSS vulnerabilities (escape HTML in user content)
+- [ ] No command/SQL injection risks
+- [ ] No path traversal vulnerabilities
+- [ ] IPC inputs validated
 
-You MAY only:
-- Generate user stories and acceptance criteria
-- Create implementation plans and technical specifications
-- Produce documentation in markdown format
-- Answer questions and clarify requirements
-- Analyze existing code to inform planning (read-only)
+### Code Quality
+- [ ] Error handling for edge cases
+- [ ] Event listeners properly cleaned up
+- [ ] No memory leaks (timers, subscriptions)
+- [ ] Consistent with existing code patterns
 
-If asked to implement something, explain that implementation should happen
-in the appropriate branch (UI, Backend, or a feature branch) after planning is complete.
-
-When deriving user stories, format them as:
-- Title: Brief descriptive name
-- Description: "As a [role], I want [feature] so that [benefit]"
-- Acceptance Criteria: Testable conditions for completion
+### Testing
+- [ ] Unit tests for new functions
+- [ ] Edge cases covered
+- [ ] No broken existing tests
 
 <!-- puffin:generated-end -->

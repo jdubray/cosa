@@ -389,14 +389,22 @@ describe('sanitizeOutput()', () => {
 
   // ── Base64 secrets ≥40 chars (AC3) ────────────────────────────────────────
   describe('base64 secret redaction (AC3)', () => {
-    it('redacts a 40-character base64 string', () => {
-      const secret = 'a'.repeat(40);
-      const out = sanitizeOutput(secret);
-      expect(out).toContain('[REDACTED]');
+    it('does NOT redact a 40-character hex-only string (git SHA / SHA-256 false positive)', () => {
+      // Purely hex chars have no '+' or '/' — the tightened pattern must not
+      // match these to avoid false positives on SHA-256 hashes and git SHAs.
+      const gitSha = 'a'.repeat(40);
+      expect(sanitizeOutput(gitSha)).toBe(gitSha);
     });
 
     it('redacts a 64-character base64 string with padding', () => {
       const secret = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/==';
+      const out = sanitizeOutput(secret);
+      expect(out).toContain('[REDACTED]');
+    });
+
+    it('redacts a 40-character base64 string containing "+"', () => {
+      // At least one '+' makes this unambiguously Base64, not a hex hash.
+      const secret = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+';
       const out = sanitizeOutput(secret);
       expect(out).toContain('[REDACTED]');
     });

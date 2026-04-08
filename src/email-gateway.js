@@ -5,13 +5,17 @@ const { ImapFlow }    = require('imapflow');
 const { simpleParser } = require('mailparser');
 const { getConfig }   = require('../config/cosa.config');
 const { createLogger } = require('./logger');
+const { saveDeadLetter } = require('./session-store');
 
 // approval-engine also requires email-gateway, creating a circular dependency.
 // Lazy-require it inside _dispatchMessage (after both modules are fully loaded)
 // to avoid the partial-initialisation problem that makes processInboundReply
 // appear as undefined.
 
-/** Timestamp recorded at module load — used to skip emails that pre-date this boot. */
+// In production all requires happen synchronously during startup, so BOOT_TIME
+// ≈ process start time.  If this module is loaded lazily (e.g. in a test) the
+// timestamp reflects the require() call, not process start — that is fine
+// because the IMAP polling loop hasn't started yet in either case.
 const BOOT_TIME = new Date();
 
 const log = createLogger('email-gateway');
@@ -234,11 +238,14 @@ async function _runPoll() {
         continue;
       }
 
-      // Layer 2 — DKIM check
+      // Layer 2 — DKIM check (Gmail only by default).
       // Gmail injects Authentication-Results before IMAP delivery; a spoofed
       // message routed through any other server will fail or lack this header.
-      const operatorDomain = operatorEmail.split('@')[1] ?? '';
-      if (operatorDomain && !_dkimPasses(parsed, operatorDomain)) {
+      // Non-Gmail providers don't inject this header, so the check is opt-out
+      // via appliance.security.dkim_check: false in appliance.yaml.
+      const dkimCheckEnabled = appliance.security?.dkim_check !== false;
+      const operatorDomain   = operatorEmail.split('@')[1] ?? '';
+      if (dkimCheckEnabled && operatorDomain && !_dkimPasses(parsed, operatorDomain)) {
         log.warn(`Ignored message: DKIM check failed for <${fromAddr}> (possible spoofed email)`);
         continue;
       }
@@ -251,9 +258,14 @@ async function _runPoll() {
         messageId: fetched.envelope?.messageId ?? null,
       };
       log.info(`Email received — subject: "${msg.subject}", body length: ${body.length}`);
-      _dispatchMessage(msg).catch(err =>
-        log.error(`Session dispatch error: ${err.message}`)
-      );
+      _dispatchMessage(msg).catch(err => {
+        log.error(`Session dispatch error: ${err.message}`);
+        try {
+          saveDeadLetter(msg, err.message);
+        } catch (dlErr) {
+          log.error(`Dead-letter write failed: ${dlErr.message}`);
+        }
+      });
     }
   } finally {
     if (lock) lock.release();
@@ -300,10 +312,20 @@ function setNewSessionHandler(fn) {
 // Exports
 // ---------------------------------------------------------------------------
 
+/**
+ * Reset the cached SMTP transport.
+ * **For use in tests only** — allows each test to verify `createTransport`
+ * is called with the correct config without interference from prior tests.
+ */
+function _resetSmtpTransport() {
+  _smtpTransport = null;
+}
+
 module.exports = {
   sendEmail,
   startPolling,
   stopPolling,
   setNewSessionHandler,
   _runPoll,
+  _resetSmtpTransport,
 };

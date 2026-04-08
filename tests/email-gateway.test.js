@@ -46,15 +46,41 @@ jest.mock('../src/approval-engine', () => ({
   processInboundReply: (...a) => mockProcessInboundReply(...a),
 }));
 
+// ── session-store (dead-letter) ──────────────────────────────────────────────
+// Avoids pulling in better-sqlite3 (compiled for Linux — not loadable in
+// the Windows Jest environment).
+jest.mock('../src/session-store', () => ({
+  saveDeadLetter: jest.fn(),
+}));
+
 // ── logger ───────────────────────────────────────────────────────────────────
+// Expose warn/error so tests can assert on them without spying on console.*
+// (email-gateway.js calls log.warn / log.error, not console.warn / console.error).
+const mockLogWarn  = jest.fn();
+const mockLogError = jest.fn();
+
 jest.mock('../src/logger', () => ({
   createLogger: () => ({
     debug: jest.fn(),
     info:  jest.fn(),
-    warn:  jest.fn(),
-    error: jest.fn(),
+    warn:  mockLogWarn,
+    error: mockLogError,
   }),
 }));
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Flush pending Promise microtasks without advancing fake timers.
+ * `jest.useFakeTimers()` mocks macro-tasks (setTimeout, setInterval, nextTick)
+ * but NOT Promise microtasks, so repeated `await Promise.resolve()` drains
+ * any depth of settled `.then` / `await` chains.
+ */
+const flushPromises = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+};
 
 // ---------------------------------------------------------------------------
 // Module under test
@@ -66,6 +92,7 @@ const {
   stopPolling,
   setNewSessionHandler,
   _runPoll,
+  _resetSmtpTransport,
 } = require('../src/email-gateway');
 
 // We also need the ImapFlow constructor mock to inspect call args.
@@ -89,6 +116,11 @@ const BASE_CONFIG = {
   },
   appliance: {
     operator: { email: 'owner@restaurant.com' },
+    // Disable DKIM for all tests in this file except the dedicated DKIM suite
+    // (AC-DKIM below).  The mock `makeFetched` does not provide a raw email
+    // source with Authentication-Results headers, so all messages would be
+    // dropped if this check were enabled in the baseline config.
+    security: { dkim_check: false },
   },
 };
 
@@ -101,11 +133,34 @@ function makeEnvelope({ from = 'owner@restaurant.com', subject = 'Hello', messag
   };
 }
 
-// Reusable fetched-message builder
-function makeFetched({ from, subject, body = '', messageId } = {}) {
+/**
+ * Build a minimal ImapFlow fetched-message object whose `.source` field is a
+ * proper RFC 2822 email buffer.  email-gateway.js passes `fetched.source` to
+ * `simpleParser`, so the body and headers must live there — not in `bodyParts`.
+ *
+ * @param {{ from?, subject?, body?, messageId?, dkimDomain? }} opts
+ *   dkimDomain — when set, injects a valid Authentication-Results header so the
+ *                DKIM check passes for that domain (e.g. 'gmail.com').
+ */
+function makeFetched({ from = 'owner@restaurant.com', subject = 'Hello', body = '', messageId = '<msg-1@gmail.com>', dkimDomain = null } = {}) {
+  const headerLines = [
+    `From: ${from}`,
+    `To: cosa@gmail.com`,
+    `Subject: ${subject}`,
+    `Message-ID: ${messageId}`,
+  ];
+  if (dkimDomain) {
+    headerLines.push(
+      `Authentication-Results: mx.google.com;\r\n dkim=pass header.d=${dkimDomain}`
+    );
+  }
+  // RFC 2822: blank line separates headers from body
+  const source = Buffer.from([...headerLines, '', body].join('\r\n'));
+
   return {
-    envelope:  makeEnvelope({ from, subject, messageId }),
-    bodyParts: new Map([['TEXT', Buffer.from(body)]]),
+    envelope:    makeEnvelope({ from, subject, messageId }),
+    source,
+    // No internalDate → passes the pre-boot skip check (undefined is falsy)
   };
 }
 
@@ -124,6 +179,9 @@ beforeEach(() => {
   mockSendMail.mockResolvedValue({ messageId: '<sent-123@gmail.com>' });
   mockProcessInboundReply.mockResolvedValue({ action: 'approved', approvalId: 'a1' });
   setNewSessionHandler(null);
+  // Reset SMTP singleton so each test that calls sendEmail() gets a fresh
+  // createTransport() invocation (AC9).
+  _resetSmtpTransport();
 });
 
 afterEach(() => {
@@ -151,7 +209,7 @@ describe('AC1 — IMAP polling interval', () => {
 
     startPolling();
     jest.advanceTimersByTime(60_000);
-    await jest.runAllTimersAsync();
+    await flushPromises();
 
     expect(mockImapConnect).toHaveBeenCalledTimes(1);
   });
@@ -161,8 +219,10 @@ describe('AC1 — IMAP polling interval', () => {
     mockImapSearch.mockResolvedValue([]);
 
     startPolling();
-    jest.advanceTimersByTime(120_000);
-    await jest.runAllTimersAsync();
+    jest.advanceTimersByTime(60_000);
+    await flushPromises();
+    jest.advanceTimersByTime(60_000);
+    await flushPromises();
 
     expect(mockImapConnect).toHaveBeenCalledTimes(2);
   });
@@ -183,7 +243,7 @@ describe('AC1 — IMAP polling interval', () => {
 
     startPolling(5_000); // 5-second interval
     jest.advanceTimersByTime(5_000);
-    await jest.runAllTimersAsync();
+    await flushPromises();
 
     expect(mockImapConnect).toHaveBeenCalledTimes(1);
   });
@@ -206,7 +266,6 @@ describe('AC2 — operator-only filter', () => {
   });
 
   it('logs a warning when ignoring a non-operator message', async () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockImapSearch.mockResolvedValue([1]);
     mockImapFetchOne.mockResolvedValue(
       makeFetched({ from: 'stranger@example.com', subject: 'Hi', body: 'hi' })
@@ -214,10 +273,9 @@ describe('AC2 — operator-only filter', () => {
 
     await _runPoll();
 
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(mockLogWarn).toHaveBeenCalledWith(
       expect.stringContaining('stranger@example.com')
     );
-    warnSpy.mockRestore();
   });
 
   it('still marks non-operator messages as read', async () => {
@@ -592,17 +650,15 @@ describe('IMAP connection lifecycle', () => {
 
   it('suppresses polling errors and logs them to console.error', async () => {
     jest.useFakeTimers();
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockImapConnect.mockRejectedValue(new Error('IMAP auth failed'));
 
     startPolling();
     jest.advanceTimersByTime(60_000);
-    await jest.runAllTimersAsync();
+    await flushPromises();
 
-    expect(errorSpy).toHaveBeenCalledWith(
+    expect(mockLogError).toHaveBeenCalledWith(
       expect.stringContaining('IMAP auth failed')
     );
-    errorSpy.mockRestore();
   });
 });
 
@@ -629,5 +685,79 @@ describe('module exports', () => {
 
   it('exports _runPoll', () => {
     expect(typeof _runPoll).toBe('function');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-DKIM — _dkimPasses behaviour with non-Gmail providers  (L12 / H3)
+// ---------------------------------------------------------------------------
+
+describe('AC-DKIM — DKIM check config and non-Gmail providers', () => {
+  it('drops a message when dkim_check is enabled and Authentication-Results is absent', async () => {
+    // Override config: Gmail-style operator but no DKIM header in source
+    mockGetConfig.mockReturnValue({
+      ...BASE_CONFIG,
+      appliance: {
+        operator: { email: 'owner@gmail.com' },
+        security: { dkim_check: true },
+      },
+    });
+
+    mockImapSearch.mockResolvedValue([1]);
+    mockImapFetchOne.mockResolvedValue(
+      makeFetched({ from: 'owner@gmail.com', subject: 'Hello', body: 'hi' })
+    );
+
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+    await _runPoll();
+
+    // Message must be silently dropped — no session spawned
+    expect(mockHandler).not.toHaveBeenCalled();
+  });
+
+  it('processes a message when dkim_check is false, even without Authentication-Results', async () => {
+    // Non-Gmail provider: no DKIM header injected — operator opts out of check
+    mockGetConfig.mockReturnValue({
+      ...BASE_CONFIG,
+      appliance: {
+        operator: { email: 'owner@example.com' },
+        security: { dkim_check: false },
+      },
+    });
+
+    mockImapSearch.mockResolvedValue([1]);
+    mockImapFetchOne.mockResolvedValue(
+      makeFetched({ from: 'owner@example.com', subject: 'Hello', body: 'run health check' })
+    );
+
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+    await _runPoll();
+
+    expect(mockHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('processes a message when dkim_check is absent from config (defaults to enabled)', async () => {
+    // No security key at all — default is enabled, message with no DKIM should be dropped
+    mockGetConfig.mockReturnValue({
+      ...BASE_CONFIG,
+      appliance: {
+        operator: { email: 'owner@gmail.com' },
+        // no security key
+      },
+    });
+
+    mockImapSearch.mockResolvedValue([1]);
+    mockImapFetchOne.mockResolvedValue(
+      makeFetched({ from: 'owner@gmail.com', subject: 'Hello', body: 'hi' })
+    );
+
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+    await _runPoll();
+
+    // Default-on DKIM check + no auth header in source → message dropped
+    expect(mockHandler).not.toHaveBeenCalled();
   });
 });

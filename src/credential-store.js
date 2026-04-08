@@ -19,8 +19,10 @@ const KEY_LEN      = 32;               // 256-bit AES key
 const ALGORITHM    = 'aes-256-gcm';
 const IV_LEN       = 12;               // 96-bit IV — recommended for GCM
 const TAG_LEN      = 16;               // 128-bit auth tag
-// Fixed application salt — entropy comes from the user-supplied passphrase.
-const KDF_SALT     = Buffer.from('cosa-credential-store-v1');
+// Per-installation KDF salt is generated on first use and stored in the _meta
+// table.  A fixed salt would mean that two operators sharing the same
+// COSA_CREDENTIAL_KEY derive identical encryption keys, eliminating per-appliance
+// isolation.  The salt is loaded from the DB in init() before deriveKey() runs.
 
 // ---------------------------------------------------------------------------
 // Module-level singletons (lazy-initialised)
@@ -38,11 +40,12 @@ let _key = null;
 /**
  * Derive a 256-bit AES key from a raw passphrase using PBKDF2-SHA256.
  *
- * @param {string} rawKey - Passphrase from COSA_CREDENTIAL_KEY env var.
+ * @param {string} rawKey  - Passphrase from COSA_CREDENTIAL_KEY env var.
+ * @param {Buffer} salt    - Per-installation random salt from the _meta table.
  * @returns {Buffer}
  */
-function deriveKey(rawKey) {
-  return crypto.pbkdf2Sync(rawKey, KDF_SALT, PBKDF2_ITERS, KEY_LEN, 'sha256');
+function deriveKey(rawKey, salt) {
+  return crypto.pbkdf2Sync(rawKey, salt, PBKDF2_ITERS, KEY_LEN, 'sha256');
 }
 
 /**
@@ -115,6 +118,17 @@ function openDatabase() {
   `);
 
   db.prepare(`INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '1')`).run();
+
+  // Generate a cryptographically random per-installation KDF salt on first use.
+  // Storing it here (rather than deriving it) lets the same DB always produce the
+  // same key for a given passphrase, while keeping keys isolated across installs.
+  const hasSalt = db.prepare(`SELECT 1 FROM _meta WHERE key = 'kdf_salt'`).get();
+  if (!hasSalt) {
+    const salt = crypto.randomBytes(32).toString('hex');
+    db.prepare(`INSERT INTO _meta (key, value) VALUES ('kdf_salt', ?)`).run(salt);
+    log.info('Credential store: generated new per-installation KDF salt.');
+  }
+
   return db;
 }
 
@@ -139,8 +153,14 @@ function init() {
     );
   }
 
-  _key = deriveKey(rawKey);
-  _db  = openDatabase();
+  // Open DB first so openDatabase() can generate the per-installation salt if
+  // this is the first run.  Key derivation happens after, using that salt.
+  _db = openDatabase();
+
+  const saltRow = _db.prepare(`SELECT value FROM _meta WHERE key = 'kdf_salt'`).get();
+  const salt    = Buffer.from(saltRow.value, 'hex');
+  _key          = deriveKey(rawKey, salt);
+
   log.info(`Credential store opened: ${DB_PATH}`);
 }
 
@@ -218,6 +238,21 @@ function list() {
 }
 
 /**
+ * Return only the symbolic names of all stored credentials, sorted
+ * alphabetically.  Useful for debugging mis-named credential lookups: when
+ * `get(name)` throws, call `listNames()` to see what names are actually stored.
+ *
+ * @returns {string[]}
+ */
+function listNames() {
+  init();
+  return _db
+    .prepare('SELECT name FROM credentials ORDER BY name')
+    .all()
+    .map(r => r.name);
+}
+
+/**
  * Return metadata for a single credential without decrypting its value.
  * Useful for rotation-age checks that must not expose the secret.
  *
@@ -243,4 +278,4 @@ function validateOnStartup() {
   log.info('Credential store: startup validation passed.');
 }
 
-module.exports = { get, set, list, getMetadata, init, validateOnStartup };
+module.exports = { get, set, list, listNames, getMetadata, init, validateOnStartup };

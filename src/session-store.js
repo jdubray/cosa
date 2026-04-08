@@ -125,6 +125,27 @@ const MIGRATIONS = [
     email_to     TEXT,
     email_msg_id TEXT
   )`,
+
+  `CREATE TABLE IF NOT EXISTS dead_letters (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    from_addr   TEXT NOT NULL,
+    subject     TEXT NOT NULL,
+    body        TEXT NOT NULL,
+    error       TEXT NOT NULL
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS watchers (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    description       TEXT NOT NULL,
+    code              TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    last_triggered_at TEXT,
+    trigger_count     INTEGER NOT NULL DEFAULT 0,
+    last_alerted_at   TEXT,
+    enabled           INTEGER NOT NULL DEFAULT 1
+  )`,
 ];
 
 /**
@@ -244,15 +265,20 @@ function closeSession(sessionId, summary) {
  */
 function saveTurn(sessionId, role, content, tokensIn, tokensOut) {
   const db = getDb();
-  const row = db
-    .prepare(`SELECT MAX(turn_index) AS max_idx FROM turns WHERE session_id = ?`)
-    .get(sessionId);
-  const turnIndex = row.max_idx == null ? 0 : row.max_idx + 1;
 
-  db.prepare(
-    `INSERT INTO turns (session_id, turn_index, role, content, tokens_in, tokens_out, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(sessionId, turnIndex, role, content, tokensIn ?? null, tokensOut ?? null, now());
+  // Wrap SELECT + INSERT in a transaction so concurrent sessions (email-triggered
+  // and cron-triggered) cannot race and produce duplicate turn_index values.
+  db.transaction(() => {
+    const row = db
+      .prepare(`SELECT MAX(turn_index) AS max_idx FROM turns WHERE session_id = ?`)
+      .get(sessionId);
+    const turnIndex = row.max_idx == null ? 0 : row.max_idx + 1;
+
+    db.prepare(
+      `INSERT INTO turns (session_id, turn_index, role, content, tokens_in, tokens_out, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(sessionId, turnIndex, role, content, tokensIn ?? null, tokensOut ?? null, now());
+  })();
 }
 
 // ---------------------------------------------------------------------------
@@ -277,20 +303,26 @@ function saveTurn(sessionId, role, content, tokensIn, tokensOut) {
  * }>}
  */
 function searchTurns(query, limit = 20) {
-  return getDb()
-    .prepare(
-      `SELECT t.session_id,
-              t.turn_index,
-              t.role,
-              t.content,
-              t.created_at
-       FROM   turns_fts
-       JOIN   turns t ON t.id = turns_fts.rowid
-       WHERE  turns_fts MATCH ?
-       ORDER  BY bm25(turns_fts)
-       LIMIT  ?`
-    )
-    .all(query, limit);
+  try {
+    return getDb()
+      .prepare(
+        `SELECT t.session_id,
+                t.turn_index,
+                t.role,
+                t.content,
+                t.created_at
+         FROM   turns_fts
+         JOIN   turns t ON t.id = turns_fts.rowid
+         WHERE  turns_fts MATCH ?
+         ORDER  BY bm25(turns_fts)
+         LIMIT  ?`
+      )
+      .all(query, limit);
+  } catch (err) {
+    // FTS5 can throw on malformed query syntax (e.g. unbalanced quotes, bare AND).
+    console.warn(`[session-store] searchTurns FTS5 error (query: ${JSON.stringify(query)}): ${err.message}`);
+    return [];
+  }
 }
 
 /**
@@ -326,14 +358,19 @@ function searchTurnsWithSession(query, limit = 20, role = null) {
      JOIN   sessions s ON s.session_id = t.session_id
      WHERE  turns_fts MATCH ?`;
 
-  if (role) {
+  try {
+    if (role) {
+      return getDb()
+        .prepare(`${BASE_SQL} AND t.role = ? ORDER BY bm25(turns_fts) LIMIT ?`)
+        .all(query, role, limit);
+    }
     return getDb()
-      .prepare(`${BASE_SQL} AND t.role = ? ORDER BY bm25(turns_fts) LIMIT ?`)
-      .all(query, role, limit);
+      .prepare(`${BASE_SQL} ORDER BY bm25(turns_fts) LIMIT ?`)
+      .all(query, limit);
+  } catch (err) {
+    console.warn(`[session-store] searchTurnsWithSession FTS5 error (query: ${JSON.stringify(query)}): ${err.message}`);
+    return [];
   }
-  return getDb()
-    .prepare(`${BASE_SQL} ORDER BY bm25(turns_fts) LIMIT ?`)
-    .all(query, limit);
 }
 
 // ---------------------------------------------------------------------------
@@ -514,9 +551,15 @@ function createAlert(alertData) {
 }
 
 /**
- * Return the parsed output of the most recent executed tool call for a given
- * tool name within a session.  Used by cron-scheduler to read the
- * health_check result from the DB after the orchestrator session closes.
+ * Return the parsed output of the **most recent** executed call to `toolName`
+ * within a session.  Used by cron-scheduler to read tool results after the
+ * orchestrator session closes.
+ *
+ * If a tool was called multiple times in one session only the last result is
+ * returned (ORDER BY created_at DESC LIMIT 1).  For idempotent tools like
+ * health_check this is always correct.  For tools that could be called more
+ * than once (e.g. backup_verify) callers should be aware that earlier results
+ * are silently discarded.
  *
  * @param {string} sessionId
  * @param {string} toolName
@@ -605,6 +648,22 @@ function safeParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
+/**
+ * Write a failed inbound message to the dead-letter table.
+ * Called when _dispatchMessage throws so the message is not silently lost.
+ *
+ * @param {{ from: string, subject: string, body: string }} msg
+ * @param {string} errorMessage
+ */
+function saveDeadLetter(msg, errorMessage) {
+  getDb()
+    .prepare(
+      `INSERT INTO dead_letters (from_addr, subject, body, error)
+       VALUES (?, ?, ?, ?)`
+    )
+    .run(msg.from ?? '', msg.subject ?? '', msg.body ?? '', errorMessage);
+}
+
 module.exports = {
   getDb,
   runMigrations,
@@ -631,4 +690,6 @@ module.exports = {
   // Alerts
   createAlert,
   findRecentAlert,
+  // Dead-letter
+  saveDeadLetter,
 };
