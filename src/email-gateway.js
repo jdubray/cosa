@@ -200,10 +200,12 @@ async function _runPoll() {
   let lock;
   try {
     lock = await client.getMailboxLock('INBOX');
-    // `since` filters to messages received on or after the date (day boundary).
-    // Combined with the in-process BOOT_TIME check below, this prevents a
-    // backlog of old unseen messages from flooding COSA on startup.
-    const seqs = await client.search({ seen: false, since: BOOT_TIME });
+    // Use a 2-day lookback window rather than BOOT_TIME to avoid a date-boundary
+    // race: ImapFlow's `since` is day-granular and can miss messages that arrived
+    // near midnight depending on timezone offsets between the Pi and Gmail's IMAP
+    // server.  The per-message BOOT_TIME guard below handles stale messages.
+    const since2d = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const seqs = await client.search({ seen: false, since: since2d });
 
     for (const seq of seqs) {
       const fetched = await client.fetchOne(String(seq), {
