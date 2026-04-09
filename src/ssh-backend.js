@@ -12,8 +12,9 @@ const log = createLogger('ssh-backend');
 // Backoff constants
 // ---------------------------------------------------------------------------
 
-const BACKOFF_BASE_MS = 1000;
-const BACKOFF_MAX_MS  = 30000;
+const BACKOFF_BASE_MS    = 1000;
+const BACKOFF_MAX_MS     = 30000;
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 /**
  * Calculate exponential backoff delay for reconnect attempts.
@@ -128,6 +129,14 @@ function openConnection() {
  */
 function scheduleReconnect() {
   if (_reconnectTimer !== null) return;
+
+  if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    log.error(
+      `SSH reconnect abandoned after ${MAX_RECONNECT_ATTEMPTS} attempts — ` +
+      `manual intervention required`
+    );
+    return;
+  }
 
   const delay = backoffMs(_reconnectAttempts);
   _reconnectAttempts++;

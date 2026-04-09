@@ -973,6 +973,1413 @@
       "message": "Orchestration complete! Fixed 4/4 issues.",
       "type": "success",
       "source": "app"
+    },
+    {
+      "id": "toast-1774925396724-mn2eddr",
+      "timestamp": 1774925396724,
+      "message": "Sprint closed successfully",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774926290426-5qwn8t7",
+      "timestamp": 1774926290426,
+      "message": "Branch \"phase-3\" created and checked out",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774935791453-7z0t8r2",
+      "timestamp": 1774935791453,
+      "message": "CRE: Plan approved, RIS generated, and assertions ready",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941249920-vqjivu6",
+      "timestamp": 1774941249920,
+      "message": "Implementing: Encrypted Credential Store",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941264425-uq6exnm",
+      "timestamp": 1774941264425,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941264558-6m1dk9o",
+      "timestamp": 1774941264558,
+      "message": "⚠️ Assertions: 0/5 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941265528-6zh6jly",
+      "timestamp": 1774941265528,
+      "message": "Implementing: jwt_secret_check Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941279619-4pih15i",
+      "timestamp": 1774941279619,
+      "message": "Verifying 6 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941279743-en9tmgy",
+      "timestamp": 1774941279743,
+      "message": "⚠️ Assertions: 0/6 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941280711-oils3xo",
+      "timestamp": 1774941280711,
+      "message": "Implementing: process_monitor Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941295193-nqhbpez",
+      "timestamp": 1774941295193,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941295319-cr05t89",
+      "timestamp": 1774941295319,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941296295-awt5qbz",
+      "timestamp": 1774941296295,
+      "message": "Implementing: cloudflare_kill Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941311647-7str47y",
+      "timestamp": 1774941311647,
+      "message": "Implementing: network_scan Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941326744-0wkji8m",
+      "timestamp": 1774941326744,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941326904-dxqfv38",
+      "timestamp": 1774941326904,
+      "message": "⚠️ Assertions: 0/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941327878-gr1hhw1",
+      "timestamp": 1774941327878,
+      "message": "Implementing: webhook_hmac_verify Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941342604-1p56ztq",
+      "timestamp": 1774941342604,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941342757-mnzkx98",
+      "timestamp": 1774941342757,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941343723-81o2j64",
+      "timestamp": 1774941343723,
+      "message": "Implementing: compliance_verify Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941359193-xl3f27d",
+      "timestamp": 1774941359193,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941359347-9grcm46",
+      "timestamp": 1774941359347,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941360313-orw6bv9",
+      "timestamp": 1774941360313,
+      "message": "Implementing: pci_assessment Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941375571-hqe52fc",
+      "timestamp": 1774941375571,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941375724-ravlpk1",
+      "timestamp": 1774941375724,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941376699-bo40h44",
+      "timestamp": 1774941376699,
+      "message": "Implementing: Tirith Pre-Execution Scanner Integration",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941391900-tfqe3cr",
+      "timestamp": 1774941391900,
+      "message": "Verifying 3 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941392039-alrhzpk",
+      "timestamp": 1774941392039,
+      "message": "⚠️ Assertions: 0/3 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941393008-mkcoomk",
+      "timestamp": 1774941393008,
+      "message": "Implementing: Phase 3 Cron Schedule Additions",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941410015-et5c0pe",
+      "timestamp": 1774941410015,
+      "message": "Implementing: Intrusion Escalation FSM",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941425979-g8tq7a4",
+      "timestamp": 1774941425979,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941426124-3hd9nmp",
+      "timestamp": 1774941426124,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941427082-9cdnq6w",
+      "timestamp": 1774941427082,
+      "message": "Implementing: credential_audit Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941444085-thaq8kl",
+      "timestamp": 1774941444085,
+      "message": "Implementing: Weekly Security Digest Email",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941460025-b91depo",
+      "timestamp": 1774941460025,
+      "message": "Verifying 3 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941460171-f5f9g06",
+      "timestamp": 1774941460171,
+      "message": "⚠️ Assertions: 1/3 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941461135-d0x3b9s",
+      "timestamp": 1774941461135,
+      "message": "Implementing: access_log_scan Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941478099-clno7ks",
+      "timestamp": 1774941478099,
+      "message": "Implementing: ips_alert Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941493932-i69egdz",
+      "timestamp": 1774941493932,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941494088-ko3cx4u",
+      "timestamp": 1774941494088,
+      "message": "⚠️ Assertions: 0/5 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941495051-v5flsit",
+      "timestamp": 1774941495051,
+      "message": "Implementing: Phase 3 End-to-End Staging Test: Simulated Intrusion",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941511822-zt2c022",
+      "timestamp": 1774941511822,
+      "message": "Verifying 3 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941511974-06a3enb",
+      "timestamp": 1774941511974,
+      "message": "⚠️ Assertions: 1/3 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941512936-nkp68is",
+      "timestamp": 1774941512936,
+      "message": "Implementing: token_rotation_remind Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941528892-w5ko3zi",
+      "timestamp": 1774941528892,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941529037-rgc9l3a",
+      "timestamp": 1774941529037,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941530001-hep2qd1",
+      "timestamp": 1774941530001,
+      "message": "Implementing: Output Sanitizer",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941547241-324yiyp",
+      "timestamp": 1774941547241,
+      "message": "Implementing: git_audit Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941564670-i1h2xw4",
+      "timestamp": 1774941564670,
+      "message": "Implementing: pause_appliance Tool (Phase 3)",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941596152-vk4y7so",
+      "timestamp": 1774941596152,
+      "message": "Implementing: Anomaly Classifier",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941614840-uwj7kh4",
+      "timestamp": 1774941614840,
+      "message": "All stories completed! Starting code review...",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774941630358-3nujr40",
+      "timestamp": 1774941630358,
+      "message": "Code review complete: No issues found!",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774945704879-6wgerh0",
+      "timestamp": 1774945704879,
+      "message": "Sprint closed successfully",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774945721298-m4xrhsr",
+      "timestamp": 1774945721298,
+      "message": "Preparing sprint rerun...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774945729381-et45sv2",
+      "timestamp": 1774945729381,
+      "message": "Implementing: Encrypted Credential Store",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946019258-ecgq8tv",
+      "timestamp": 1774946019258,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946019422-r0ww3ie",
+      "timestamp": 1774946019422,
+      "message": "✓ Assertions: 5/5 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946020388-anr84sr",
+      "timestamp": 1774946020388,
+      "message": "Implementing: jwt_secret_check Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946139030-fh0gdpi",
+      "timestamp": 1774946139030,
+      "message": "Verifying 6 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946139231-vgfnb2m",
+      "timestamp": 1774946139231,
+      "message": "⚠️ Assertions: 4/6 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946140192-dna0h7v",
+      "timestamp": 1774946140192,
+      "message": "Implementing: process_monitor Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946286346-ekfj597",
+      "timestamp": 1774946286346,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946286636-lakefci",
+      "timestamp": 1774946286636,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946287581-0hu0npc",
+      "timestamp": 1774946287581,
+      "message": "Implementing: cloudflare_kill Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946504216-5zjmm85",
+      "timestamp": 1774946504216,
+      "message": "Implementing: network_scan Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946642268-u4eybia",
+      "timestamp": 1774946642268,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946642601-q2qozs9",
+      "timestamp": 1774946642601,
+      "message": "⚠️ Assertions: 5/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946643542-8wzhuup",
+      "timestamp": 1774946643542,
+      "message": "Implementing: webhook_hmac_verify Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946740604-mjpeiu1",
+      "timestamp": 1774946740604,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946740768-5znpryb",
+      "timestamp": 1774946740768,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946741746-itxhymx",
+      "timestamp": 1774946741746,
+      "message": "Implementing: compliance_verify Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946964634-1zvdze7",
+      "timestamp": 1774946964634,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946964784-wubvisg",
+      "timestamp": 1774946964784,
+      "message": "⚠️ Assertions: 6/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774946965762-4qo7145",
+      "timestamp": 1774946965762,
+      "message": "Implementing: pci_assessment Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774947212304-3mqqoa4",
+      "timestamp": 1774947212304,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774947212471-xhxt4fa",
+      "timestamp": 1774947212471,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774947213441-pyffjjp",
+      "timestamp": 1774947213441,
+      "message": "Implementing: Tirith Pre-Execution Scanner Integration",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774947495899-45o013w",
+      "timestamp": 1774947495899,
+      "message": "Verifying 3 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774947496065-u7xgqxj",
+      "timestamp": 1774947496065,
+      "message": "⚠️ Assertions: 0/3 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774947497034-j05car6",
+      "timestamp": 1774947497034,
+      "message": "Implementing: Phase 3 Cron Schedule Additions",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774947857679-6behwct",
+      "timestamp": 1774947857679,
+      "message": "Implementing: Intrusion Escalation FSM",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774948063826-5ca9kve",
+      "timestamp": 1774948063826,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774948063996-f3wqboe",
+      "timestamp": 1774948063996,
+      "message": "⚠️ Assertions: 0/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774948064966-wlinp3m",
+      "timestamp": 1774948064966,
+      "message": "Implementing: credential_audit Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774948364850-wvlve42",
+      "timestamp": 1774948364850,
+      "message": "Implementing: Weekly Security Digest Email",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774948707077-jf67pbx",
+      "timestamp": 1774948707077,
+      "message": "Verifying 3 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774948707255-9ogi6k1",
+      "timestamp": 1774948707255,
+      "message": "⚠️ Assertions: 1/3 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774948708225-7hvsoxh",
+      "timestamp": 1774948708225,
+      "message": "Implementing: access_log_scan Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774948859179-vr0tauk",
+      "timestamp": 1774948859179,
+      "message": "Implementing: ips_alert Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774949186027-texlody",
+      "timestamp": 1774949186027,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774949186205-x67ls7j",
+      "timestamp": 1774949186205,
+      "message": "⚠️ Assertions: 0/5 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774949187175-36sf0x4",
+      "timestamp": 1774949187175,
+      "message": "Implementing: Phase 3 End-to-End Staging Test: Simulated Intrusion",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951087907-0ajstjp",
+      "timestamp": 1774951087907,
+      "message": "Continuing story (1/5)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951127129-frmut1d",
+      "timestamp": 1774951127129,
+      "message": "Verifying 3 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951127299-4urcwxd",
+      "timestamp": 1774951127299,
+      "message": "⚠️ Assertions: 1/3 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951128272-qt741h9",
+      "timestamp": 1774951128272,
+      "message": "Implementing: token_rotation_remind Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951167231-6zdpl3l",
+      "timestamp": 1774951167231,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951167423-p1ubani",
+      "timestamp": 1774951167423,
+      "message": "⚠️ Assertions: 3/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951168391-y88fohe",
+      "timestamp": 1774951168391,
+      "message": "Implementing: Output Sanitizer",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951210653-7ijxrm1",
+      "timestamp": 1774951210653,
+      "message": "Implementing: git_audit Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951251970-qedt3mo",
+      "timestamp": 1774951251970,
+      "message": "Implementing: pause_appliance Tool (Phase 3)",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951294779-rr8wvyg",
+      "timestamp": 1774951294779,
+      "message": "Implementing: Anomaly Classifier",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951336474-a7onapq",
+      "timestamp": 1774951336474,
+      "message": "All stories completed! Starting code review...",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1774951356348-d8j7xfj",
+      "timestamp": 1774951356348,
+      "message": "Code review complete: No issues found!",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775011254039-9qm13jd",
+      "timestamp": 1775011254039,
+      "message": "Sprint closed successfully",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775011269579-9g6itzt",
+      "timestamp": 1775011269579,
+      "message": "Preparing sprint rerun...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775011625074-a7s0rwx",
+      "timestamp": 1775011625074,
+      "message": "Implementing: Encrypted Credential Store",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775022329739-jyich4l",
+      "timestamp": 1775022329739,
+      "message": "CRE: Plan approved, RIS generated, and assertions ready",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775022975506-nxqtxld",
+      "timestamp": 1775022975506,
+      "message": "Implementing: Encrypted Credential Store",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775023243215-6zvs01r",
+      "timestamp": 1775023243215,
+      "message": "Implementing: Encrypted Credential Store",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775043725245-mtco8le",
+      "timestamp": 1775043725245,
+      "message": "Implementing: Encrypted Credential Store",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775081311229-ohmt5nq",
+      "timestamp": 1775081311229,
+      "message": "Implementing: Encrypted Credential Store",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775081665001-ai8dx6r",
+      "timestamp": 1775081665001,
+      "message": "Claude Error: spawn mistral-vibe ENOENT",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775085001859-eisdul2",
+      "timestamp": 1775085001859,
+      "message": "Claude Error: spawn Users\\jjdub\\mistral_vibe_project ENOENT",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775085193104-44tjhho",
+      "timestamp": 1775085193104,
+      "message": "Claude Error: Claude CLI exited with code 1: C:\\Users\\jjdub\\.venv\\Scripts\\python.exe: No module named mistral_vibe\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775088084015-sj7txvs",
+      "timestamp": 1775088084015,
+      "message": "Claude Error: Claude CLI exited with code 2: usage: vibe [-h] [-v] [-p [TEXT]] [--max-turns N] [--max-price DOLLARS]\r\n            [--enabled-tools TOOL] [--output {text,json,streaming}]\r\n            [--agent NAME] [--setup] [--workdir DIR]\r\n            [-c | --resume SESSION_ID]\r\n            [PROMPT]\r\nvibe: error: unrecognized arguments: --print --output-format --verbose --input-format stream-json --permission-mode acceptEdits -\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775088336105-1zwmz5k",
+      "timestamp": 1775088336105,
+      "message": "Claude Error: Claude CLI exited with code 2: usage: vibe [-h] [-v] [-p [TEXT]] [--max-turns N] [--max-price DOLLARS]\r\n            [--enabled-tools TOOL] [--output {text,json,streaming}]\r\n            [--agent NAME] [--setup] [--workdir DIR]\r\n            [-c | --resume SESSION_ID]\r\n            [PROMPT]\r\nvibe: error: unrecognized arguments: --print --output-format --verbose --input-format stream-json --permission-mode acceptEdits -\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775088624227-zk0ijtg",
+      "timestamp": 1775088624227,
+      "message": "Claude Error: Claude CLI exited with code 2: usage: vibe [-h] [-v] [-p [TEXT]] [--max-turns N] [--max-price DOLLARS]\r\n            [--enabled-tools TOOL] [--output {text,json,streaming}]\r\n            [--agent NAME] [--setup] [--workdir DIR]\r\n            [-c | --resume SESSION_ID]\r\n            [PROMPT]\r\nvibe: error: unrecognized arguments: --print --output-format --verbose --input-format stream-json --permission-mode acceptEdits -\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775102584942-me0g9cp",
+      "timestamp": 1775102584942,
+      "message": "Claude Error: spawn mistral-vibe ENOENT",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104262343-lk5qq8o",
+      "timestamp": 1775104262343,
+      "message": "Preparing sprint rerun...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104266028-ur9nmua",
+      "timestamp": 1775104266028,
+      "message": "Implementing: Encrypted Credential Store",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104407424-wslfn5q",
+      "timestamp": 1775104407424,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104407744-rx3b5v2",
+      "timestamp": 1775104407744,
+      "message": "⚠️ Assertions: 6/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104408688-qlgigiz",
+      "timestamp": 1775104408689,
+      "message": "Implementing: jwt_secret_check Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104497945-p69k9r7",
+      "timestamp": 1775104497945,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104498570-qf7j5ge",
+      "timestamp": 1775104498570,
+      "message": "⚠️ Assertions: 5/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104499468-zwyljug",
+      "timestamp": 1775104499468,
+      "message": "Implementing: process_monitor Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104743916-l13w8zv",
+      "timestamp": 1775104743916,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104744551-nxp7it0",
+      "timestamp": 1775104744551,
+      "message": "✓ Assertions: 8/8 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775104745435-ctusl30",
+      "timestamp": 1775104745435,
+      "message": "Implementing: cloudflare_kill Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775105302397-6c0r2r5",
+      "timestamp": 1775105302397,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775105302999-6roknho",
+      "timestamp": 1775105302999,
+      "message": "✓ Assertions: 7/7 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775107514802-94f7c5l",
+      "timestamp": 1775107514802,
+      "message": "Sprint closed successfully",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109073821-ir2cycw",
+      "timestamp": 1775109073821,
+      "message": "CRE: Plan approved, RIS generated, and assertions ready",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109085292-chnc6pt",
+      "timestamp": 1775109085292,
+      "message": "Implementing: pause_appliance Tool (Phase 3)",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109169567-gwyt2nh",
+      "timestamp": 1775109169567,
+      "message": "Verifying 6 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109169812-d7ih63b",
+      "timestamp": 1775109169812,
+      "message": "✓ Assertions: 6/6 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109170782-msqsesq",
+      "timestamp": 1775109170782,
+      "message": "Implementing: Intrusion Escalation FSM",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109305008-s1riufz",
+      "timestamp": 1775109305008,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109305270-2hj5yod",
+      "timestamp": 1775109305270,
+      "message": "✓ Assertions: 8/8 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109306235-u008oga",
+      "timestamp": 1775109306235,
+      "message": "Implementing: credential_audit Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109432562-yp0r62l",
+      "timestamp": 1775109432562,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109432815-kop8ot0",
+      "timestamp": 1775109432815,
+      "message": "✓ Assertions: 7/7 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109433787-4vte1uk",
+      "timestamp": 1775109433787,
+      "message": "Implementing: compliance_verify Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109776248-j2ri3rl",
+      "timestamp": 1775109776248,
+      "message": "Verifying 6 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109776501-ms0ng41",
+      "timestamp": 1775109776501,
+      "message": "✓ Assertions: 6/6 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109777464-0nnclfb",
+      "timestamp": 1775109777464,
+      "message": "Implementing: pci_assessment Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109923461-2ls687v",
+      "timestamp": 1775109923461,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109923724-ff8v45w",
+      "timestamp": 1775109923724,
+      "message": "⚠️ Assertions: 7/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775109924683-8svatto",
+      "timestamp": 1775109924683,
+      "message": "Implementing: webhook_hmac_verify Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110001090-kbsctsq",
+      "timestamp": 1775110001090,
+      "message": "Verifying 5 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110001361-03t4ay6",
+      "timestamp": 1775110001361,
+      "message": "✓ Assertions: 5/5 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110002322-apfyl32",
+      "timestamp": 1775110002322,
+      "message": "Implementing: token_rotation_remind Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110087564-3mbdjx3",
+      "timestamp": 1775110087564,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110087808-ja63uy8",
+      "timestamp": 1775110087808,
+      "message": "⚠️ Assertions: 6/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110088766-6tzxwor",
+      "timestamp": 1775110088766,
+      "message": "Implementing: Phase 3 Cron Schedule Additions",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110321957-aipuz1j",
+      "timestamp": 1775110321957,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110322269-jsa2yay",
+      "timestamp": 1775110322269,
+      "message": "✓ Assertions: 8/8 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110323225-axqgfxo",
+      "timestamp": 1775110323225,
+      "message": "Implementing: Weekly Security Digest Email",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110501069-717iwva",
+      "timestamp": 1775110501069,
+      "message": "Verifying 6 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110501347-blnvcfj",
+      "timestamp": 1775110501347,
+      "message": "⚠️ Assertions: 2/6 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775110502311-7dgahhn",
+      "timestamp": 1775110502311,
+      "message": "Implementing: Phase 3 End-to-End Staging Test: Simulated Intrusion",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111117211-ksgo1hd",
+      "timestamp": 1775111117211,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111117464-t3nw2y6",
+      "timestamp": 1775111117464,
+      "message": "✓ Assertions: 8/8 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111118430-6yiq2rt",
+      "timestamp": 1775111118430,
+      "message": "Implementing: Output Sanitizer",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111485785-s5670xl",
+      "timestamp": 1775111485785,
+      "message": "Verifying 7 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111486067-8mdfu1r",
+      "timestamp": 1775111486067,
+      "message": "⚠️ Assertions: 1/7 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111487025-gs7kw5x",
+      "timestamp": 1775111487025,
+      "message": "Implementing: Tirith Pre-Execution Scanner Integration",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111939424-ojpqj2l",
+      "timestamp": 1775111939424,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111939693-v6rve6u",
+      "timestamp": 1775111939693,
+      "message": "⚠️ Assertions: 2/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775111940657-mw169x4",
+      "timestamp": 1775111940657,
+      "message": "Implementing: git_audit Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112349549-or4k5ad",
+      "timestamp": 1775112349549,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112349830-yyn9zde",
+      "timestamp": 1775112349830,
+      "message": "⚠️ Assertions: 7/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112350792-2m9dnj4",
+      "timestamp": 1775112350792,
+      "message": "Implementing: network_scan Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112668939-qc9rdmc",
+      "timestamp": 1775112668939,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112669268-aibis1e",
+      "timestamp": 1775112669268,
+      "message": "⚠️ Assertions: 7/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112670231-7dm0ltv",
+      "timestamp": 1775112670231,
+      "message": "Implementing: access_log_scan Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112963862-4217xsc",
+      "timestamp": 1775112963862,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112964135-nj2aw1c",
+      "timestamp": 1775112964135,
+      "message": "⚠️ Assertions: 7/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775112965099-aqajnd0",
+      "timestamp": 1775112965099,
+      "message": "Implementing: Anomaly Classifier",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113222334-a40vn1e",
+      "timestamp": 1775113222334,
+      "message": "Verifying 4 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113222624-4a4licu",
+      "timestamp": 1775113222624,
+      "message": "✓ Assertions: 4/4 passed",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113223585-jrpremz",
+      "timestamp": 1775113223585,
+      "message": "Implementing: ips_alert Tool",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113371338-f3v33wh",
+      "timestamp": 1775113371338,
+      "message": "Verifying 8 assertion(s)...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113371625-0i1lydl",
+      "timestamp": 1775113371625,
+      "message": "⚠️ Assertions: 6/8 passed",
+      "type": "warning",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113372587-83wrcu9",
+      "timestamp": 1775113372587,
+      "message": "All stories completed! Starting code review...",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113689066-q9kz333",
+      "timestamp": 1775113689066,
+      "message": "Code review complete: 4 findings. Starting bug fixes...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113691373-pi9bhjh",
+      "timestamp": 1775113691373,
+      "message": "Fixing: Property `incident.cloudflarKilled` is a typo — mi...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113753743-n508yor",
+      "timestamp": 1775113753743,
+      "message": "Fixing: `require('crypto')` is called inside `createSecuri...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113787148-9ba3r66",
+      "timestamp": 1775113787148,
+      "message": "Fixing: The module-level `_instances` Map is never cleaned...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775113853951-seqgzv3",
+      "timestamp": 1775113853951,
+      "message": "Fixing: The 15-minute `ALERT_TIMEOUT` timer created by `se...",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775114024683-13ulynn",
+      "timestamp": 1775114024683,
+      "message": "Orchestration complete! Fixed 4/4 issues.",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775127616236-vitp24v",
+      "timestamp": 1775127616236,
+      "message": "Sprint closed and committed: 2a0a2f1",
+      "type": "success",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775127621031-xt54o0a",
+      "timestamp": 1775127621031,
+      "message": "Code review started on Code Reviews branch",
+      "type": "info",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775129150836-pcwp8nn",
+      "timestamp": 1775129150836,
+      "message": "Claude Error: Vibe CLI exited with code 1: Error: API error from mistral (model: devstral-2): LLM backend error [mistral]\r\n  status: 400 Bad Request\r\n  reason: Bad Request\r\n  request_id: N/A\r\n  endpoint: https://api.mistral.ai\r\n  model: devstral-2\r\n  provider_message: Invalid model: devstral-2\r\n  body_excerpt: {\"object\":\"error\",\"message\":\"Invalid model: devstral-2\",\"type\":\"invalid_model\",\"param\":null,\"code\":\"1500\",\"raw_status_code\":400}\r\n  payload_summary: {\"model\":\"devstral-2\",\"message_count\":2,\"approx_chars\":24080,\"temperature\":0.2,\"has_tools\":true,\"tool_choice\":\"auto\"}\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775129365144-3f8um0f",
+      "timestamp": 1775129365144,
+      "message": "Claude Error: Vibe CLI exited with code 2: usage: vibe [-h] [-v] [-p [TEXT]] [--max-turns N] [--max-price DOLLARS]\r\n            [--enabled-tools TOOL] [--output {text,json,streaming}]\r\n            [--agent NAME] [--setup] [--workdir DIR]\r\n            [-c | --resume [SESSION_ID]]\r\n            [PROMPT]\r\nvibe: error: unrecognized arguments: --model\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775129505588-pkf2z23",
+      "timestamp": 1775129505588,
+      "message": "Claude Error: Vibe CLI exited with code 1: Traceback (most recent call last):\r\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\r\n  File \"<frozen runpy>\", line 88, in _run_code\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\vibe.exe\\__main__.py\", line 7, in <module>\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\cli\\entrypoint.py\", line 162, in main\r\n    run_cli(args)\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\cli\\cli.py\", line 177, in run_cli\r\n    final_response = run_programmatic(\r\n                     ^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\programmatic.py\", line 36, in run_programmatic\r\n    agent_loop = AgentLoop(\r\n                 ^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 179, in __init__\r\n    self.backend = self.backend_factory()\r\n                   ^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 178, in <lambda>\r\n    self.backend_factory = lambda: backend or self._select_backend()\r\n                                              ^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 333, in _select_backend\r\n    active_model = self.config.get_active_model()\r\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\config\\_settings.py\", line 583, in get_active_model\r\n    raise ValueError(\r\nValueError: Active model 'devstral-2512' not found in configuration.\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775130068999-95ofnx4",
+      "timestamp": 1775130068999,
+      "message": "Claude Error: Vibe CLI exited with code 1: Error: API error from mistral (model: devstral-2): LLM backend error [mistral]\r\n  status: 400 Bad Request\r\n  reason: Bad Request\r\n  request_id: N/A\r\n  endpoint: https://api.mistral.ai\r\n  model: devstral-2\r\n  provider_message: Invalid model: devstral-2\r\n  body_excerpt: {\"object\":\"error\",\"message\":\"Invalid model: devstral-2\",\"type\":\"invalid_model\",\"param\":null,\"code\":\"1500\",\"raw_status_code\":400}\r\n  payload_summary: {\"model\":\"devstral-2\",\"message_count\":2,\"approx_chars\":24080,\"temperature\":0.2,\"has_tools\":true,\"tool_choice\":\"auto\"}\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775130198926-o9m9ae3",
+      "timestamp": 1775130198926,
+      "message": "Claude Error: Vibe CLI exited with code 1: Traceback (most recent call last):\r\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\r\n  File \"<frozen runpy>\", line 88, in _run_code\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\vibe.exe\\__main__.py\", line 7, in <module>\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\cli\\entrypoint.py\", line 162, in main\r\n    run_cli(args)\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\cli\\cli.py\", line 177, in run_cli\r\n    final_response = run_programmatic(\r\n                     ^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\programmatic.py\", line 36, in run_programmatic\r\n    agent_loop = AgentLoop(\r\n                 ^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 179, in __init__\r\n    self.backend = self.backend_factory()\r\n                   ^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 178, in <lambda>\r\n    self.backend_factory = lambda: backend or self._select_backend()\r\n                                              ^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\agent_loop.py\", line 333, in _select_backend\r\n    active_model = self.config.get_active_model()\r\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"C:\\Users\\jjdub\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\vibe\\core\\config\\_settings.py\", line 583, in get_active_model\r\n    raise ValueError(\r\nValueError: Active model 'devstral-2512' not found in configuration.\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775130790375-szlcedm",
+      "timestamp": 1775130790375,
+      "message": "Claude Error: Vibe CLI exited with code 1: Error: API error from mistral (model: devstral-2): LLM backend error [mistral]\r\n  status: 400 Bad Request\r\n  reason: Bad Request\r\n  request_id: N/A\r\n  endpoint: https://api.mistral.ai\r\n  model: devstral-2\r\n  provider_message: Invalid model: devstral-2\r\n  body_excerpt: {\"object\":\"error\",\"message\":\"Invalid model: devstral-2\",\"type\":\"invalid_model\",\"param\":null,\"code\":\"1500\",\"raw_status_code\":400}\r\n  payload_summary: {\"model\":\"devstral-2\",\"message_count\":2,\"approx_chars\":24080,\"temperature\":0.2,\"has_tools\":true,\"tool_choice\":\"auto\"}\r\n",
+      "type": "error",
+      "source": "app"
+    },
+    {
+      "id": "toast-1775234952548-9uprqsu",
+      "timestamp": 1775234952548,
+      "message": "Welcome! Fill in your project details to get started.",
+      "type": "info",
+      "source": "app"
     }
   ]
 }

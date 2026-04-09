@@ -91,10 +91,18 @@ function register(name, schema, handler, riskLevel = 'read') {
 /**
  * Return the risk level of a registered tool.
  *
+ * Falls back to `'read'` for unregistered tools so that `processToolUse` can
+ * continue; `dispatch()` will then throw `TOOL_NOT_FOUND` before any execution
+ * occurs.  The warning here makes the mis-named tool visible in logs before
+ * that error surfaces.
+ *
  * @param {string} name - Registered tool name.
  * @returns {string} The tool's risk level, or `'read'` if the tool is unknown.
  */
 function getRiskLevel(name) {
+  if (!_registry.has(name)) {
+    console.warn(`[tool-registry] getRiskLevel called for unknown tool: "${name}" — defaulting to 'read'`);
+  }
   return _registry.get(name)?.riskLevel ?? 'read';
 }
 

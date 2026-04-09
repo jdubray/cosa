@@ -41,12 +41,12 @@ To ask COSA a question, send an email to that address. To respond to COSA's aler
 
 ## The Basic Idea
 
-**No news is good news.** COSA checks your system every hour. If everything looks fine, you hear nothing. If something is wrong, COSA emails you right away.
+**No news is good news.** COSA checks your system every minute. If everything looks fine, you hear nothing. If something is wrong, COSA emails you right away.
 
 Here's a typical week:
 
-- **Monday through Sunday, every hour:** COSA silently checks your system. No email.
-- **Tuesday, 2 PM:** Printer goes offline. COSA sends you an email within the hour.
+- **Monday through Sunday, every minute:** COSA silently checks your system. No email.
+- **Tuesday, 2 PM:** Printer goes offline. COSA sends you an email within minutes.
 - **Wednesday, 9 AM:** You ask COSA a question. COSA replies in about 2 minutes.
 
 That's it. COSA handles the watching so you can focus on running your restaurant.
@@ -75,15 +75,103 @@ How many orders came in yesterday?
 We had some issues earlier today. What happened?
 ```
 
+```
+What are you currently watching for?
+```
+
 COSA will reply within about 2 minutes.
 
 **You don't need to use special words or commands.** Just describe what you want to know.
 
 ---
 
+## Automatic Monitoring — Condition Watchers
+
+COSA checks a live snapshot of your Baanbaan system every minute. You can tell COSA to automatically alert you whenever a specific condition occurs.
+
+### Setting Up a Watcher
+
+Email COSA describing what you want to watch for:
+
+```
+Let me know whenever the printer status shows a fault or goes offline.
+```
+
+```
+Alert me if there are more than 10 pending orders at the same time.
+```
+
+```
+Tell me if the system hasn't had a backup in more than 24 hours.
+```
+
+COSA will:
+1. Check the live system status to understand what data is available
+2. Create a monitoring condition tailored to your request
+3. Reply confirming it's set up, with a plain description of what it's watching for
+4. Alert you automatically whenever that condition triggers (at most once every 30 minutes per condition)
+
+### Managing Your Watchers
+
+**See what COSA is watching for:**
+
+```
+What conditions are you currently monitoring?
+```
+
+COSA will list everything, including when each condition last triggered.
+
+**Pause a watcher temporarily (e.g., during maintenance):**
+
+```
+Pause the printer fault watcher for now — we're servicing the printer today.
+```
+
+**Re-enable it later:**
+
+```
+Re-enable the printer watcher.
+```
+
+**Update a watcher:**
+
+```
+Update the pending orders watcher to trigger at 15 instead of 10.
+```
+
+**Remove a watcher entirely:**
+
+```
+Stop watching the printer fault condition.
+```
+
+### What a Watcher Alert Looks Like
+
+```
+Subject: [COSA] Alert: Printer fault or absent
+
+Your printer is showing a fault.
+
+Status: fault
+Last seen OK: 2026-04-08 11:45 AM
+
+This means receipts may not be printing. Orders are still being
+saved — nothing is lost.
+
+Quick checks:
+- Is the printer powered on?
+- Is the cable connected to the router?
+
+Reply to this email if you'd like COSA to investigate further.
+```
+
+COSA won't send the same alert more than once every 30 minutes. If the condition is still active after 30 minutes, you'll get a follow-up.
+
+---
+
 ## Alerts COSA Sends You
 
-When COSA detects a problem, it emails you. Here are the types of alerts you might receive:
+When COSA detects a problem on its own (not through a custom watcher), it emails you automatically.
 
 ---
 
@@ -201,6 +289,32 @@ Each `APPROVE-XXXXXXXX` code works exactly once. Don't reuse codes from old emai
 
 ---
 
+## Making Changes to Your System
+
+For certain pre-approved actions, COSA can make changes on your behalf — updating an order status, pausing online ordering, and similar operations. These actions are configured by your system administrator and require your explicit approval before anything happens.
+
+### Example: Pausing online ordering
+
+If your kitchen gets overwhelmed and you need to pause incoming orders:
+
+```
+Please pause online ordering. We're swamped right now.
+```
+
+COSA will:
+1. Confirm it can do this
+2. Send you an approval request email with a brief description of the action
+3. Wait for your `APPROVE-XXXXXXXX` reply before doing anything
+4. Confirm when it's done
+
+COSA will never take an irreversible action without your approval. The approval request always includes a plain-language description of what it's about to do and why.
+
+### What COSA can and cannot change
+
+Your system administrator configures which actions COSA is allowed to perform. COSA can only take actions on that pre-approved list — it cannot invent new ones or access systems not on the list.
+
+---
+
 ## Understanding COSA's Replies
 
 COSA always leads with the bottom line — what you need to know — and then explains.
@@ -236,6 +350,8 @@ will confirm it's back online.
 ## What COSA Will Never Do Without Your Permission
 
 - Restart your system
+- Pause or resume online ordering
+- Change any order status
 - Change any settings
 - Take any action that could interrupt service
 
@@ -257,6 +373,16 @@ COSA will check the printer status and tell you:
 - Whether it's showing as online or offline
 - When it last printed successfully
 - What to check or try
+
+### "I want an alert whenever the printer goes offline"
+
+Email COSA:
+
+```
+Alert me whenever the printer status is offline or showing a fault.
+```
+
+COSA will set up a watcher and confirm. From then on, you'll get an email within minutes of the printer going offline — automatically, without you needing to ask.
 
 ### "Orders seem stuck"
 
@@ -288,6 +414,16 @@ Quick check — is everything running okay right now?
 
 COSA will run a full check and reply within 2 minutes.
 
+### "What are you watching for?"
+
+Email COSA:
+
+```
+What conditions are you currently monitoring?
+```
+
+COSA will list all active watchers with their descriptions and the last time each one triggered.
+
 ---
 
 ## Quick Reference
@@ -299,6 +435,9 @@ COSA will run a full check and reply within 2 minutes.
 | Got a permission request | Reply `APPROVE-XXXXXXXX` to approve, or `DENY` to cancel |
 | Printer is offline | Email COSA describing the issue |
 | Orders seem stuck | Email COSA describing what you're seeing |
+| Want auto-alerts for a condition | Email COSA: "Alert me when [condition]" |
+| Want to see all your watchers | Email COSA: "What are you watching for?" |
+| Want to pause a watcher | Email COSA: "Pause the [name] watcher" |
 | Just want to ask anything | Email COSA in plain language |
 
 ---
@@ -349,17 +488,23 @@ Baanbaan is healthy.
 Checked at: 2026-03-29T14:00:00.000Z
 ```
 
-Advanced mode also unlocks more detailed answers to questions like database query results, session history, and tool output. If you're troubleshooting with a developer, switching to advanced mode temporarily gives them the raw data they need.
+Advanced mode also unlocks more detailed watcher alerts (raw snapshot values, full error messages) and more technical answers to questions like database query results and session history. If you're troubleshooting with a developer, switching to advanced mode temporarily gives them the raw data they need.
 
 ---
 
 ## Frequently Asked Questions
 
 **Does COSA ever email me just to check in?**
-No. COSA only emails when there's a problem or when it needs your permission. Silence is good news.
+No. COSA only emails when there's a problem, when a watcher condition triggers, or when it needs your permission. Silence is good news.
 
 **How quickly will COSA respond to my email?**
 Usually within 2 minutes. COSA checks for new email every 60 seconds, then runs your question through its AI — that part takes about a minute.
+
+**How quickly will COSA alert me when something goes wrong?**
+COSA polls your system every minute. If a watcher condition triggers, you'll receive an email within about 1–2 minutes of the change happening.
+
+**I got the same alert twice. Is something wrong?**
+COSA suppresses repeated alerts for the same condition for 30 minutes. If you received two alerts more than 30 minutes apart, the condition triggered again after the cooldown expired — meaning the issue wasn't resolved.
 
 **What if COSA is wrong about something?**
 COSA can make mistakes. If its assessment doesn't match what you're seeing, just tell it: *"That doesn't seem right — the printer is actually working fine right now."* COSA will re-check and update.
@@ -375,3 +520,6 @@ COSA runs on a separate device on your network. If that device loses power or co
 
 **Is my order data safe?**
 COSA never modifies your order data. It can read it (to answer your questions) but cannot change, delete, or export it. All access is logged.
+
+**Can I ask COSA to watch for something it doesn't know about yet?**
+Yes. COSA learns about your system from its live status endpoint. As long as the condition is reflected in that data, COSA can write a watcher for it. Just describe what you want to know about in plain language.

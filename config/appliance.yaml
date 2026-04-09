@@ -18,6 +18,54 @@ appliance_api:
   health_endpoint: "/health"
   health_ready_endpoint: "/health/ready"
   request_timeout_ms: 10000
+  status_endpoint: "/api/status"
+  status_poll_interval_s: 60
+
+  auth:
+    type: "jwt"
+    login_endpoint: "/api/auth/login"
+    login_body_template: '{"email":"${credential:appliance_email}","password":"${credential:appliance_password}"}'
+    refresh_endpoint: "/api/auth/refresh"
+    refresh_body_template: '{"refreshToken":"${credential:appliance_refresh_token}"}'
+    access_token_ttl_minutes: 15
+    access_token_credential_key: "appliance_access_token"
+    refresh_token_credential_key: "appliance_refresh_token"
+
+  api_endpoints:
+    - name: "update_order_status"
+      path: "/api/merchants/:merchantId/orders/:orderId/status"
+      method: PATCH
+      risk: medium
+      description: "Transition an order to a new status"
+      path_params:
+        merchantId: "${credential:appliance_merchant_id}"
+        orderId: caller
+      body_schema:
+        type: object
+        properties:
+          status:
+            type: string
+            enum: [confirmed, preparing, ready, completed, cancelled]
+          note:
+            type: string
+        required: [status]
+
+    - name: "pause_store"
+      path: "/api/merchants/:merchantId/store/pause"
+      method: PATCH
+      risk: high
+      description: "Pause or resume online ordering"
+      path_params:
+        merchantId: "${credential:appliance_merchant_id}"
+      body_schema:
+        type: object
+        properties:
+          paused:
+            type: boolean
+          reason:
+            type: string
+        required: [paused, reason]
+
 
 database:
   path: "/mnt/c/Users/jjdub/code/cosa/dev/tools/weather-station/data/weather.db"
@@ -35,6 +83,7 @@ operator:
 
 cron:
   health_check: "0 * * * *"
+  appliance_status_poll: "* * * * *"
 
 tools:
   health_check:
@@ -53,12 +102,28 @@ tools:
     enabled: true
     backup_dir: "/tmp/cosa-backups"
     timeout_s: 120
+    tables:
+      - readings
   restart_appliance:
     enabled: true
     graceful_timeout_seconds: 60
   post_session_hook:
     enabled: true
     min_tool_calls_for_skill: 3
+  cloudflare_kill:
+    enabled: true
+  network_scan:
+    enabled: true
+  webhook_hmac_verify:
+    enabled: true
+    endpoint: "/api/webhooks/pos/test-merchant"
+  compliance_verify:
+    enabled: true
+    sensitive_files:
+      - "/home/weather/.env"
+      - "/home/weather/merchant.db"
+  pci_assessment:
+    enabled: true
   settings_write:
     enabled: true
     allowed_keys:
@@ -67,8 +132,63 @@ tools:
       - timezone
       - station_notes
       - maintenance_mode
+  credential_audit:
+    enabled: true
+    repo_path: "/home/weather"
+  access_log_scan:
+    enabled: true
+    log_path: "/var/log/nginx/access.log"
+    lookback_minutes: 380
+  git_audit:
+    enabled: true
+    repo_path: "/home/weather"
+    lookback_hours: 8
+    expected_authors:
+      - "weather-station@local"
+  appliance_status_poll:
+    enabled: true
+    watcher_timeout_ms: 200
+    alert_cooldown_minutes: 30
+  appliance_api_call:
+    enabled: true
+  watcher_register:
+    enabled: true
+  watcher_list:
+    enabled: true
+  watcher_remove:
+    enabled: true
+  watcher_set_enabled:
+    enabled: true
+
+network:
+  # MAC addresses of devices that are authorized on the local network.
+  # Each entry has a mac (colon-separated, lowercase) and an optional name.
+  known_mac_addresses:
+    - mac: "b8:27:eb:00:00:01"
+      name: "Baanbaan Pi"
+    - mac: "dc:a6:32:00:00:02"
+      name: "Router"
+
+monitoring:
+  # Processes expected to be running at all times on this appliance.
+  # Each entry is matched against the COMMAND column of `ps aux` output
+  # using substring containment (case-sensitive).
+  # Add any additional legitimate processes your appliance runs.
+  expected_processes:
+    - node
+    - sshd
+    - systemd
+    - bash
+    - ps
+  # Ports that are legitimately open on this appliance (numeric).
+  known_ports:
+    - 22    # sshd
+    - 3000  # appliance API
 
 security:
+  # Set to false when using a non-Gmail IMAP provider (Outlook, custom domain, etc.)
+  # that does not inject Authentication-Results headers.  Defaults to true (Gmail).
+  dkim_check: true
   dangerous_commands:
     - pattern: "rm\\s+-rf"
       reason: "Recursive delete"

@@ -152,9 +152,9 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('AC1 — cron registration', () => {
-  it('registers a cron task when start() is called', () => {
+  it('registers cron tasks when start() is called', () => {
     start();
-    expect(mockCronSchedule).toHaveBeenCalledTimes(1);
+    expect(mockCronSchedule).toHaveBeenCalled();
   });
 
   it('uses the cron expression from appliance.cron.health_check', () => {
@@ -174,8 +174,9 @@ describe('AC1 — cron registration', () => {
 
   it('is a no-op when called a second time while already running', () => {
     start();
+    const countAfterFirst = mockCronSchedule.mock.calls.length;
     start();
-    expect(mockCronSchedule).toHaveBeenCalledTimes(1);
+    expect(mockCronSchedule).toHaveBeenCalledTimes(countAfterFirst);
   });
 
   it('registers a callback as the second argument to cron.schedule', () => {
@@ -467,21 +468,23 @@ describe('AC6 — alert recorded in session.db', () => {
 // ---------------------------------------------------------------------------
 
 describe('lifecycle — start / stop', () => {
-  it('stop() calls task.stop()', () => {
+  it('stop() calls task.stop() for every registered task', () => {
     start();
+    const taskCount = mockCronSchedule.mock.calls.length;
     stop();
-    expect(mockTaskStop).toHaveBeenCalledTimes(1);
+    expect(mockTaskStop).toHaveBeenCalledTimes(taskCount);
   });
 
   it('stop() is a no-op when not started', () => {
     expect(() => stop()).not.toThrow();
   });
 
-  it('after stop(), start() can register a new task', () => {
+  it('after stop(), start() can register tasks again', () => {
     start();
+    const countAfterFirst = mockCronSchedule.mock.calls.length;
     stop();
     start();
-    expect(mockCronSchedule).toHaveBeenCalledTimes(2);
+    expect(mockCronSchedule).toHaveBeenCalledTimes(countAfterFirst * 2);
   });
 
   it('cron callback calls runHealthCheckTask and swallows errors', async () => {

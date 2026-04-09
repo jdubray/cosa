@@ -36,7 +36,7 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Update a single key in the WeatherStation station_info configuration table. ' +
+    'Update a single key in the appliance configuration table. ' +
     'Only keys present in the configured allowed_keys list may be written. ' +
     'Returns the old and new values together with the applied timestamp.',
   inputSchema: INPUT_SCHEMA,

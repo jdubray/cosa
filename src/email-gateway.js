@@ -5,13 +5,17 @@ const { ImapFlow }    = require('imapflow');
 const { simpleParser } = require('mailparser');
 const { getConfig }   = require('../config/cosa.config');
 const { createLogger } = require('./logger');
+const { saveDeadLetter } = require('./session-store');
 
 // approval-engine also requires email-gateway, creating a circular dependency.
 // Lazy-require it inside _dispatchMessage (after both modules are fully loaded)
 // to avoid the partial-initialisation problem that makes processInboundReply
 // appear as undefined.
 
-/** Timestamp recorded at module load — used to skip emails that pre-date this boot. */
+// In production all requires happen synchronously during startup, so BOOT_TIME
+// ≈ process start time.  If this module is loaded lazily (e.g. in a test) the
+// timestamp reflects the require() call, not process start — that is fine
+// because the IMAP polling loop hasn't started yet in either case.
 const BOOT_TIME = new Date();
 
 const log = createLogger('email-gateway');
@@ -57,6 +61,25 @@ let _onNewSession = null;
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Return true if the parsed email's Authentication-Results header indicates
+ * DKIM passed for the given domain.
+ *
+ * Gmail injects this header before delivering to IMAP:
+ *   "Authentication-Results: mx.google.com; dkim=pass header.d=gmail.com ..."
+ *
+ * A spoofed email routed through a third-party server will either lack the
+ * header or show dkim=fail/dkim=none. A legitimate Gmail send always passes.
+ *
+ * @param {import('mailparser').ParsedMail} parsed
+ * @param {string} domain - operator's email domain, e.g. "gmail.com"
+ * @returns {boolean}
+ */
+function _dkimPasses(parsed, domain) {
+  const authHeader = (parsed.headers.get('authentication-results') ?? '').toLowerCase();
+  return /dkim=pass/i.test(authHeader) && authHeader.includes(domain.toLowerCase());
+}
 
 /**
  * Build a new ImapFlow client using credentials from config.
@@ -177,10 +200,12 @@ async function _runPoll() {
   let lock;
   try {
     lock = await client.getMailboxLock('INBOX');
-    // `since` filters to messages received on or after the date (day boundary).
-    // Combined with the in-process BOOT_TIME check below, this prevents a
-    // backlog of old unseen messages from flooding COSA on startup.
-    const seqs = await client.search({ seen: false, since: BOOT_TIME });
+    // Use a 2-day lookback window rather than BOOT_TIME to avoid a date-boundary
+    // race: ImapFlow's `since` is day-granular and can miss messages that arrived
+    // near midnight depending on timezone offsets between the Pi and Gmail's IMAP
+    // server.  The per-message BOOT_TIME guard below handles stale messages.
+    const since2d = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const seqs = await client.search({ seen: false, since: since2d });
 
     for (const seq of seqs) {
       const fetched = await client.fetchOne(String(seq), {
@@ -197,29 +222,52 @@ async function _runPoll() {
         continue;
       }
 
-      const fromAddr = (fetched.envelope?.from?.[0]?.address ?? '').toLowerCase();
-
       // Mark seen immediately — before dispatching — so that long-running
       // sessions (e.g. waiting for operator approval) don't cause the next
       // poll cycle to pick up the same message and spawn a duplicate session.
       await client.messageFlagsAdd(String(seq), ['\\Seen']);
 
+      // Parse full source to access both headers (DKIM) and body text.
+      const parsed  = await simpleParser(fetched.source ?? Buffer.alloc(0));
+      const fromAddr = (
+        parsed.from?.value?.[0]?.address ??
+        fetched.envelope?.from?.[0]?.address ?? ''
+      ).toLowerCase();
+
+      // Layer 1 — From-address allowlist (trivially spoofable but fast first gate)
       if (fromAddr !== operatorEmail) {
         log.warn(`Ignored message from non-operator: <${fromAddr}>`);
-      } else {
-        const parsed = await simpleParser(fetched.source ?? Buffer.alloc(0));
-        const body   = parsed.text?.trim() ?? '';
-        const msg = {
-          from:      fromAddr,
-          subject:   fetched.envelope?.subject  ?? '',
-          body,
-          messageId: fetched.envelope?.messageId ?? null,
-        };
-        log.info(`Email received — subject: "${msg.subject}", body length: ${body.length}`);
-        _dispatchMessage(msg).catch(err =>
-          log.error(`Session dispatch error: ${err.message}`)
-        );
+        continue;
       }
+
+      // Layer 2 — DKIM check (Gmail only by default).
+      // Gmail injects Authentication-Results before IMAP delivery; a spoofed
+      // message routed through any other server will fail or lack this header.
+      // Non-Gmail providers don't inject this header, so the check is opt-out
+      // via appliance.security.dkim_check: false in appliance.yaml.
+      const dkimCheckEnabled = appliance.security?.dkim_check !== false;
+      const operatorDomain   = operatorEmail.split('@')[1] ?? '';
+      if (dkimCheckEnabled && operatorDomain && !_dkimPasses(parsed, operatorDomain)) {
+        log.warn(`Ignored message: DKIM check failed for <${fromAddr}> (possible spoofed email)`);
+        continue;
+      }
+
+      const body = parsed.text?.trim() ?? '';
+      const msg = {
+        from:      fromAddr,
+        subject:   fetched.envelope?.subject  ?? '',
+        body,
+        messageId: fetched.envelope?.messageId ?? null,
+      };
+      log.info(`Email received — subject: "${msg.subject}", body length: ${body.length}`);
+      _dispatchMessage(msg).catch(err => {
+        log.error(`Session dispatch error: ${err.message}`);
+        try {
+          saveDeadLetter(msg, err.message);
+        } catch (dlErr) {
+          log.error(`Dead-letter write failed: ${dlErr.message}`);
+        }
+      });
     }
   } finally {
     if (lock) lock.release();
@@ -266,10 +314,20 @@ function setNewSessionHandler(fn) {
 // Exports
 // ---------------------------------------------------------------------------
 
+/**
+ * Reset the cached SMTP transport.
+ * **For use in tests only** — allows each test to verify `createTransport`
+ * is called with the correct config without interference from prior tests.
+ */
+function _resetSmtpTransport() {
+  _smtpTransport = null;
+}
+
 module.exports = {
   sendEmail,
   startPolling,
   stopPolling,
   setNewSessionHandler,
   _runPoll,
+  _resetSmtpTransport,
 };

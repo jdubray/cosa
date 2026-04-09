@@ -32,8 +32,10 @@ const MODEL = 'claude-sonnet-4-6';
 /** Hard cap on agent-loop iterations to prevent infinite loops. */
 const MAX_ITERATIONS = 20;
 
-/** Maximum tokens per Claude response. */
-const MAX_TOKENS = 4096;
+/** Maximum tokens per Claude response.
+ *  8192 prevents security/compliance tool digests from being silently truncated
+ *  mid-sentence, which could mislead the operator into thinking a report was complete. */
+const MAX_TOKENS = 8192;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,8 +48,10 @@ const MAX_TOKENS = 4096;
  * @returns {string}
  */
 function extractFinalText(contentBlocks) {
-  const textBlock = contentBlocks.find(b => b.type === 'text');
-  return textBlock?.text ?? '';
+  return contentBlocks
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -70,11 +74,28 @@ function extractFinalText(contentBlocks) {
  */
 async function processToolUse(sessionId, toolUse, triggerType) {
   const { name, id, input } = toolUse;
-  const riskLevel           = toolRegistry.getRiskLevel(name);
+  let riskLevel             = toolRegistry.getRiskLevel(name);
   const toolCallRecord      = { tool_name: name, input };
 
+  // Dynamic risk resolution: appliance_api_call stores 'dynamic' in the
+  // registry because the actual risk level depends on the endpoint chosen
+  // at call time.  Resolve it here before the approval gate runs.
+  if (riskLevel === 'dynamic') {
+    const endpointName = input.endpoint_name;
+    const entry = (getConfig().appliance?.appliance_api?.api_endpoints ?? [])
+      .find(e => e.name === endpointName);
+    if (!entry) {
+      // Endpoint not in allowlist — the handler will reject it immediately with
+      // APPLIANCE_ENDPOINT_NOT_ALLOWED before any HTTP call is made.  Use 'read'
+      // (auto-approve) so a spurious approval email is not sent to the operator.
+      riskLevel = 'read';
+    } else {
+      riskLevel = entry.risk ?? 'high';
+    }
+  }
+
   // ── 1. Security gate ────────────────────────────────────────────────────────
-  const gateResult = securityGate.check(toolCallRecord);
+  const gateResult = await securityGate.check(toolCallRecord);
   if (gateResult.blocked) {
     recordBlockedToolCall(sessionId, toolCallRecord, gateResult.reason);
     return {
@@ -89,13 +110,24 @@ async function processToolUse(sessionId, toolUse, triggerType) {
   const policy = approvalEngine.requiresApproval({ tool_name: name, input, riskLevel, triggerType });
 
   if (policy === 'once') {
+    // Build a human-readable action summary.  For appliance_api_call the
+    // caller may supply a `reason` field describing the intent — include it
+    // so the operator sees it in the approval request email.
+    let actionSummary = `Execute ${name} tool`;
+    if (input.endpoint_name) {
+      actionSummary = `appliance_api_call → ${input.endpoint_name}`;
+    }
+    if (input.reason) {
+      actionSummary += `: ${input.reason}`;
+    }
+
     const approvalResult = await approvalEngine.requestApproval(
       sessionId,
       {
         tool_name:      name,
         input,
         riskLevel,
-        action_summary: `Execute ${name} tool`,
+        action_summary: actionSummary,
       },
       'once'
     );
@@ -219,15 +251,6 @@ const iterationGuardAcceptor = model => proposal => {
   }
 };
 
-/**
- * Acceptor A1b — splice compressed messages into the model when compression
- * occurred during the same `callClaudeAction` call.
- *
- * Runs before `claudeResponseAcceptor` so that when the response acceptor
- * pushes the new assistant turn onto `model.messages`, it appends to the
- * already-compressed array.
- */
-const compressionAcceptor = contextCompressor.makeCompressionAcceptor();
 
 /**
  * Acceptor A2 — consume a Claude API response.
@@ -378,13 +401,15 @@ async function runSession(trigger) {
     const samApi  = api(samInst);
 
     // ── Initial model state ──────────────────────────────────────────────────
+    const initialMessages = [{ role: 'user', content: trigger.message }];
+
     samApi.addInitialState({
       sessionId,
       systemPrompt,
       tools,
       apiKey:           env.anthropicApiKey,
       triggerType:      trigger.type,
-      messages:         [{ role: 'user', content: trigger.message }],
+      messages:         initialMessages,
       iterations:       0,
       pendingToolCalls: [],
       toolResults:      [],
@@ -394,11 +419,11 @@ async function runSession(trigger) {
     });
 
     // ── Acceptors ────────────────────────────────────────────────────────────
-    // makeReactor() creates a fresh FSM instance per session, so parallel
-    // sessions each get their own independent state machine.
+    // Both makeReactor() and makeCompressionAcceptor() are called per-session
+    // so each session gets its own independent instance with no shared state.
     samApi.addAcceptors([
       iterationGuardAcceptor,
-      compressionAcceptor,
+      contextCompressor.makeCompressionAcceptor(),
       claudeResponseAcceptor,
       toolResultAcceptor,
       makeReactor(),
@@ -435,17 +460,14 @@ async function runSession(trigger) {
         }).catch(() => { /* errors already logged inside hook */ });
 
         resolve({ session_id: sessionId, response: model.finalText });
-      } else if (model.status === 'error' && !sessionClosed) {
-        sessionClosed = true;
-        const errMsg = model.errorMessage ?? 'Unknown error';
-        closeSession(sessionId, `Error: ${errMsg}`);
-        reject(new Error(errMsg));
       }
     });
 
     // ── Kick off the first Claude call ───────────────────────────────────────
+    // Use the same initialMessages reference set on the model so there is a
+    // single source of truth for the opening conversation turn.
     callClaudeIntent({
-      messages:     [{ role: 'user', content: trigger.message }],
+      messages:     initialMessages,
       systemPrompt,
       tools,
       apiKey:       env.anthropicApiKey,

@@ -28,9 +28,17 @@ const SCHEMA = {
   inputSchema: INPUT_SCHEMA,
 };
 
-/** systemctl command — static string, never user-constructed. */
-const SYSTEMCTL_CMD =
-  'systemctl show baanbaan --property=ActiveState,SubState,ExecMainStartTimestamp,NRestarts';
+/**
+ * Build the systemctl show command for the configured service name.
+ * Constructed at call time (not module load) so config changes are picked up.
+ *
+ * @returns {string}
+ */
+function buildSystemctlCmd() {
+  const { appliance } = getConfig();
+  const serviceName   = appliance.process_supervisor?.service_name ?? 'baanbaan';
+  return `systemctl show ${serviceName} --property=ActiveState,SubState,ExecMainStartTimestamp,NRestarts`;
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -123,29 +131,31 @@ function parseStartTimestamp(timestamp) {
  * Determine overall_status from individual check results.
  *
  * Rules (evaluated in order):
- * 1. `unreachable` — SSH not connected, or either HTTP endpoint is unreachable.
- * 2. `healthy`     — SSH up + both HTTP endpoints return 200 + process is
- *                    active/running with zero restarts.
- * 3. `degraded`    — Everything reachable, but at least one check is not ideal
- *                    (non-200 status, null body, restarts > 0, process not running).
+ * 1. `unreachable` — SSH not connected, or (when http_check is enabled) either
+ *                    HTTP endpoint is unreachable.
+ * 2. `healthy`     — SSH up + (http_check enabled → both endpoints return 200)
+ *                    + process is active/running with zero restarts.
+ * 3. `degraded`    — Everything reachable, but at least one check is not ideal.
  *
  * @param {{
- *   sshConnected: boolean,
+ *   sshConnected:    boolean,
+ *   httpCheckEnabled: boolean,
  *   httpHealth: { reachable: boolean, status_code: number|null, body: object|null },
  *   httpReady:  { reachable: boolean, status_code: number|null, body: object|null },
  *   procInfo:   object|null
  * }} checks
  * @returns {'healthy'|'degraded'|'unreachable'}
  */
-function determineOverallStatus({ sshConnected, httpHealth, httpReady, procInfo }) {
-  if (!sshConnected || !httpHealth.reachable || !httpReady.reachable) {
+function determineOverallStatus({ sshConnected, httpCheckEnabled, httpHealth, httpReady, procInfo }) {
+  if (!sshConnected) return 'unreachable';
+  if (httpCheckEnabled && (httpHealth.reachable === false || httpReady.reachable === false)) {
     return 'unreachable';
   }
 
-  const httpHealthOk =
-    httpHealth.status_code === 200 && httpHealth.body !== null;
-  const httpReadyOk =
-    httpReady.status_code === 200 && httpReady.body !== null;
+  const httpHealthOk = !httpCheckEnabled ||
+    (httpHealth.status_code === 200 && httpHealth.body !== null);
+  const httpReadyOk  = !httpCheckEnabled ||
+    (httpReady.status_code === 200 && httpReady.body !== null);
   const processOk =
     procInfo !== null &&
     procInfo.active_state === 'active' &&
@@ -182,28 +192,32 @@ async function handler() {
   const { appliance }  = getConfig();
   const { base_url, health_endpoint, health_ready_endpoint, request_timeout_ms } =
     appliance.appliance_api;
-  const timeoutMs  = request_timeout_ms ?? 10000;
-  const checkedAt  = new Date().toISOString();
-  const errors     = [];
+  const timeoutMs       = request_timeout_ms ?? 10000;
+  const checkedAt       = new Date().toISOString();
+  const errors          = [];
+  const httpCheckEnabled = appliance.tools?.health_check?.http_check !== false;
 
   // ── Step 1: SSH connectivity ──────────────────────────────────────────────
   const sshConnected = await ensureSshConnected();
   if (!sshConnected) errors.push('SSH not connected after 3 retries');
 
-  // ── Steps 2 & 3: HTTP health checks (parallel) ───────────────────────────
-  const [httpHealth, httpReady] = await Promise.all([
-    httpGet(`${base_url}${health_endpoint}`,       timeoutMs),
-    httpGet(`${base_url}${health_ready_endpoint}`,  timeoutMs),
-  ]);
+  // ── Steps 2 & 3: HTTP health checks (parallel, skipped when disabled) ────
+  const SKIPPED = { reachable: null, status_code: null, body: null, skipped: true };
+  const [httpHealth, httpReady] = httpCheckEnabled
+    ? await Promise.all([
+        httpGet(`${base_url}${health_endpoint}`,      timeoutMs),
+        httpGet(`${base_url}${health_ready_endpoint}`, timeoutMs),
+      ])
+    : [SKIPPED, SKIPPED];
 
-  if (!httpHealth.reachable) errors.push(`HTTP ${health_endpoint} unreachable`);
-  if (!httpReady.reachable)  errors.push(`HTTP ${health_ready_endpoint} unreachable`);
+  if (httpCheckEnabled && !httpHealth.reachable) errors.push(`HTTP ${health_endpoint} unreachable`);
+  if (httpCheckEnabled && !httpReady.reachable)  errors.push(`HTTP ${health_ready_endpoint} unreachable`);
 
   // ── Step 4: Process supervisor (SSH-dependent) ────────────────────────────
   let procInfo = null;
   if (sshConnected) {
     try {
-      const { stdout } = await sshBackend.exec(SYSTEMCTL_CMD);
+      const { stdout } = await sshBackend.exec(buildSystemctlCmd());
       const props      = parseSystemctlOutput(stdout);
       const { isoString, uptimeSeconds } = parseStartTimestamp(
         props.ExecMainStartTimestamp ?? ''
@@ -236,7 +250,7 @@ async function handler() {
   }
 
   // ── Status determination ──────────────────────────────────────────────────
-  const overallStatus = determineOverallStatus({ sshConnected, httpHealth, httpReady, procInfo });
+  const overallStatus = determineOverallStatus({ sshConnected, httpCheckEnabled, httpHealth, httpReady, procInfo });
 
   return {
     overall_status: overallStatus,

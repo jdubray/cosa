@@ -26,7 +26,7 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Issue a graceful systemd service restart on the WeatherStation appliance, ' +
+    'Issue a graceful systemd service restart on the appliance, ' +
     'then poll GET /health/ready every 2 seconds until the service is healthy or ' +
     'the graceful_timeout_seconds is exceeded.  Returns the pre-restart uptime, ' +
     'the came_up_at timestamp, and the final health endpoint response.',
@@ -192,7 +192,7 @@ async function pollUntilReady(readyUrl, timeoutMs, httpTimeout) {
 // ---------------------------------------------------------------------------
 
 /**
- * Gracefully restart the WeatherStation systemd service and wait for it to
+ * Gracefully restart the appliance systemd service and wait for it to
  * become healthy.
  *
  * @returns {Promise<{

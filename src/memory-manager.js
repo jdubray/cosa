@@ -214,7 +214,12 @@ function _enforceLimit(sections, timestamp) {
 
   // Pass 4: hard-slice — other sections are pathologically large.
   // Truncate at MAX_CHARS so the file is never written over the limit.
-  return doc.slice(0, MAX_CHARS);
+  // Append the end marker so readers can detect a truncated document.
+  const END_MARKER = '\n<!-- END MEMORY -->';
+  const sliced = doc.slice(0, MAX_CHARS);
+  return sliced.includes('<!-- END MEMORY -->')
+    ? sliced
+    : sliced + END_MARKER;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +268,32 @@ function writeMemory(content) {
 }
 
 /**
+ * Apply a patch object to a `sections` map in-place.
+ * Shared by `updateMemory` and the SAM acceptor returned by `makeMemoryAcceptor`
+ * so the patching logic only lives in one place.
+ *
+ * @param {Record<string,string>} sections - Mutable section map from `_parseSections`.
+ * @param {object} patch - Same shape accepted by `updateMemory`.
+ */
+function _applyPatch(sections, patch) {
+  for (const [patchKey, sectionName] of Object.entries(PATCH_KEY_TO_SECTION)) {
+    if (patch[patchKey] != null) {
+      sections[sectionName] = String(patch[patchKey]);
+    }
+  }
+
+  if (patch.recentIncident != null) {
+    const { date, event, resolution } = patch.recentIncident;
+    const newBullet = `- ${date}: ${event} — ${resolution}`;
+    const existing  = sections['Recent Incidents'] ?? '';
+    const cleaned   = existing === '(none)' || existing === '' ? '' : existing;
+    sections['Recent Incidents'] = cleaned
+      ? `${newBullet}\n${cleaned}`
+      : newBullet;
+  }
+}
+
+/**
  * Merge a patch object into the current MEMORY.md sections and write back.
  *
  * **Implemented as a SAM acceptor** per Phase 2 §19.4: the merge + limit check
@@ -291,25 +322,7 @@ function updateMemory(patch) {
   const current           = loadMemory();
   const { sections }      = _parseSections(current);
 
-  // ── Apply simple field replacements ────────────────────────────────────────
-  for (const [patchKey, sectionName] of Object.entries(PATCH_KEY_TO_SECTION)) {
-    if (patch[patchKey] != null) {
-      sections[sectionName] = String(patch[patchKey]);
-    }
-  }
-
-  // ── Prepend new incident bullet ────────────────────────────────────────────
-  if (patch.recentIncident != null) {
-    const { date, event, resolution } = patch.recentIncident;
-    const newBullet = `- ${date}: ${event} — ${resolution}`;
-    const existing  = sections['Recent Incidents'] ?? '';
-
-    // Strip placeholder "(none)" if present.
-    const cleaned = existing === '(none)' || existing === '' ? '' : existing;
-    sections['Recent Incidents'] = cleaned
-      ? `${newBullet}\n${cleaned}`
-      : newBullet;
-  }
+  _applyPatch(sections, patch);
 
   // ── Enforce limit and write ────────────────────────────────────────────────
   const final = _enforceLimit(sections, timestamp);
@@ -347,22 +360,7 @@ function makeMemoryAcceptor() {
     const base         = model.memory ?? loadMemory();
     const { sections } = _parseSections(base);
 
-    // Apply patch fields (same logic as updateMemory).
-    for (const [patchKey, sectionName] of Object.entries(PATCH_KEY_TO_SECTION)) {
-      if (proposal.memoryPatch[patchKey] != null) {
-        sections[sectionName] = String(proposal.memoryPatch[patchKey]);
-      }
-    }
-
-    if (proposal.memoryPatch.recentIncident != null) {
-      const { date, event, resolution } = proposal.memoryPatch.recentIncident;
-      const newBullet = `- ${date}: ${event} — ${resolution}`;
-      const existing  = sections['Recent Incidents'] ?? '';
-      const cleaned   = existing === '(none)' || existing === '' ? '' : existing;
-      sections['Recent Incidents'] = cleaned
-        ? `${newBullet}\n${cleaned}`
-        : newBullet;
-    }
+    _applyPatch(sections, proposal.memoryPatch);
 
     const final = _enforceLimit(sections, timestamp);
 
