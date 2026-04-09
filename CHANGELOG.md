@@ -6,6 +6,25 @@ Format: [Semantic Versioning](https://semver.org). Sections: **Added**, **Change
 
 ---
 
+## [1.0.3] — 2026-04-09
+
+Hotfixes from first production deployment against the Baanbaan POS appliance.
+
+### Fixed
+
+**Email gateway (`src/email-gateway.js`)**
+- IMAP `since` filter now uses a 2-day lookback window instead of `BOOT_TIME` — `BOOT_TIME` as a day-granular IMAP date caused messages to be silently missed due to timezone offset disagreements between the Pi and Gmail's IMAP server. The per-message BOOT_TIME guard still prevents stale messages from being reprocessed.
+
+**Health check tool (`src/tools/health-check.js`)**
+- `http_check: false` in `appliance.yaml` now correctly suppresses HTTP checks — the flag was read from config but never applied; HTTP failures still drove `overall_status` to `unreachable` even when disabled
+- Skipped HTTP checks now return `reachable: null` instead of `reachable: true` to prevent Claude from reporting them as "Reachable" in operator emails
+- `SYSTEMCTL_CMD` replaced with `buildSystemctlCmd()` which reads `process_supervisor.service_name` from config at call time instead of hardcoding `baanbaan`
+
+**Tool schema descriptions (`src/tools/`)**
+- Removed hardcoded "WeatherStation" references from tool `description` fields in `backup-run.js`, `pause-appliance.js`, `restart-appliance.js`, `settings-write.js`, and `shift-report.js` — these strings are fed to Claude as context and were causing operator emails to refer to the appliance as "WeatherStation"
+
+---
+
 ## [1.0.0] — 2026-04-08
 
 Phase 2 & 3 — Full production release. Completes the tool suite (17 new tools including `pause_appliance`, `backup_verify`, and the full Phase 3 set), hardens every core subsystem, and ships the cron session timeout, dead-letter queue, watchers table, and per-installation credential isolation.
