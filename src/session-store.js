@@ -82,11 +82,11 @@ const MIGRATIONS = [
     created_at    TEXT NOT NULL
   )`,
 
-  // Add is_compressed column if it does not already exist.
-  // Uses try/catch instead of "IF NOT EXISTS" for compatibility with SQLite < 3.37.
-  // This replaces the earlier pattern of setting parent_id = session_id as a
-  // compression marker, which was semantically misleading.
-  `ALTER TABLE sessions ADD COLUMN is_compressed INTEGER NOT NULL DEFAULT 0`,
+  // Placeholder: is_compressed column added via guarded ALTER TABLE in
+  // runMigrations() below — not inline here, because ALTER TABLE ADD COLUMN
+  // is not idempotent and SQLite < 3.37 lacks IF NOT EXISTS support for it.
+  // The PRAGMA table_info check below is safer than swallowing the error.
+  null,
 
   `CREATE INDEX IF NOT EXISTS idx_tool_calls_session_id ON tool_calls(session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tool_calls_tool_name  ON tool_calls(tool_name)`,
@@ -177,14 +177,16 @@ function runMigrations() {
   const db = getDb();
   const migrate = db.transaction(() => {
     for (const sql of MIGRATIONS) {
-      try {
-        db.exec(sql);
-      } catch (err) {
-        // ALTER TABLE ADD COLUMN throws "duplicate column name" if the column
-        // already exists (SQLite < 3.37 lacks IF NOT EXISTS support).
-        if (err.message && err.message.includes('duplicate column name')) continue;
-        throw err;
-      }
+      if (sql === null) continue; // skip placeholder slots
+      db.exec(sql);
+    }
+
+    // Add is_compressed column only if it does not yet exist.
+    // ALTER TABLE ADD COLUMN is not idempotent; using PRAGMA table_info as a
+    // guard avoids the try/catch pattern that could swallow unrelated errors.
+    const cols = db.prepare("PRAGMA table_info('sessions')").all();
+    if (!cols.some(c => c.name === 'is_compressed')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN is_compressed INTEGER NOT NULL DEFAULT 0');
     }
   });
   migrate();

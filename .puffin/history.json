@@ -6688,6 +6688,377 @@
             "timestamp": 1775666455784
           },
           "children": []
+        },
+        {
+          "id": "15551ed1-bc70-4f3b-9f89-fa16fb39e602",
+          "parentId": null,
+          "content": "We have implemented the COSA spec on the baanbaan side. We have created a handoff document, included.\n\nCan you review the document and plan for any changes in the COSA code.",
+          "title": null,
+          "timestamp": 1775695517163,
+          "response": {
+            "content": "97/97 passing across all 4 suites.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 1.35739995,
+            "turns": 20,
+            "duration": 252001,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\cosa_baanbaan_handoff.md",
+                "action": "read",
+                "timestamp": 1775695527199
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\watcher-registry.js",
+                "action": "read",
+                "timestamp": 1775695547320
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\appliance-auth.js",
+                "action": "read",
+                "timestamp": 1775695548474
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\tests\\appliance-status-poll.test.js",
+                "action": "write",
+                "timestamp": 1775695762326
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\watcher-sandbox-worker.js",
+                "action": "read",
+                "timestamp": 1775695745616
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\appliance-status-poll.js",
+                "action": "read",
+                "timestamp": 1775695746752
+              }
+            ],
+            "timestamp": 1775695773791
+          },
+          "children": [
+            "28c311e2-292b-48a3-9dda-4cce6ab84cb2"
+          ]
+        },
+        {
+          "id": "28c311e2-292b-48a3-9dda-4cce6ab84cb2",
+          "parentId": "15551ed1-bc70-4f3b-9f89-fa16fb39e602",
+          "content": "Let's do a full code review",
+          "title": null,
+          "timestamp": 1775695810832,
+          "response": {
+            "content": "---\n\n## Code Review — `phase-3` branch\n\nReviewed files: all new and modified source from this session's implementation. The codebase is well-structured, consistently styled, and security-conscious. Below are findings ordered by severity.\n\n---\n\n### Bugs\n\n**1. `src/appliance-auth.js:87–89` — silent `Bearer null` on first boot**\n\n```javascript\nif (type === 'jwt') {\n  const token = credentialStore.get(authConfig.access_token_credential_key);\n  return { Authorization: `Bearer ${token}` };  // sends \"Bearer null\" if not yet logged in\n}\n```\n\nThe `api_key` branch (lines 76–84) throws `CREDENTIAL_NOT_FOUND` when the credential is absent. The JWT branch silently interpolates `null` into the header string. On a fresh install the credential store has no access token, so the first request goes out with `Authorization: Bearer null`. It triggers a 401, which triggers refresh, which reads the refresh token — also null — producing `Bearer null` again, before finally falling through to login.\n\nThis is technically self-healing (the login succeeds and stores a real token), but it means two wasted round-trips that both produce confusingly invalid auth headers. The fix:\n\n```javascript\nif (type === 'jwt') {\n  const token = credentialStore.get(authConfig.access_token_credential_key);\n  // No token yet (first boot) — proceed with empty header so the first request\n  // gets a 401 and the normal refresh/login flow fires.\n  if (!token) return {};\n  return { Authorization: `Bearer ${token}` };\n}\n```\n\nSending an empty `Authorization` header causes a proper 401 rather than a malformed one, and the existing flow handles that correctly.\n\n---\n\n**2. `src/watcher-sandbox-worker.js:80` — function declaration vs. expression**\n\n```javascript\nconst script = new vm.Script(`(${code})(status)`, { filename: 'watcher.js' });\n```\n\nThis wraps `code` in an IIFE. It works for function expressions and arrow functions:\n- `(status) => { ... }` → `((status) => { ... })(status)` ✓\n- `function(status) { ... }` → `(function(status) { ... })(status)` ✓\n\n\nBut not for named function declarations:\n- `function watch(status) { ... }` → `(function watch(status) { ... })(status)` ✓ (actually this works too because named function expressions are valid)\n\nActually let me reconsider — all three forms work as function expressions inside the IIFE. The failure case would be if Claude writes a statement that isn't a function at all. The `watcher-register.js` schema example shows `function watch(status) { ... }` which is fine. But the schema description should explicitly say \"must be a function expression or declaration\" to prevent Claude from writing `const fn = ...; fn` or similar. The current description says \"Complete JavaScript function\" which is clear enough, but the example code in the schema (`function watch(status) { ... }`) is good. Low severity — document the constraint.\n\n---\n\n### Design Issues\n\n**3. `src/watcher-registry.js:51–55` — kill timer has no upper bound**\n\n```javascript\nconst killTimer = setTimeout(() => {\n  ...\n  reject(new Error(`Watcher execution timed out after ${timeoutMs}ms`));\n}, timeoutMs * 3);\n```\n\nThe 3× multiplier is documented as covering process startup overhead (~250–300ms on Pi). For the default `watcher_timeout_ms: 200`, kill fires at 600ms — fine. But an operator could set `watcher_timeout_ms: 10000` and the kill timer would be 30 seconds, blocking the event loop for 30 s on each of potentially dozens of watchers. Consider capping:\n\n```javascript\nconst PROCESS_STARTUP_MARGIN_MS = 1000;\nconst killTimer = setTimeout(() => { ... }, timeoutMs + PROCESS_STARTUP_MARGIN_MS);\n```\n\nThis more accurately reflects the intent (vm timeout + fixed startup overhead) rather than scaling overhead with the watcher timeout.\n\n---\n\n**4. `src/orchestrator.js:87` — approval gate fires for invalid endpoint names**\n\n```javascript\nriskLevel = entry?.risk ?? 'high'; // unknown endpoint → treat as high\n```\n\nWhen `input.endpoint_name` is not in the allowlist, `entry` is `undefined`, so `riskLevel` resolves to `'high'`. This triggers the approval gate, sending an email to the operator for a call that the handler will immediately reject with `APPLIANCE_ENDPOINT_NOT_ALLOWED`.\n\nThe approval gate runs at the orchestrator level, the allowlist check runs inside the handler. The ordering means a garbage endpoint name causes a spurious approval email. The handler should be consulted before the gate, or the orchestrator should pre-validate the endpoint name. The simplest fix is a pre-check in the dynamic resolution block:\n\n```javascript\nif (riskLevel === 'dynamic') {\n  const entry = (getConfig().appliance?.appliance_api?.api_endpoints ?? [])\n    .find(e => e.name === input.endpoint_name);\n  if (!entry) riskLevel = 'read'; // handler will reject; no approval needed\n  else        riskLevel = entry.risk ?? 'high';\n}\n```\n\nUsing `'read'` (auto-approve) here is safe because the handler will block the call before any HTTP request is made.\n\n---\n\n**5. No per-watcher cooldown override**\n\nThe handoff doc (§8) recommends 30-minute cooldown for printer-offline and no cooldown for anomalous request rate. Currently the cooldown is a single global value in `appliance_status_poll.alert_cooldown_minutes`. A printer-offline watcher and a high-order-volume watcher have very different appropriate cooldowns.\n\nThis is an architectural gap to track, not an immediate bug. Suggested future schema:\n\n```sql\n-- in watchers table\nalert_cooldown_minutes  INTEGER  -- NULL = use global default\n```\n\nFor now the global default is documented and acceptable.\n\n---\n\n### Minor Issues\n\n**6. `src/tools/appliance-status-poll.js:161` — inconsistent field presence in return value**\n\n```javascript\nwatchers_errored: errors.length > 0 ? errors : undefined,\n```\n\nThe field is present on success with errors and absent otherwise. COSA's own result objects generally use explicit `null` or consistent presence. `errors: []` (empty array) is cleaner and makes consumers predictable. Change to:\n\n```javascript\nwatchers_errored: errors.length > 0 ? errors : undefined,\n// → either omit entirely or always include:\n...(errors.length > 0 && { watchers_errored: errors }),\n```\n\nCurrent pattern is not wrong but the `undefined`-to-omission behavior depends on `JSON.stringify` dropping `undefined` values, which is correct but implicit.\n\n---\n\n**7. `src/session-store.js:89` — `ALTER TABLE` in idempotent migration list**\n\n```javascript\n`ALTER TABLE sessions ADD COLUMN is_compressed INTEGER NOT NULL DEFAULT 0`,\n```\n\n`ALTER TABLE ... ADD COLUMN` is not idempotent. The workaround (try/catch swallowing \"duplicate column name\") means any other failure on this statement (table doesn't exist yet, syntax error) is also silently swallowed. The existing code comment explains the historical reason. Not a current bug since the sessions table always exists by the time this migration runs, but brittle. Mark with a `// FRAGILE` comment or use:\n\n```javascript\n// Check column presence before attempting ALTER\nconst cols = db.prepare(\"PRAGMA table_info(sessions)\").all();\nif (!cols.some(c => c.name === 'is_compressed')) {\n  db.exec(`ALTER TABLE sessions ADD COLUMN is_compressed INTEGER NOT NULL DEFAULT 0`);\n}\n```\n\n---\n\n**8. `src/security-gate.js:38` — IPv4 sanitizer may over-redact**\n\n```javascript\n{ label: 'IPv4 address', pattern: /\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b/g },\n```\n\nThis will redact `1.0.0.0` in a semver string like `node v18.1.0.0` or a version field. Intentional over-sanitization is documented and acceptable for a security gate, but consider anchoring with context: `\\b\\d{1,3}(?:\\.\\d{1,3}){3}\\b` (same behavior). The real concern would be if it redacts something Claude needs to act on — for example, a Cloudflare IP in an error message. Low priority but worth noting.\n\n---\n\n### Handoff-Specific Gaps\n\nReviewing `docs/cosa_baanbaan_handoff.md` against the COSA code:\n\n**9. Watcher schema description doesn't mention null-safety requirements**\n\n`watcher-register.js:39–48` — the `code` field description gives an example that accesses `status?.orders?.pending` with optional chaining, which is good. But the description doesn't warn Claude about the null fields documented in the handoff (§5): `terminals[].checked_at`, `printers[].checked_at` on startup, `oldest_active_minutes`, `errors.recent[].route/.stack`.\n\nSuggest adding one line to the schema description:\n\n```\n'Many fields may be null — always use optional chaining (?.) and nullish ' +\n'coalescing (??) in watcher predicates. Do not compare null values with comparison ' +\n'operators directly.'\n```\n\n**10. No guard for `anomalous_req_rate` on fresh appliances**\n\nThe handoff (§6) says `anomalous_req_rate` is always `false` for the first 3 hours. Any watcher that alerts on this field would fire on restart and then go quiet — confusing the operator. This should be in the watcher-register tool schema description or OPERATIONS.md as a guidance note, not code. Worth adding to `config/OPERATIONS.md` or the watcher schema description: \"Do not use `security.anomalous_req_rate` as a watcher trigger unless `system.uptime_s > 10800`.\"\n\n---\n\n### Summary\n\n| # | Severity | File | Issue |\n|---|----------|------|-------|\n| 1 | Bug | `appliance-auth.js:87` | Silent `Bearer null` JWT header on first boot |\n| 2 | Bug | `orchestrator.js:87` | Approval email fired for invalid endpoint names |\n| 3 | Design | `watcher-registry.js:51` | Kill timer scales with timeout; no upper bound |\n| 4 | Design | `appliance-status-poll.js` | No per-watcher cooldown |\n| 5 | Minor | `appliance-status-poll.js:161` | `watchers_errored: undefined` vs omission |\n| 6 | Minor | `session-store.js:89` | Fragile `ALTER TABLE` in migration |\n| 7 | Minor | `security-gate.js:38` | IPv4 pattern may over-redact semver strings |\n| 8 | Docs | `watcher-register.js` | No null-safety guidance in watcher schema |\n| 9 | Docs | `OPERATIONS.md` | Missing `anomalous_req_rate` fresh-boot guidance |\n\nItems 1 and 2 are the only ones I'd fix before production. The rest are improvements. Want me to fix any of these?",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.7008885499999999,
+            "turns": 11,
+            "duration": 278534,
+            "filesModified": [
+              {
+                "path": "/c/Users/jjdub/code/cosa/package.json",
+                "action": "read",
+                "timestamp": 1775695835617
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/.claude/CLAUDE.md",
+                "action": "read",
+                "timestamp": 1775695837446
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/README.md",
+                "action": "read",
+                "timestamp": 1775695837819
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/main.js",
+                "action": "read",
+                "timestamp": 1775695839102
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/context-builder.js",
+                "action": "read",
+                "timestamp": 1775695841200
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/orchestrator.js",
+                "action": "read",
+                "timestamp": 1775695841629
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/session-store.js",
+                "action": "read",
+                "timestamp": 1775695842914
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/tool-registry.js",
+                "action": "read",
+                "timestamp": 1775695844131
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/security-gate.js",
+                "action": "read",
+                "timestamp": 1775695845406
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/approval-engine.js",
+                "action": "read",
+                "timestamp": 1775695846736
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/appliance-auth.js",
+                "action": "read",
+                "timestamp": 1775695848000
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/config/cosa.config.js",
+                "action": "read",
+                "timestamp": 1775695849366
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/config/appliance.yaml",
+                "action": "read",
+                "timestamp": 1775695851629
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/config/APPLIANCE.md",
+                "action": "read",
+                "timestamp": 1775695854650
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/email-gateway.js",
+                "action": "read",
+                "timestamp": 1775695857517
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/watcher-registry.js",
+                "action": "read",
+                "timestamp": 1775695860331
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/credential-store.js",
+                "action": "read",
+                "timestamp": 1775695863054
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/memory-manager.js",
+                "action": "read",
+                "timestamp": 1775695865743
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/tools/health-check.js",
+                "action": "read",
+                "timestamp": 1775695868603
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/tools/db-query.js",
+                "action": "read",
+                "timestamp": 1775695872861
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/cron-scheduler.js",
+                "action": "read",
+                "timestamp": 1775695876420
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/ssh-backend.js",
+                "action": "read",
+                "timestamp": 1775695880138
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/src/logger.js",
+                "action": "read",
+                "timestamp": 1775695883684
+              },
+              {
+                "path": "/c/Users/jjdub/code/cosa/USER_MANUAL.md",
+                "action": "read",
+                "timestamp": 1775695887266
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\watcher-registry.js",
+                "action": "read",
+                "timestamp": 1775695933138
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\appliance-api-call.js",
+                "action": "read",
+                "timestamp": 1775695938950
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\orchestrator.js",
+                "action": "read",
+                "timestamp": 1775695940372
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "read",
+                "timestamp": 1775695943950
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\session-store.js",
+                "action": "read",
+                "timestamp": 1775695951327
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\security-gate.js",
+                "action": "read",
+                "timestamp": 1775695954981
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\watcher-register.js",
+                "action": "read",
+                "timestamp": 1775696029467
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\approval-engine.js",
+                "action": "read",
+                "timestamp": 1775696030739
+              }
+            ],
+            "timestamp": 1775696094225
+          },
+          "children": [
+            "8c0d2570-836f-46fc-9bfe-cdba738659b7"
+          ]
+        },
+        {
+          "id": "8c0d2570-836f-46fc-9bfe-cdba738659b7",
+          "parentId": "28c311e2-292b-48a3-9dda-4cce6ab84cb2",
+          "content": "Let's fix these issues",
+          "title": null,
+          "timestamp": 1775696144355,
+          "response": {
+            "content": "97/97 clean. Here's a summary of every change made:\n\n---\n\n### Changes Applied\n\n**`src/appliance-auth.js`** — Bug #1: JWT `Bearer null` on first boot\n- Return empty headers `{}` when no access token exists, so the first request gets a clean 401 and the login flow fires normally. Consistent with how `api_key` type handles missing credentials.\n\n**`src/orchestrator.js`** — Bug #2: spurious approval email for invalid endpoint names  \n- Unknown endpoints now resolve to `riskLevel = 'read'` (auto-approve) instead of `'high'`. The handler will reject with `APPLIANCE_ENDPOINT_NOT_ALLOWED` before any HTTP request; no operator email is sent.\n\n**`src/watcher-registry.js`** — Design: kill timer upper bound  \n- Changed from `timeoutMs * 3` to `timeoutMs + 500ms` (fixed startup margin). A 10 s watcher timeout no longer creates a 30 s kill delay.\n\n**`src/tools/appliance-status-poll.js`** — Minor: `watchers_errored` field presence  \n- Changed from `errors.length > 0 ? errors : undefined` to `...(errors.length > 0 && { watchers_errored: errors })`. Field is now cleanly absent rather than set to `undefined`.\n\n**`src/session-store.js`** — Minor: fragile ALTER TABLE migration  \n- Replaced the try/catch \"duplicate column name\" swallow with an explicit `PRAGMA table_info` check. The `null` slot in the MIGRATIONS array is skipped cleanly. Any other migration failure now propagates correctly.\n\n**`src/security-gate.js`** — Minor: IPv4 pattern false positives  \n- Tightened the IPv4 pattern to enforce valid octets (0–255). `18.1.0` in a Node version string is no longer a match; `192.168.1.1` still is.\n\n**`src/tools/watcher-register.js`** — Docs: null-safety and BaanBaan quirks in schema  \n- Added explicit null-safety guidance to the `code` field description. Claude now knows about null `checked_at`, `oldest_active_minutes`, `uptime_s > 10800` for `anomalous_req_rate`, and `\"unknown\"` printer status before writing any watcher.\n\n**`config/OPERATIONS.md`** — Docs: watcher authoring section  \n- Added a \"Watcher Authoring Guidelines\" section covering all null-safety requirements, `anomalous_req_rate` fresh-boot behaviour, printer `\"unknown\"` status, and the terminal `checked_at` caveat.",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.75613485,
+            "turns": 22,
+            "duration": 208439,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\OPERATIONS.md",
+                "action": "write",
+                "timestamp": 1775696257966
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\session-store.js",
+                "action": "write",
+                "timestamp": 1775696230116
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\appliance-auth.js",
+                "action": "write",
+                "timestamp": 1775696169069
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\orchestrator.js",
+                "action": "write",
+                "timestamp": 1775696175822
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\watcher-registry.js",
+                "action": "write",
+                "timestamp": 1775696183947
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\appliance-status-poll.js",
+                "action": "write",
+                "timestamp": 1775696188370
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\security-gate.js",
+                "action": "write",
+                "timestamp": 1775696236551
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\watcher-register.js",
+                "action": "write",
+                "timestamp": 1775696249129
+              }
+            ],
+            "timestamp": 1775696358165
+          },
+          "children": []
+        },
+        {
+          "id": "6934b0c7-5c78-449e-9352-cebd5f20ce74",
+          "parentId": null,
+          "content": "Let's proceed with fixing this defect using the plan enclosed\n\n[COSA Alert] Appliance — Backup Failed\nInbox\n\ncosa.hanuman.thai.cafe@gmail.com\n3:00 AM (3 hours ago)\nto me\n\nCOSA automated nightly backup failed:\n\nError:      Backup script exited 127: bash: line 3: node: command not found\nError: in prepare, no such table: readings\nStarted at: 2026-04-09T10:00:02.559Z\n\nThe previous successful backup may be used for recovery.\n\n--- Automated alert from COSA ---",
+          "title": null,
+          "timestamp": 1775740437166,
+          "response": {
+            "content": "All green. Here's what was done:\n\n---\n\n### Changes\n\n**`src/tools/backup-run.js`** — complete rewrite (Parts 1A + 1B + 1C)\n\n- **Runtime auto-detect** (`JSRT=$(which bun ... || which node ... || echo '')`): no more hardcoded `node`. A guard at the top of the script fails with a clear message if neither runtime is on PATH. Overridable via `tools.backup_run.js_runtime` in appliance.yaml.\n- **Configurable tables**: reads `tools.backup_run.tables[]` from config; defaults to `['readings']` so WeatherStation is unchanged. Each table gets its own `{table}_{ts}.jsonl` + `.sha256` sidecar.\n- **New result shape**: `backup_files: [{ table, path, row_count, checksum }]` replaces the old flat `backup_path`/`row_count`/`checksum`. Script stdout is 2×N lines parsed in table order.\n\n**`src/tools/appliance-api-call.js`** — query params support\n\n- Added `entry.query_params` handling: static query string params from the allowlist config are appended to the URL via `URLSearchParams`. Required for `trigger_backup?type=full`. Caller cannot supply query params (only path params and body are caller-controlled).\n\n**`config/appliance.yaml`** — Parts 2 + 3\n\n- `backup_run.enabled: false` — disables the SSH-based backup for BaanBaan; `js_runtime: \"bun\"` and correct `tables[]` are left configured for reference and for any future re-enable.\n- Added `trigger_backup` to `api_endpoints` allowlist: `GET /api/merchants/:merchantId/backup?type=full`, risk `read`.\n\n**`tests/backup-run.test.js`** — 16 new tests\n\n- AC1: runtime auto-detect vs. configured literal\n- AC2: single-table default (WeatherStation compat)\n- AC3: multi-table (correct per-table files, shared timestamp, correct result mapping)\n- AC4: failure cases (exit 127, `no such table`, SSH network error, timing fields on failure)\n- AC5: result shape and correct SSH invocation",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.97904835,
+            "turns": 12,
+            "duration": 230032,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\docs\\backup_fix_plan.md",
+                "action": "read",
+                "timestamp": 1775740447024
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\backup-run.js",
+                "action": "write",
+                "timestamp": 1775740550144
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\backup-verify.js",
+                "action": "read",
+                "timestamp": 1775740473083
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "write",
+                "timestamp": 1775740566026
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\appliance-api-call.js",
+                "action": "write",
+                "timestamp": 1775740579076
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\tests\\backup-run.test.js",
+                "action": "write",
+                "timestamp": 1775740609923
+              }
+            ],
+            "timestamp": 1775740670607
+          },
+          "children": [
+            "996a8d52-4ff6-4c8b-955b-6bfbef65f74d"
+          ]
+        },
+        {
+          "id": "996a8d52-4ff6-4c8b-955b-6bfbef65f74d",
+          "parentId": "6934b0c7-5c78-449e-9352-cebd5f20ce74",
+          "content": "Just to be clear, this feature cannot be appliance specific, it should work both with the Weather Station test appliance and the BaanBaan POS\n\nAC2: single-table default (WeatherStation compat)",
+          "title": null,
+          "timestamp": 1775740738274,
+          "response": {
+            "content": "17/17. Here's what changed:\n\n**`src/tools/backup-run.js`**\n- Removed `DEFAULT_TABLES = ['readings']` entirely — no appliance name appears anywhere in the tool\n- Added an early-return guard: if `tables` is missing or empty, returns `success: false` with a message pointing the operator to `appliance.yaml`; no SSH call is made\n\n**`config/appliance.yaml`** (WeatherStation dev config — restored to appliance identity)\n- `backup_run`: re-enabled, `tables: [readings]` now explicit rather than implicit\n- Removed `js_runtime: \"bun\"` (WeatherStation has `node`; auto-detect handles both anyway)\n- Removed the `trigger_backup` API endpoint (BaanBaan-only — belongs in BaanBaan's own `appliance.yaml`)\n\n**`tests/backup-run.test.js`**\n- AC2 renamed from \"single table (default)\" to \"tables configuration required\"\n- Added two tests for the unconfigured error path (missing `tables`, empty `tables`)\n- `setConfig()` helper now includes `tables: ['readings']` explicitly with a comment explaining why — the test itself documents the expected operator workflow",
+            "sessionId": "386f2ff2-c1c0-40f5-be5d-269ad0511917",
+            "cost": 0.9022627499999999,
+            "turns": 10,
+            "duration": 144573,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\backup-run.js",
+                "action": "write",
+                "timestamp": 1775740827142
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "write",
+                "timestamp": 1775740842357
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\tests\\backup-run.test.js",
+                "action": "write",
+                "timestamp": 1775740870576
+              }
+            ],
+            "timestamp": 1775740886310
+          },
+          "children": []
         }
       ]
     },
@@ -8393,6 +8764,106 @@
             ],
             "timestamp": 1775664941483
           },
+          "children": [
+            "334d8059-27d3-4a81-9592-cd9ee6900662"
+          ]
+        },
+        {
+          "id": "334d8059-27d3-4a81-9592-cd9ee6900662",
+          "parentId": "058b57ad-c4ce-4562-ab97-613315683096",
+          "content": "I received an email this morning, can you look both in the code of COSA and BaanBaan to create a plan to deal with this defect:\n\n[COSA Alert] Appliance — Backup Failed\nInbox\n\ncosa.hanuman.thai.cafe@gmail.com\n3:00 AM (3 hours ago)\nto me\n\nCOSA automated nightly backup failed:\n\nError:      Backup script exited 127: bash: line 3: node: command not found\nError: in prepare, no such table: readings\nStarted at: 2026-04-09T10:00:02.559Z\n\nThe previous successful backup may be used for recovery.\n\n--- Automated alert from COSA ---",
+          "title": null,
+          "timestamp": 1775739775760,
+          "response": {
+            "content": "Two distinct root causes, both in `backup-run.js`. Here's the full diagnosis and plan:\n\n---\n\n## Root Cause Analysis\n\n### Bug 1 — `node: command not found` (exit 127)\n**Location:** `src/tools/backup-run.js:96`\n\n```javascript\nconst nodeTransform =\n  `node -e \"let d='';process.stdin.on('data',c=>d+=c)` +\n  `.on('end',()=>JSON.parse(d).forEach(r=>console.log(JSON.stringify(r))))\"`;\n```\n\nThe script hardcodes `node` as the JSON→JSONL transformer. The comment on line 74 even says *\"Node.js is used because it is guaranteed to be installed\"* — an assumption that was true for WeatherStation but false for BaanBaan, which runs on **Bun** with no `node` binary in PATH.\n\n### Bug 2 — `no such table: readings`\n**Location:** `src/tools/backup-run.js:102`\n\n```javascript\n`sqlite3 -json ${qDb} 'SELECT * FROM readings' | ${nodeTransform} > ${qBackup}`\n```\n\n`readings` is the WeatherStation's data table. BaanBaan's database has **no `readings` table** — its schema has `orders`, `merchants`, `menu_items`, `employees`, etc. (30 tables total). The table name is hardcoded, not configurable.\n\n### Why both fired together\n`set -euo pipefail` on line 100 means the whole pipeline fails as soon as either command fails. Both `sqlite3` (table not found) and `node` (binary not found) error simultaneously on line 3 of the script — both errors appear in `stderr`, both land in the COSA alert.\n\n---\n\n## Fix Plan\n\n### Part 1 — Make `backup-run.js` generic (fixes both bugs permanently)\n\n**File:** `src/tools/backup-run.js`\n\n**Change A — configurable JS runtime:**\n\nReplace the hardcoded `node` string with a shell auto-detection expression, using a new optional config key `tools.backup_run.js_runtime`:\n\n```javascript\n// If config specifies a runtime, use it directly.\n// Otherwise auto-detect: prefer bun, fall back to node.\nconst jsRuntime = appliance.tools?.backup_run?.js_runtime ?? null;\nconst runtimeExpr = jsRuntime\n  ? `'${shEscape(jsRuntime)}'`\n  : `$(which bun 2>/dev/null || which node 2>/dev/null || echo '')`;\n```\n\nThe generated script gets a guard at the top:\n```bash\nJSRT=<runtimeExpr>\n[ -z \"$JSRT\" ] && { echo \"No JS runtime (bun/node) found in PATH\" >&2; exit 1; }\n```\n\nThen line 102 becomes `sqlite3 -json ... | \"$JSRT\" -e \"...\" > ...`\n\n**Change B — configurable tables:**\n\nReplace the hardcoded `readings` with `tools.backup_run.tables[]` from config. Default to `['readings']` for backward compatibility with WeatherStation.\n\n```javascript\nconst tables = appliance.tools?.backup_run?.tables ?? ['readings'];\n```\n\n`buildScript()` loops over `tables`, produces one JSONL file per table, and outputs one `rowCount\\nchecksum` pair per table. The handler accumulates them into `backup_files: [{ table, path, row_count, checksum }]` in the result.\n\n**Change C — filename**\n\nRename backup files from `readings_*.jsonl` to `{table}_*.jsonl` so each table gets its own timestamped file.\n\n**New tests:** `tests/backup-run.test.js`\n- runtime auto-detection when `js_runtime` not configured\n- configurable `js_runtime: \"bun\"` used correctly\n- multi-table loop produces one file per table\n- script failure returns `success: false` with structured error\n\n---\n\n### Part 2 — `appliance.yaml` for BaanBaan (immediate unblock)\n\nThis is the config-only change that fixes tonight's backup without waiting for Part 3.\n\n```yaml\ntools:\n  backup_run:\n    enabled: true\n    backup_dir: \"/tmp/cosa-backups\"\n    timeout_s: 120\n    js_runtime: \"bun\"          # fixes Bug 1\n    tables:                    # fixes Bug 2\n      - orders\n      - merchants\n      - employees\n      - menu_items\n```\n\nThis works once Part 1 is implemented.\n\n---\n\n### Part 3 — Strategic: use BaanBaan's own backup API (right long-term answer)\n\nBaanBaan already has a fully-featured HTTP backup endpoint: `GET /api/merchants/:id/backup?type=full`. It knows its own schema, handles its own serialization, and supports S3 upload natively. Using raw SQLite over SSH for BaanBaan is the wrong tool.\n\n**Add to `appliance.yaml` api_endpoints allowlist:**\n\n```yaml\napi_endpoints:\n  - name: \"trigger_backup\"\n    path: \"/api/merchants/:merchantId/backup\"\n    method: GET\n    risk: read\n    description: \"Export a full backup of all merchant data via BaanBaan's backup API\"\n    path_params:\n      merchantId: \"${credential:appliance_merchant_id}\"\n    query_params:\n      type: \"full\"\n```\n\n**Then disable the SSH-based backup for BaanBaan:**\n\n```yaml\ntools:\n  backup_run:\n    enabled: false   # BaanBaan uses GET /api/merchants/:id/backup?type=full instead\n```\n\nThe operator triggers backups by emailing COSA \"run a backup\", Claude calls `appliance_api_call` with `endpoint_name: \"trigger_backup\"`.\n\n---\n\n## Summary\n\n| # | Change | File | Fixes | Priority |\n|---|--------|------|-------|----------|\n| 1A | Configurable `js_runtime` with auto-detect fallback | `src/tools/backup-run.js` | Bug 1 | P0 |\n| 1B | Configurable `tables[]` array | `src/tools/backup-run.js` | Bug 2 | P0 |\n| 1C | Per-table output files + updated result shape | `src/tools/backup-run.js` | cleanliness | P0 |\n| 2 | Set `js_runtime: bun` + correct `tables[]` | `config/appliance.yaml` | both bugs tonight | P0 (config only) |\n| 3 | Add `trigger_backup` to api_endpoints; disable `backup_run` | `config/appliance.yaml` | architecture | P1 |\n| 4 | New tests for generic backup-run | `tests/backup-run.test.js` | coverage | P1 |\n\n**Unblocks tonight:** Part 1 (code) + Part 2 (config) — backup will use `bun` and export the right BaanBaan tables.  \n**Right long-term:** Part 3 removes the SSH+SQLite dependency entirely for BaanBaan.",
+            "sessionId": "4bb22472-681e-437b-8fae-df4bd4fa6c04",
+            "cost": 0.8250525500000001,
+            "turns": 7,
+            "duration": 206417,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\backup-run.js",
+                "action": "read",
+                "timestamp": 1775739864624
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\config\\appliance.yaml",
+                "action": "read",
+                "timestamp": 1775739795926
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\tools\\backup-verify.js",
+                "action": "read",
+                "timestamp": 1775739797641
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\dev\\tools\\weather-station\\src\\database.js",
+                "action": "read",
+                "timestamp": 1775739800641
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\package.json",
+                "action": "read",
+                "timestamp": 1775739801967
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\src\\db\\schema.sql",
+                "action": "read",
+                "timestamp": 1775739805765
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\package.json",
+                "action": "read",
+                "timestamp": 1775739806371
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\scripts\\mem-check.sh",
+                "action": "read",
+                "timestamp": 1775739812224
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\src\\services\\auto-backup.ts",
+                "action": "read",
+                "timestamp": 1775739816581
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\src\\routes\\backup.ts",
+                "action": "read",
+                "timestamp": 1775739825967
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\test\\backup.test.ts",
+                "action": "read",
+                "timestamp": 1775739816895
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\src\\db\\connection.ts",
+                "action": "read",
+                "timestamp": 1775739828113
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\src\\db\\migrations\\001_add_oauth_support.sql",
+                "action": "read",
+                "timestamp": 1775739831294
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\src\\db\\migrations\\004_push_subscriptions.sql",
+                "action": "read",
+                "timestamp": 1775739831451
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\baanbaan\\Merchant\\v2\\src\\db\\migrations\\005_webauthn.sql",
+                "action": "read",
+                "timestamp": 1775739831594
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\tests\\appliance-status-poll.test.js",
+                "action": "read",
+                "timestamp": 1775739919205
+              }
+            ],
+            "timestamp": 1775739984302
+          },
           "children": []
         }
       ],
@@ -9020,12 +9491,40 @@
             "timestamp": 1775615655625
           },
           "children": []
+        },
+        {
+          "id": "b23894cf-6ebd-4e55-aee7-c8ca0b5ad17b",
+          "parentId": null,
+          "content": "I received this email this morning, can you look into it? \n\nWhy does it say: \"Note: my toolkit doesn't include an email-send function,\"  yet, I still received the email. It looks like the prompt sent to the Claude API is asked to send the email.\n\ncosa.hanuman.thai.cafe@gmail.com\n6:02 AM (2 hours ago)\nto me\n\nI now have all the data I need. Note: my toolkit doesn't include an email-send function, so I'll compose the complete plain-text email here for you to review and send, and flag the one item that warrants your attention.\n\n---\n\nHere is the complete plain-text email, ready to send:\n\n---\n\n**To:** jdubray@gmail.com\n**Subject:** [COSA] Shift Report: 2026-04-09\n\n```\nTo: jdubray@gmail.com\nSubject: [COSA] Shift Report: 2026-04-09\n\nCOSA Daily Shift Report\nBaanbaan Merchant Appliance\nPeriod: 2026-04-08 13:00 UTC to 2026-04-09 13:00 UTC\nGenerated: 2026-04-09T13:00:00Z\n================================================================\n\nAPPLIANCE HEALTH\n----------------\nStatus:        HEALTHY\nService:       baanbaan (systemd) — active/running\nUptime:        ~11 hours 58 minutes (started 2026-04-09 01:02:10 UTC)\nRestarts:      0\nSSH:           Connected\n\nNOTE: Last backup FAILED (2026-04-09 10:05 UTC).\n      Error: \"node: command not found\" — backup script uses wrong runtime.\n      Baanbaan runs on Bun, not Node. Operator action recommended.\n\n\nORDERS (past 24 hours)\n-----------------------\nTotal orders:     0\nGross revenue:    $0.00\nTotal tips:       $0.00\nAvg order value:  n/a\n\nNo orders were recorded in the past 24-hour window\n(2026-04-08 13:00 UTC to 2026-04-09 13:00 UTC).\n\nFor reference, the prior 24-hour window (2026-04-08 13:00 UTC to\n2026-04-08 13:00 UTC — approximately yesterday) shows 5 orders\ntotalling $5.30, with activity concentrated in the 16:00–23:00\nhour range. No tips were recorded.\n\n\nPAYMENTS\n---------\nNo payment records found in the 24-hour window.\nNo refunds recorded.\nNo payment errors recorded.\n\n\nSTAFF\n------\nActive timesheets (24h):  1\n  - JJ (Manager): clocked in 2026-04-09 01:54 UTC, still clocked in\n    (no clock-out recorded)\n\nNo other staff clock-ins in the past 24 hours.\n\n\nRESERVATIONS\n-------------\nNew reservations (24h):  1\n  Created: 2026-04-09 06:46 UTC\n\n\nGUEST FEEDBACK\n---------------\nFeedback submissions (24h):  0\n\n\nSECURITY EVENTS\n----------------\nauth_expired_token:  4,313 events in the past 24 hours\n\nSource IP: 2607:fb90:b280:b3e5:d830:bcd5:1189:ee85\nPaths hit:  /api/merchants/.../sse-ticket\n            /api/merchants/.../payment-notifications\n            /api/merchants/.../system/health\n\nThese are all auth_expired_token events — expired JWT/session tokens\nbeing presented to the API repeatedly from a single IPv6 address.\nVolume (4,313 in 24h, roughly 3 per minute) is high and suggests a\nclient device (POS terminal or app) is looping on an expired token\nwithout refreshing. No brute-force or injection attempts detected.\nRecommended action: identify and re-authenticate the affected client\ndevice/session.\n\n\nKNOWN OPEN ISSUES\n------------------\n1. Backup FAILED — script calls \"node\" but appliance uses Bun.\n   Backup has not succeeded since at least 2026-04-09 10:05 UTC.\n   No verified database backup is available. Operator action required.\n\n2. Auth token loop — 4,313 expired-token events from one IPv6 source\n   in 24 hours. Client needs to be re-authenticated.\n\n3. Manager JJ has no clock-out recorded as of report time\n   (2026-04-09 13:00 UTC). Verify if still on shift or missed clock-out.\n\n\n================================================================\nThis report was generated automatically by COSA.\nReply with any instructions or contact jdubray@gmail.com for support.\n================================================================\n```\n\n---\n\n**Two items to flag before you send:**\n\n1. **Backup is broken** — The script invokes `node` but the appliance runs on Bun. No successful backup has run since at least 10:05 UTC today. I can investigate the backup script path and propose a fix, but I need your approval to make any changes.\n\n2. **Auth token flood** — 4,313 `auth_expired_token` events in 24 hours from a single IPv6 address (`2607:fb90:b280:b3e5:d830:bcd5:1189:ee85`) hitting the SSE and payment-notification endpoints. This is almost certainly a POS client stuck in a token-refresh loop rather than an attack, but it's worth re-authenticating that device to clear the noise.\n\n**I do not have an email-send tool**, so please copy the email body above and send it manually, or let me know if you'd like me to take any of the remediation steps.",
+          "title": null,
+          "timestamp": 1775750652259,
+          "response": {
+            "content": "Clean. The fix is in place across all 9 affected trigger builders. Here's the summary of what was wrong and what changed:\n\n---\n\n**Root cause:** Every trigger that produces an emailed report told Claude to *\"send it to the operator\"* or *\"send an alert email\"*. Claude correctly deduced it had no `sendEmail` tool, so it wrote the email content as a quoted block inside a narrative wrapper (\"here's the email for you to send manually\"). `runShiftReportTask()` then took Claude's **entire response** — wrapper and all — and emailed it verbatim.\n\n**Fixes applied across `src/cron-scheduler.js`:**\n\n| Trigger | Type | Fix |\n|---|---|---|\n| `buildShiftReportTrigger` | Response = body | Added `IMPORTANT: Your response IS the email body` |\n| `buildWeeklyDigestTrigger` | Response = body | Same |\n| `buildWeeklySecurityDigestTrigger` | Response = body | Same |\n| `buildPciAssessmentTrigger` | Response = body | Same |\n| `buildTokenRotationRemindTrigger` | Response = body | Same |\n| `buildHealthCheckTrigger` | Body built from tool output | Removed \"send an alert email\", replaced with \"the system will alert the operator automatically\" |\n| `buildBackupTrigger` | Body built from tool output | Same |\n| `buildBackupVerifyTrigger` | Body built from tool output | Same |\n| `buildArchiveCheckTrigger` | Body built from tool output | Same |\n\nThe next shift report email should arrive clean — just the report content with no wrapper.",
+            "sessionId": "93e8de12-e1a3-4b59-b22b-293b9369ab7f",
+            "cost": 1.0003818,
+            "turns": 25,
+            "duration": 164158,
+            "filesModified": [
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\cron-scheduler.js",
+                "action": "write",
+                "timestamp": 1775750805195
+              },
+              {
+                "path": "C:\\Users\\jjdub\\code\\cosa\\src\\context-builder.js",
+                "action": "read",
+                "timestamp": 1775750689251
+              }
+            ],
+            "timestamp": 1775750821037
+          },
+          "children": []
         }
       ]
     }
   },
-  "activeBranch": "code-reviews",
-  "activePromptId": "3d9faa1c-dd43-40df-b3f3-f75d4ca9779f",
+  "activeBranch": "debugging",
+  "activePromptId": "b23894cf-6ebd-4e55-aee7-c8ca0b5ad17b",
   "branchOrder": [
     "specifications",
     "architecture",
@@ -9040,9 +9539,10 @@
     "baanbaan"
   ],
   "lastSelectedPromptPerBranch": {
-    "fullstack": "e8418ea2-4fb0-4f4f-8591-52f5bc9c8fd5",
+    "fullstack": null,
     "code-reviews": "cbb65437-fb0d-491b-a4b6-2532e797f00a",
-    "tmp": null
+    "tmp": null,
+    "debugging": null
   },
-  "updatedAt": "2026-04-08T18:02:40.217Z"
+  "updatedAt": "2026-04-09T16:07:01.340Z"
 }

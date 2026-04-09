@@ -26,10 +26,12 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Export the appliance database to a timestamped JSONL file on ' +
-    'the appliance, then write a .sha256 sidecar.  Returns the backup path, ' +
-    'row count, SHA-256 checksum, and timing.  Returns success: false with an ' +
-    'error message on SSH or script failure — does not throw.',
+    'Export one or more appliance database tables to timestamped JSONL files ' +
+    'on the appliance, writing a .sha256 sidecar for each.  Tables and the JS ' +
+    'runtime used for serialization are configurable in appliance.yaml.  ' +
+    'Returns backup_files (one entry per table with path, row_count, checksum) ' +
+    'and timing.  Returns success: false with a structured error on SSH or ' +
+    'script failure — does not throw.',
   inputSchema: INPUT_SCHEMA,
 };
 
@@ -52,58 +54,72 @@ function isoToFileTs(iso) {
 
 /**
  * Single-quote-escape a shell argument so it is safe to embed inside a
- * single-quoted bash string.  The path must not be empty.
+ * single-quoted bash string.
  *
  * @param {string} value
  * @returns {string}
  */
 function shEscape(value) {
-  // End single quote, add escaped quote, re-open single quote.
   return value.replace(/'/g, "'\\''");
 }
 
 /**
- * Build the multi-step bash script that:
- *   1. Creates the backup directory.
- *   2. Exports the readings table as JSONL using sqlite3 + Node.js transformer.
- *   3. Counts rows via wc -l.
- *   4. Computes SHA-256 via sha256sum.
- *   5. Writes a "<hash>  <filename>" sidecar file.
- *   6. Prints row-count and checksum on stdout (two lines) for the caller.
+ * Build the multi-step bash script that exports N tables as JSONL.
  *
- * Node.js is used as the JSON-array → JSONL transformer because it is
- * guaranteed to be installed on the appliance.
+ * For each table the script:
+ *   1. Exports via sqlite3 + JS transformer → {table}_{ts}.jsonl
+ *   2. Counts rows via wc -l
+ *   3. Computes SHA-256 via sha256sum
+ *   4. Writes a "<hash>  <filename>" sidecar file
+ *   5. Prints two lines on stdout: row_count\nchecksum
  *
- * SQL is embedded directly (static string — no user input involved) to avoid
- * the stdin-consumed-by-bash-s problem that would prevent piping.
+ * Total stdout is 2×N lines in table order, parsed by the handler.
  *
- * @param {string} dbPath
- * @param {string} backupDir
- * @param {string} backupPath  - Full path to the .jsonl file.
- * @param {string} sidecarPath - Full path to the .sha256 file.
- * @param {string} backupFile  - Basename only (used in sidecar content).
+ * The `runtimeExpr` is a shell expression that evaluates to the JS binary
+ * path.  A configured value is a single-quoted literal (e.g. `'bun'`);
+ * the auto-detect fallback is a `$(which ...)` subshell.
+ *
+ * @param {string}   dbPath
+ * @param {string}   backupDir
+ * @param {string[]} tables
+ * @param {string}   fileTs       - Timestamp slug shared across all output filenames
+ * @param {string}   runtimeExpr  - Shell expression evaluating to the JS binary path
  * @returns {string}
  */
-function buildScript(dbPath, backupDir, backupPath, sidecarPath, backupFile) {
-  const qDb      = `'${shEscape(dbPath)}'`;
-  const qDir     = `'${shEscape(backupDir)}'`;
-  const qBackup  = `'${shEscape(backupPath)}'`;
-  const qSidecar = `'${shEscape(sidecarPath)}'`;
+function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
+  const qDb  = `'${shEscape(dbPath)}'`;
+  const qDir = `'${shEscape(backupDir)}'`;
 
-  // Single-line Node.js JSONL transformer — avoids quoting issues with
-  // multi-line python or heredoc approaches.
-  const nodeTransform =
-    `node -e "let d='';process.stdin.on('data',c=>d+=c)` +
+  // Single-line JSONL transformer — avoids quoting issues with multi-line
+  // approaches.  Works identically under both Node.js and Bun.
+  const jsTransformCode =
+    `"let d='';process.stdin.on('data',c=>d+=c)` +
     `.on('end',()=>JSON.parse(d).forEach(r=>console.log(JSON.stringify(r))))"`;
+
+  const tableSteps = tables.map(table => {
+    const backupFile  = `${table}_${fileTs}.jsonl`;
+    const backupPath  = `${backupDir}/${backupFile}`;
+    const sidecarPath = `${backupPath}.sha256`;
+    const qBackup     = `'${shEscape(backupPath)}'`;
+    const qSidecar    = `'${shEscape(sidecarPath)}'`;
+    // Table names come from operator-controlled appliance.yaml — not user input.
+    const qTable      = shEscape(table);
+
+    return [
+      `sqlite3 -json ${qDb} 'SELECT * FROM ${qTable}' | "$JSRT" -e ${jsTransformCode} > ${qBackup}`,
+      `ROW_COUNT=$(wc -l < ${qBackup} | tr -d ' ')`,
+      `CHECKSUM=$(sha256sum ${qBackup} | awk '{print $1}')`,
+      `printf '%s  ${backupFile}\\n' "$CHECKSUM" > ${qSidecar}`,
+      `printf '%s\\n%s\\n' "$ROW_COUNT" "$CHECKSUM"`,
+    ].join('\n');
+  });
 
   return [
     'set -euo pipefail',
+    `JSRT=${runtimeExpr}`,
+    `[ -z "$JSRT" ] && { echo "No JS runtime (bun/node) found in PATH" >&2; exit 1; }`,
     `mkdir -p ${qDir}`,
-    `sqlite3 -json ${qDb} 'SELECT * FROM readings' | ${nodeTransform} > ${qBackup}`,
-    `ROW_COUNT=$(wc -l < ${qBackup} | tr -d ' ')`,
-    `CHECKSUM=$(sha256sum ${qBackup} | awk '{print $1}')`,
-    `printf '%s  ${backupFile}\\n' "$CHECKSUM" > ${qSidecar}`,
-    `printf '%s\\n%s\\n' "$ROW_COUNT" "$CHECKSUM"`,
+    ...tableSteps,
   ].join('\n');
 }
 
@@ -131,16 +147,14 @@ function execWithTimeout(command, stdin, timeoutMs) {
 // ---------------------------------------------------------------------------
 
 /**
- * Trigger a backup of the appliance readings table.
+ * Trigger a backup of the configured appliance database tables.
  *
  * On SSH or script failure the function returns `{ success: false, error }`
  * instead of throwing, so the agent can report the failure gracefully.
  *
  * @returns {Promise<{
  *   success:      boolean,
- *   backup_path:  string|null,
- *   row_count:    number|null,
- *   checksum:     string|null,
+ *   backup_files: Array<{ table: string, path: string, row_count: number|null, checksum: string|null }>,
  *   started_at:   string,
  *   completed_at: string,
  *   duration_ms:  number,
@@ -149,33 +163,47 @@ function execWithTimeout(command, stdin, timeoutMs) {
  */
 async function handler() {
   const { appliance } = getConfig();
-  const dbPath     = appliance.database.path;
-  const backupDir  = appliance.tools?.backup_run?.backup_dir  ?? DEFAULT_BACKUP_DIR;
-  const timeoutMs  = (appliance.tools?.backup_run?.timeout_s  ?? DEFAULT_TIMEOUT_S) * 1000;
+  const dbPath    = appliance.database.path;
+  const backupDir = appliance.tools?.backup_run?.backup_dir ?? DEFAULT_BACKUP_DIR;
+  const timeoutMs = (appliance.tools?.backup_run?.timeout_s ?? DEFAULT_TIMEOUT_S) * 1000;
+  const tables    = appliance.tools?.backup_run?.tables     ?? null;
+  const jsRuntime = appliance.tools?.backup_run?.js_runtime ?? null;
 
-  const startedAt  = new Date().toISOString();
-  const startMs    = Date.now();
+  if (!Array.isArray(tables) || tables.length === 0) {
+    return {
+      success:      false,
+      backup_files: [],
+      started_at:   new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      duration_ms:  0,
+      error:        'backup_run.tables is not configured in appliance.yaml — ' +
+                    'add the list of database tables to export (e.g. tables: [readings])',
+    };
+  }
 
-  const fileTs     = isoToFileTs(startedAt);
-  const backupFile = `readings_${fileTs}.jsonl`;
-  const backupPath = `${backupDir}/${backupFile}`;
-  const sidecarPath = `${backupPath}.sha256`;
+  // Build the shell expression that resolves to the JS runtime path.
+  // A configured value is used as a literal (single-quoted to prevent word
+  // splitting); the auto-detect subshell prefers bun, then falls back to node.
+  const runtimeExpr = jsRuntime
+    ? `'${shEscape(jsRuntime)}'`
+    : `$(which bun 2>/dev/null || which node 2>/dev/null || echo '')`;
 
-  const script = buildScript(dbPath, backupDir, backupPath, sidecarPath, backupFile);
+  const startedAt = new Date().toISOString();
+  const startMs   = Date.now();
+  const fileTs    = isoToFileTs(startedAt);
+
+  const script = buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr);
 
   // ── Execute backup script via SSH ─────────────────────────────────────────
   let execResult;
   try {
     execResult = await execWithTimeout('bash -s', script, timeoutMs);
   } catch (err) {
-    const completedAt = new Date().toISOString();
     return {
       success:      false,
-      backup_path:  null,
-      row_count:    null,
-      checksum:     null,
+      backup_files: [],
       started_at:   startedAt,
-      completed_at: completedAt,
+      completed_at: new Date().toISOString(),
       duration_ms:  Date.now() - startMs,
       error:        err.message,
     };
@@ -188,9 +216,7 @@ async function handler() {
   if (exitCode !== 0) {
     return {
       success:      false,
-      backup_path:  null,
-      row_count:    null,
-      checksum:     null,
+      backup_files: [],
       started_at:   startedAt,
       completed_at: completedAt,
       duration_ms:  durationMs,
@@ -198,16 +224,23 @@ async function handler() {
     };
   }
 
-  // ── Parse two-line output: row_count\nchecksum ────────────────────────────
-  const lines    = stdout.trim().split('\n');
-  const rowCount = parseInt(lines[0], 10);
-  const checksum = (lines[1] ?? '').trim();
+  // ── Parse 2×N output lines: row_count\nchecksum per table ─────────────────
+  const lines = stdout.trim().split('\n');
+  const backupFiles = tables.map((table, i) => {
+    const backupFile = `${table}_${fileTs}.jsonl`;
+    const rowCount   = parseInt(lines[i * 2], 10);
+    const checksum   = (lines[i * 2 + 1] ?? '').trim();
+    return {
+      table,
+      path:      `${backupDir}/${backupFile}`,
+      row_count: isNaN(rowCount) ? null : rowCount,
+      checksum:  checksum || null,
+    };
+  });
 
   return {
     success:      true,
-    backup_path:  backupPath,
-    row_count:    isNaN(rowCount) ? null : rowCount,
-    checksum:     checksum || null,
+    backup_files: backupFiles,
     started_at:   startedAt,
     completed_at: completedAt,
     duration_ms:  durationMs,

@@ -66,6 +66,7 @@ appliance_api:
             type: string
         required: [paused, reason]
 
+
 database:
   path: "/mnt/c/Users/jjdub/code/cosa/dev/tools/weather-station/data/weather.db"
   read_only: true
@@ -101,6 +102,8 @@ tools:
     enabled: true
     backup_dir: "/tmp/cosa-backups"
     timeout_s: 120
+    tables:
+      - readings
   restart_appliance:
     enabled: true
     graceful_timeout_seconds: 60

@@ -84,7 +84,14 @@ async function processToolUse(sessionId, toolUse, triggerType) {
     const endpointName = input.endpoint_name;
     const entry = (getConfig().appliance?.appliance_api?.api_endpoints ?? [])
       .find(e => e.name === endpointName);
-    riskLevel = entry?.risk ?? 'high'; // unknown endpoint → treat as high
+    if (!entry) {
+      // Endpoint not in allowlist — the handler will reject it immediately with
+      // APPLIANCE_ENDPOINT_NOT_ALLOWED before any HTTP call is made.  Use 'read'
+      // (auto-approve) so a spurious approval email is not sent to the operator.
+      riskLevel = 'read';
+    } else {
+      riskLevel = entry.risk ?? 'high';
+    }
   }
 
   // ── 1. Security gate ────────────────────────────────────────────────────────

@@ -233,7 +233,16 @@ async function handler(input) {
   }
 
   // ── 4. Execute ────────────────────────────────────────────────────────────
-  const url = `${baseUrl}${pathResult.resolvedPath}`;
+  // Append static query params from the allowlist config (if any).
+  // These are fixed values from appliance.yaml — not caller-supplied — so no
+  // injection risk.  Caller-supplied query params are not supported.
+  let resolvedPath = pathResult.resolvedPath;
+  if (entry.query_params && Object.keys(entry.query_params).length > 0) {
+    const qs = new URLSearchParams(entry.query_params).toString();
+    resolvedPath = `${resolvedPath}?${qs}`;
+  }
+
+  const url = `${baseUrl}${resolvedPath}`;
   log.info(`${entry.method} ${url} (endpoint: ${entry.name})`);
 
   let httpResult;

@@ -41,6 +41,18 @@ const SCHEMA = {
         description:
           'Complete JavaScript function that receives `status` (the appliance snapshot) and returns ' +
           '{ triggered: boolean, message?: string }. ' +
+          'IMPORTANT: many fields in the snapshot may be null — always use optional chaining (?.) ' +
+          'and nullish coalescing (??) to avoid TypeError. Never compare null values with > or < directly. ' +
+          'Fields that are commonly null: terminals[].checked_at (non-PAX D135 models), ' +
+          'printers[].checked_at (first ~120 s after appliance restart), ' +
+          'orders.oldest_active_minutes (no active orders), ' +
+          'payments.last_successful_at (no payments recorded yet), ' +
+          'store.next_open_label (store is currently open), ' +
+          'errors.recent[].route and .stack (not yet populated — always null). ' +
+          'Do not alert on security.anomalous_req_rate unless system.uptime_s > 10800 (3 hours); ' +
+          'the field is always false on a freshly restarted appliance until enough baseline samples exist. ' +
+          'Treat hardware.printers[].status === "unknown" as non-alerting (probe not yet run); ' +
+          'alert only on "timeout" or "refused". ' +
           'Example: function watch(status) { ' +
           '  const pending = status?.orders?.pending ?? 0; ' +
           '  if (pending > 5) return { triggered: true, message: pending + " orders pending" }; ' +

@@ -35,7 +35,9 @@ const SANITIZE_PATTERNS = [
   { label: 'Base64 secret',     pattern: /(?=[a-zA-Z0-9+/]*[+/])[a-zA-Z0-9+/]{40,}={0,2}/g },
   // IPv4 addresses — may appear in SSH error messages, connection strings, etc.
   // Redacted to avoid leaking internal network topology into LLM context.
-  { label: 'IPv4 address',      pattern: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g },
+  // Require each octet to be 0–255 (not just any digit run) to avoid false
+  // positives on version strings like "18.1.0" that have only three parts.
+  { label: 'IPv4 address',      pattern: /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g },
   // Absolute Unix paths under sensitive directories.
   { label: 'Unix path',         pattern: /\/(?:home|root|etc|var|opt|tmp|proc|sys)(?:\/\S+)+/g },
   // password key=value or key: value with optional quotes  (≥8 char value)

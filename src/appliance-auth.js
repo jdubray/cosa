@@ -85,6 +85,11 @@ function buildAuthHeaders(authConfig) {
 
   if (type === 'jwt') {
     const token = credentialStore.get(authConfig.access_token_credential_key);
+    // No token yet (first boot / not yet logged in) — return empty headers so
+    // the first API request receives a proper 401 and the normal refresh → login
+    // flow fires.  Sending "Bearer null" would also trigger a 401 but via a
+    // malformed header, which is confusing in appliance logs.
+    if (!token) return {};
     return { Authorization: `Bearer ${token}` };
   }
 

@@ -46,14 +46,16 @@ function runInSandbox(code, snapshot, timeoutMs) {
 
     // Outer kill timer — fires if the worker process hangs without responding
     // (e.g., the vm timeout doesn't fire on this platform).
-    // Set to 3× the vm timeout to leave ~2× of margin for process startup
-    // overhead on slow hardware such as a Raspberry Pi 4 (~250–300ms cold spawn).
+    // Add a fixed process-startup margin (~500ms) rather than scaling with the
+    // vm timeout.  A 3× multiplier would mean a 10 s watcher_timeout_ms creates
+    // a 30 s kill delay, blocking the event loop for the entire poll cycle.
+    const PROCESS_STARTUP_MARGIN_MS = 500;
     const killTimer = setTimeout(() => {
       if (settled) return;
       settled = true;
       child.kill('SIGKILL');
       reject(new Error(`Watcher execution timed out after ${timeoutMs}ms`));
-    }, timeoutMs * 3);
+    }, timeoutMs + PROCESS_STARTUP_MARGIN_MS);
 
     child.stdout.on('data', chunk => { stdout += chunk.toString(); });
 

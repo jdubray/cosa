@@ -154,12 +154,12 @@ async function handler(input) {
   );
 
   return {
-    success:           true,
+    success:      true,
     snapshot,
     alerts,
-    watchers_run:      watchers_evaluated,
-    watchers_errored:  errors.length > 0 ? errors : undefined,
-    polled_at:         polledAt,
+    watchers_run: watchers_evaluated,
+    ...(errors.length > 0 && { watchers_errored: errors }),
+    polled_at:    polledAt,
   };
 }
 

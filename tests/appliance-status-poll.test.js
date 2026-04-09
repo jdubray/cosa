@@ -3,6 +3,7 @@
 jest.mock('../config/cosa.config');
 jest.mock('../src/appliance-auth');
 jest.mock('../src/watcher-registry');
+jest.mock('../src/session-store', () => ({ createAlert: jest.fn() }));
 jest.mock('../src/logger', () => ({
   createLogger: () => ({ info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() }),
 }));
@@ -64,7 +65,7 @@ function mockAuthError(code = 'APPLIANCE_NETWORK_ERROR', message = 'timeout') {
 beforeEach(() => {
   jest.clearAllMocks();
   setConfig();
-  watcherRegistry.runAll = jest.fn().mockResolvedValue({ alerts: [], errors: [] });
+  watcherRegistry.runAll = jest.fn().mockResolvedValue({ alerts: [], errors: [], watchers_evaluated: 0 });
 });
 
 afterEach(() => {
@@ -159,8 +160,9 @@ describe('AC3 — watcher alerts', () => {
   test('watchers_run reflects alerts + errors count', async () => {
     mockHttpSuccess();
     watcherRegistry.runAll.mockResolvedValue({
-      alerts: [{ watcher_id: 'w' }],
-      errors: [{ watcher_id: 'x' }],
+      alerts:             [{ watcher_id: 'w' }],
+      errors:             [{ watcher_id: 'x' }],
+      watchers_evaluated: 2,
     });
 
     const result = await handler({});

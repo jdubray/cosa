@@ -87,7 +87,7 @@ function buildHealthCheckTrigger() {
     source:  'health-check',
     message: `You are running the scheduled hourly health check for Baanbaan.
 
-Run the health_check tool to assess the appliance state. If the result is healthy, log it and take no further action. If degraded or unreachable, diagnose using db_integrity if needed, then send an alert email to the operator with the findings and recommendations.
+Run the health_check tool to assess the appliance state. If the result is healthy, respond with a brief summary and take no further action. If degraded or unreachable, diagnose using db_integrity if needed, then respond with your findings and recommendations — the system will alert the operator automatically.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -98,7 +98,7 @@ function buildBackupTrigger() {
   return {
     type:    'cron',
     source:  'backup',
-    message: `Scheduled nightly backup. Run backup_run to create a backup of the appliance database. If successful, run backup_verify to confirm the checksum. Update MEMORY.md with the backup status. If backup fails, send an alert email to the operator.
+    message: `Scheduled nightly backup. Run backup_run to create a backup of the appliance database. If successful, run backup_verify to confirm the checksum. Update MEMORY.md with the backup status. If backup fails, respond with the failure details — the system will alert the operator automatically.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -109,7 +109,7 @@ function buildBackupVerifyTrigger() {
   return {
     type:    'cron',
     source:  'backup-verify',
-    message: `Verify the most recent appliance backup. Run backup_verify and report. If checksum mismatch or file missing, send an alert email to the operator immediately.
+    message: `Verify the most recent appliance backup. Run backup_verify and report. If checksum mismatch or file missing, respond with the failure details — the system will alert the operator automatically.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -120,7 +120,7 @@ function buildArchiveCheckTrigger() {
   return {
     type:    'cron',
     source:  'archive-check',
-    message: `Archive integrity check. Run session_search for any backup failure or anomaly mentions in the last 7 days. If a recurring pattern is found, summarise it and send an alert email to the operator.
+    message: `Archive integrity check. Run session_search for any backup failure or anomaly mentions in the last 7 days. If a recurring pattern is found, summarise it in your response — the system will alert the operator automatically.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -132,10 +132,12 @@ function buildShiftReportTrigger() {
   return {
     type:    'cron',
     source:  'shift-report',
-    message: `Generate and send the daily shift report for the past 24 hours. Run shift_report to gather the data, then format a plain-text email and send it to the operator.
+    message: `Generate the daily shift report for the past 24 hours. Run shift_report to gather the data, then write the complete plain-text report as your response.
 
-The email subject must be exactly: [COSA] Shift Report: ${today}
-The email must be plain text — no HTML.
+IMPORTANT: Your response IS the email body — it will be sent to the operator automatically. Write only the report content. Do not include any preamble, meta-commentary about sending, or instructions to the operator. Start directly with the report header.
+
+The email subject will be: [COSA] Shift Report: ${today}
+Plain text only — no HTML, no markdown.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -148,15 +150,13 @@ function buildWeeklyDigestTrigger() {
   return {
     type:    'cron',
     source:  'weekly-digest',
-    message: `Generate the weekly operational digest and send it to the operator.
-
-Gather data as follows:
+    message: `Generate the weekly operational digest. Gather data as follows:
 1. Run session_search with query "backup success failure" to summarise backup status for the past 7 days.
 2. Run session_search with query "health degraded unreachable alert" to summarise health check results for the past 7 days.
 3. Query the skills database via session_search for skills created or improved this week.
 4. Count operator-initiated sessions and approval requests from the past 7 days.
 
-Then format a plain-text email (no HTML) matching this exact structure:
+Then write the complete digest as your response using this exact structure:
 - Header: appliance name and "Weekly Operational Digest"
 - Week range: week of ${weekOf}
 - Section: HEALTH CHECK (N runs, healthy/failed counts, incidents)
@@ -166,8 +166,10 @@ Then format a plain-text email (no HTML) matching this exact structure:
 - Section: OPERATOR ACTIVITY (sessions, approval requests)
 - Footer: "— COSA"
 
-The email subject must be exactly: [COSA] Weekly Digest: week of ${weekOf}
-The email must be plain text — no HTML.
+IMPORTANT: Your response IS the email body — it will be sent to the operator automatically. Write only the digest content. Do not include any preamble, meta-commentary about sending, or instructions to the operator. Start directly with the digest header.
+
+The email subject will be: [COSA] Weekly Digest: week of ${weekOf}
+Plain text only — no HTML, no markdown.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -244,9 +246,7 @@ function buildWeeklySecurityDigestTrigger() {
   return {
     type:    'cron',
     source:  'security-digest',
-    message: `Generate the weekly security digest and send it to the operator.
-
-Gather data as follows:
+    message: `Generate the weekly security digest. Gather data as follows:
 1. Run session_search with query "git_audit severity medium high critical" for the past 7 days.
 2. Run session_search with query "process_monitor unexpected missing" for the past 7 days.
 3. Run session_search with query "network_scan unknown device" for the past 7 days.
@@ -256,7 +256,7 @@ Gather data as follows:
 7. Run session_search with query "webhook_hmac jwt_secret" for the past 7 days.
 8. Count total security alert sessions from the past 7 days for the incident count.
 
-Then format a plain-text email (no HTML) with this exact structure:
+Then write the complete digest as your response with this exact structure:
 - Header: appliance name, "Weekly Security Digest — week of ${weekOf}"
 - Section: GIT AUDIT — mark ✓ if no findings, or ⚠ with findings count and highest severity
 - Section: PROCESS MONITOR — mark ✓ if all expected processes running, or ⚠ with unexpected/missing process names
@@ -269,10 +269,12 @@ Then format a plain-text email (no HTML) with this exact structure:
 - Footer: "— COSA Security Monitor"
 
 Use ✓ to indicate a clean result and ⚠ followed by specific details for any anomaly or finding.
-The email must be plain text — no HTML.
+
+IMPORTANT: Your response IS the email body — it will be sent to the operator automatically. Write only the digest content. Do not include any preamble, meta-commentary about sending, or instructions to the operator. Start directly with the digest header.
 
 Retrieve the appliance name from the config and use it in the subject.
-The email subject must follow this exact format: [COSA] Weekly Security Digest — <appliance name> — ${weekOf}
+The email subject will be: [COSA] Weekly Security Digest — <appliance name> — ${weekOf}
+Plain text only — no HTML, no markdown.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -338,10 +340,12 @@ function buildPciAssessmentTrigger() {
     source:  'pci-assessment',
     message: `Monthly PCI-DSS self-assessment. Run pci_assessment to generate a full SAQ-A assessment report.
 
-Format the complete assessment as a plain-text email covering all 13 SAQ-A requirements and send it to the operator.
+Write the complete assessment as your response, covering all 13 SAQ-A requirements.
 
-The email subject must be exactly: [COSA] Monthly PCI Assessment: ${monthOf}
-The email must be plain text — no HTML.
+IMPORTANT: Your response IS the email body — it will be sent to the operator automatically. Write only the assessment content. Do not include any preamble, meta-commentary about sending, or instructions to the operator. Start directly with the assessment header.
+
+The email subject will be: [COSA] Monthly PCI Assessment: ${monthOf}
+Plain text only — no HTML, no markdown.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -354,7 +358,9 @@ function buildTokenRotationRemindTrigger() {
     source:  'token-rotation-remind',
     message: `Monthly token rotation reminder. Run token_rotation_remind to check all API tokens and service credentials for upcoming rotation deadlines.
 
-Send a reminder email to the operator listing any tokens approaching or past their rotation deadline. Include token name (not value), days until deadline, and recommended action.
+Write your response listing any tokens approaching or past their rotation deadline. Include token name (not value), days until deadline, and recommended action.
+
+IMPORTANT: Your response IS the email body — it will be sent to the operator automatically only if tokens are due. Write only the reminder content. Do not include any preamble or meta-commentary about sending.
 
 Current time: ${new Date().toISOString()}`,
   };
