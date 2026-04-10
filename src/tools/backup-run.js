@@ -116,8 +116,11 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
 
     return [
       `TMPJSON=$(mktemp)`,
+      `echo "[DIAG] ${table}: tmpfile=$TMPJSON" >&2`,
       `sqlite3 -json ${qDb} 'SELECT * FROM ${qTable}' > "$TMPJSON"`,
+      `echo "[DIAG] ${table}: sqlite3_exit=$? tmpsize=$(wc -c < $TMPJSON)" >&2`,
       `"$JSRT" -e ${jsTransformCode} < "$TMPJSON" > ${qBackup}`,
+      `echo "[DIAG] ${table}: bun_exit=$?" >&2`,
       `rm -f "$TMPJSON"`,
       `ROW_COUNT=$(wc -l < ${qBackup} | tr -d ' ')`,
       `CHECKSUM=$(sha256sum ${qBackup} | awk '{print $1}')`,
