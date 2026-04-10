@@ -101,9 +101,13 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
   // Stdin is redirected from a temp file (see below) rather than piped
   // directly from sqlite3, so there is no pipe contention with the bash -s
   // stdin channel.  Works identically under both Node.js and Bun.
+  //
+  // Guards against empty input: sqlite3 -json outputs 0 bytes (not `[]`) for
+  // empty tables on some platforms.  An empty string would cause JSON.parse to
+  // throw "Unexpected EOF", aborting the whole backup job.
   const jsTransformCode =
     `"let d='';process.stdin.on('data',c=>d+=c)` +
-    `.on('end',()=>JSON.parse(d).forEach(r=>console.log(JSON.stringify(r))))"`;
+    `.on('end',()=>{if(!d.trim())return;JSON.parse(d).forEach(r=>console.log(JSON.stringify(r)))})"`;
 
   const tableSteps = tables.map(table => {
     const backupFile  = `${table}_${fileTs}.jsonl`;
@@ -116,11 +120,8 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
 
     return [
       `TMPJSON=$(mktemp)`,
-      `echo "[DIAG] ${table}: tmpfile=$TMPJSON" >&2`,
       `sqlite3 -json ${qDb} 'SELECT * FROM ${qTable}' > "$TMPJSON"`,
-      `echo "[DIAG] ${table}: sqlite3_exit=$? tmpsize=$(wc -c < $TMPJSON)" >&2`,
       `"$JSRT" -e ${jsTransformCode} < "$TMPJSON" > ${qBackup}`,
-      `echo "[DIAG] ${table}: bun_exit=$?" >&2`,
       `rm -f "$TMPJSON"`,
       `ROW_COUNT=$(wc -l < ${qBackup} | tr -d ' ')`,
       `CHECKSUM=$(sha256sum ${qBackup} | awk '{print $1}')`,

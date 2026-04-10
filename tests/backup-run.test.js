@@ -309,6 +309,16 @@ describe('AC5 — result shape on success', () => {
     );
   });
 
+  test('JS transformer guards against empty input (sqlite3 outputs 0 bytes for empty tables)', async () => {
+    mockSshSuccess();
+
+    await handler();
+
+    const script = sshBackend.exec.mock.calls[0][1];
+    // Must guard with !d.trim() before JSON.parse to handle 0-byte sqlite3 output
+    expect(script).toContain("if(!d.trim())return;");
+  });
+
   test('uses temp file + stdin redirect instead of direct pipe to avoid bash -s contention', async () => {
     mockSshSuccess();
 
