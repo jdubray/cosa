@@ -67,13 +67,20 @@ function shEscape(value) {
  * Build the multi-step bash script that exports N tables as JSONL.
  *
  * For each table the script:
- *   1. Exports via sqlite3 + JS transformer → {table}_{ts}.jsonl
- *   2. Counts rows via wc -l
- *   3. Computes SHA-256 via sha256sum
- *   4. Writes a "<hash>  <filename>" sidecar file
- *   5. Prints two lines on stdout: row_count\nchecksum
+ *   1. Exports sqlite3 JSON to a temp file
+ *   2. Transforms the temp file (via stdin redirect) to JSONL via the JS runtime
+ *   3. Counts rows via wc -l
+ *   4. Computes SHA-256 via sha256sum
+ *   5. Writes a "<hash>  <filename>" sidecar file
+ *   6. Prints two lines on stdout: row_count\nchecksum
+ *   7. Removes the temp file
  *
  * Total stdout is 2×N lines in table order, parsed by the handler.
+ *
+ * Using a temp file + stdin redirect (rather than a direct pipe) avoids pipe
+ * contention with the bash -s stdin channel.  When bash reads its script from
+ * stdin, a direct `sqlite3 | bun` pipe can cause bun's process.stdin to see
+ * EOF before any data arrives — redirecting `< tmpfile` sidesteps this entirely.
  *
  * The `runtimeExpr` is a shell expression that evaluates to the JS binary
  * path.  A configured value is a single-quoted literal (e.g. `'bun'`);
@@ -90,8 +97,10 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
   const qDb  = `'${shEscape(dbPath)}'`;
   const qDir = `'${shEscape(backupDir)}'`;
 
-  // Single-line JSONL transformer — avoids quoting issues with multi-line
-  // approaches.  Works identically under both Node.js and Bun.
+  // Single-line JSONL transformer — reads from stdin.
+  // Stdin is redirected from a temp file (see below) rather than piped
+  // directly from sqlite3, so there is no pipe contention with the bash -s
+  // stdin channel.  Works identically under both Node.js and Bun.
   const jsTransformCode =
     `"let d='';process.stdin.on('data',c=>d+=c)` +
     `.on('end',()=>JSON.parse(d).forEach(r=>console.log(JSON.stringify(r))))"`;
@@ -106,7 +115,10 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
     const qTable      = shEscape(table);
 
     return [
-      `sqlite3 -json ${qDb} 'SELECT * FROM ${qTable}' | "$JSRT" -e ${jsTransformCode} > ${qBackup}`,
+      `TMPJSON=$(mktemp)`,
+      `sqlite3 -json ${qDb} 'SELECT * FROM ${qTable}' > "$TMPJSON"`,
+      `"$JSRT" -e ${jsTransformCode} < "$TMPJSON" > ${qBackup}`,
+      `rm -f "$TMPJSON"`,
       `ROW_COUNT=$(wc -l < ${qBackup} | tr -d ' ')`,
       `CHECKSUM=$(sha256sum ${qBackup} | awk '{print $1}')`,
       `printf '%s  ${backupFile}\\n' "$CHECKSUM" > ${qSidecar}`,
