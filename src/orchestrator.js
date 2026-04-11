@@ -26,16 +26,39 @@ const { makeReactor }    = require('./session-fsm');
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Anthropic model used for all Phase 1 sessions. */
-const MODEL = 'claude-sonnet-4-6';
+/**
+ * Model used for cron sessions — tool-call → format-response tasks that don't
+ * require deep reasoning.  ~12× cheaper than Sonnet.
+ */
+const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 
-/** Hard cap on agent-loop iterations to prevent infinite loops. */
-const MAX_ITERATIONS = 20;
+/**
+ * Model used for operator (email) sessions — richer reasoning, multi-step
+ * diagnosis, and more nuanced operator communication.
+ */
+const SONNET_MODEL = 'claude-sonnet-4-6';
 
-/** Maximum tokens per Claude response.
- *  8192 prevents security/compliance tool digests from being silently truncated
- *  mid-sentence, which could mislead the operator into thinking a report was complete. */
-const MAX_TOKENS = 8192;
+/**
+ * Hard cap on agent-loop iterations to prevent infinite loops.
+ *
+ * Email sessions (operator-initiated) allow more iterations because the
+ * operator may ask multi-step questions that require several tool round-trips.
+ * Cron sessions are single-focused tasks and 20 is sufficient.
+ */
+const MAX_ITERATIONS_EMAIL = 40;
+const MAX_ITERATIONS_CRON  = 20;
+
+/**
+ * Max tokens for operator sessions — generous budget so security/compliance
+ * digests are never silently truncated mid-sentence.
+ */
+const OPERATOR_MAX_TOKENS = 8192;
+
+/**
+ * Max tokens for cron sessions — cron responses are short tool summaries;
+ * 2048 is well above any realistic output.
+ */
+const CRON_MAX_TOKENS = 2048;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -190,7 +213,7 @@ async function processToolUse(sessionId, toolUse, triggerType) {
  *           apiKey: string, sessionId: string }} data
  * @returns {Promise<{ response: object, compressedMessages: Array|null }>}
  */
-async function callClaudeAction({ messages, systemPrompt, tools, apiKey, sessionId }) {
+async function callClaudeAction({ messages, systemPrompt, tools, apiKey, sessionId, model, maxTokens }) {
   let workingMessages    = messages;
   let compressedMessages = null;
 
@@ -214,8 +237,8 @@ async function callClaudeAction({ messages, systemPrompt, tools, apiKey, session
   // AC3: Claude API call proceeds with the (possibly compressed) messages array.
   const client   = new Anthropic({ apiKey });
   const response = await client.messages.create({
-    model:      MODEL,
-    max_tokens: MAX_TOKENS,
+    model:      model,
+    max_tokens: maxTokens,
     system:     systemPrompt,
     tools,
     messages:   workingMessages,
@@ -241,13 +264,14 @@ async function processToolAction({ toolUse, sessionId, triggerType }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Acceptor A1 — guard against exceeding the iteration cap.
- * If the model has already hit MAX_ITERATIONS, mark it complete.
+ * Acceptor A1 — guard against exceeding the per-trigger iteration cap.
+ * If the model has already hit its cap, mark it complete.
  */
 const iterationGuardAcceptor = model => proposal => {
-  if (model.iterations >= MAX_ITERATIONS && model.status === 'running') {
+  if (model.iterations >= model.maxIterations && model.status === 'running') {
     model.status    = 'complete';
-    model.finalText = 'Maximum iterations (20) reached without a final response.';
+    model.finalText =
+      `Maximum iterations (${model.maxIterations}) reached without a final response.`;
   }
 };
 
@@ -359,6 +383,8 @@ function makeCallClaudeNap(callClaudeIntent) {
         tools:        model.tools,
         apiKey:       model.apiKey,
         sessionId:    model.sessionId,
+        model:        model.model,
+        maxTokens:    model.maxTokens,
       });
       return true; // suppress render
     }
@@ -403,12 +429,17 @@ async function runSession(trigger) {
     // ── Initial model state ──────────────────────────────────────────────────
     const initialMessages = [{ role: 'user', content: trigger.message }];
 
+    const isCron = trigger.type === 'cron';
+
     samApi.addInitialState({
       sessionId,
       systemPrompt,
       tools,
       apiKey:           env.anthropicApiKey,
       triggerType:      trigger.type,
+      model:            isCron ? HAIKU_MODEL : SONNET_MODEL,
+      maxTokens:        isCron ? CRON_MAX_TOKENS : OPERATOR_MAX_TOKENS,
+      maxIterations:    isCron ? MAX_ITERATIONS_CRON : MAX_ITERATIONS_EMAIL,
       messages:         initialMessages,
       iterations:       0,
       pendingToolCalls: [],
@@ -472,6 +503,8 @@ async function runSession(trigger) {
       tools,
       apiKey:       env.anthropicApiKey,
       sessionId,
+      model:        isCron ? HAIKU_MODEL : SONNET_MODEL,
+      maxTokens:    isCron ? CRON_MAX_TOKENS : OPERATOR_MAX_TOKENS,
     }).catch(err => {
       if (!sessionClosed) {
         sessionClosed = true;

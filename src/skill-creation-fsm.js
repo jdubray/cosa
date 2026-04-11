@@ -10,7 +10,7 @@
  *   idle        → No skill creation in progress
  *   evaluating  → Post-session hook checking whether a novel incident occurred
  *   searching   → FTS5 search of skills.db for a matching existing skill
- *   generating  → Calling claude-sonnet-4-6 to generate a new skill document
+ *   generating  → Calling claude-haiku-4-5 to generate a new skill document
  *   validating  → Checking generated skill structure; validating required sections
  *   persisted   → Skill inserted into skills.db; operator notified
  *

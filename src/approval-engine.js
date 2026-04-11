@@ -22,6 +22,15 @@ const log = createLogger('approval-engine');
 /** How often the background expiry sweep runs. */
 const EXPIRY_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
+/**
+ * Tracks the last time an approval email was dispatched, keyed by urgency bucket.
+ * Resets on process restart — intentional, since overnight state is irrelevant
+ * once the process is restarted in the morning.
+ *
+ * @type {{ urgent: Date|null, nonUrgent: Date|null }}
+ */
+const _lastApprovalEmailSent = { urgent: null, nonUrgent: null };
+
 // ---------------------------------------------------------------------------
 // Approval FSM definition
 // ---------------------------------------------------------------------------
@@ -157,6 +166,70 @@ function _buildApprovalMachine(approvalId, onTerminal) {
 }
 
 // ---------------------------------------------------------------------------
+// Quiet-hours and rate-limit helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the current hour (0–23) in the configured appliance timezone.
+ *
+ * @param {string} tz - IANA timezone string (e.g. "America/New_York")
+ * @returns {number}
+ */
+function _localHour(tz) {
+  try {
+    return parseInt(
+      new Date().toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }),
+      10
+    );
+  } catch {
+    return new Date().getHours(); // fallback: system local time
+  }
+}
+
+/**
+ * Check whether sending an approval email is suppressed by quiet hours.
+ *
+ * Quiet hours apply to ALL emails (urgent and non-urgent): if the current
+ * local hour is before `operator.quiet_hours_start`, returns true.
+ * Set `quiet_hours_start: 0` (or omit) to disable.
+ *
+ * @param {object} operatorCfg - `appliance.operator` config block
+ * @param {string} tz          - IANA timezone
+ * @returns {boolean}
+ */
+function _isQuietHours(operatorCfg, tz) {
+  const start = operatorCfg?.quiet_hours_start ?? 0;
+  if (start === 0) return false;
+  return _localHour(tz) < start;
+}
+
+/**
+ * Check whether an approval email would exceed the per-urgency rate limit.
+ *
+ * @param {'once'|'urgent'} policy
+ * @param {object} operatorCfg
+ * @returns {{ limited: boolean, remainingMinutes: number }}
+ */
+function _isRateLimited(policy, operatorCfg) {
+  const isUrgent       = policy === 'urgent';
+  const intervalMin    = isUrgent
+    ? (operatorCfg?.urgent_resend_interval_minutes    ?? 15)
+    : (operatorCfg?.non_urgent_resend_interval_minutes ?? 60);
+  const lastSent       = isUrgent ? _lastApprovalEmailSent.urgent : _lastApprovalEmailSent.nonUrgent;
+
+  if (!lastSent) return { limited: false, remainingMinutes: 0 };
+
+  const elapsedMs     = Date.now() - lastSent.getTime();
+  const intervalMs    = intervalMin * 60 * 1000;
+  if (elapsedMs >= intervalMs) return { limited: false, remainingMinutes: 0 };
+
+  return {
+    limited:          true,
+    remainingMinutes: Math.ceil((intervalMs - elapsedMs) / 60_000),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -195,6 +268,32 @@ function requiresApproval(toolCall) {
 async function requestApproval(sessionId, toolCall, policy = 'once') {
   const { appliance } = getConfig();
 
+  // ── Quiet-hours gate ────────────────────────────────────────────────────────
+  // Suppress ALL approval emails before operator.quiet_hours_start (local time).
+  // The session will receive an auto-denied result; the cron task will retry on
+  // its next scheduled run (e.g. the following night's backup window).
+  const tz = appliance.appliance?.timezone ?? 'UTC';
+  if (_isQuietHours(appliance.operator, tz)) {
+    const start = appliance.operator?.quiet_hours_start ?? 0;
+    log.info(
+      `[approval-engine] quiet hours: suppressing ${policy} approval for ` +
+      `${toolCall.tool_name} (before ${start}:00 ${tz})`
+    );
+    return { approved: false, note: `quiet hours — before ${start}:00 local time` };
+  }
+
+  // ── Rate-limit gate ─────────────────────────────────────────────────────────
+  // Non-urgent (medium risk, cron): at most 1 email per non_urgent_resend_interval_minutes.
+  // Urgent (high/critical): at most 1 email per urgent_resend_interval_minutes.
+  const rl = _isRateLimited(policy, appliance.operator);
+  if (rl.limited) {
+    log.info(
+      `[approval-engine] rate limit: suppressing ${policy} approval for ` +
+      `${toolCall.tool_name} (next window in ${rl.remainingMinutes} min)`
+    );
+    return { approved: false, note: `rate limited — retry in ${rl.remainingMinutes} min` };
+  }
+
   // NODE_ENV=staging shortens the window to 2 minutes for fast integration tests.
   const timeoutMinutes = process.env.NODE_ENV === 'staging'
     ? 2
@@ -223,6 +322,12 @@ async function requestApproval(sessionId, toolCall, policy = 'once') {
       subject: `[COSA] Approval Required: ${toolCall.tool_name}`,
       text:    buildRequestEmailText(token, toolCall, timeoutMinutes),
     });
+    // Record send time for rate limiting.
+    if (policy === 'urgent') {
+      _lastApprovalEmailSent.urgent    = new Date();
+    } else {
+      _lastApprovalEmailSent.nonUrgent = new Date();
+    }
   } catch (emailErr) {
     log.error(`Failed to send approval request email: ${emailErr.message}`);
     return { approved: false, note: 'Email delivery failed — cannot send approval request' };
@@ -406,6 +511,9 @@ function stopExpiryCheck() {
  */
 function _clearPending() {
   _pending.clear();
+  // Reset rate-limit timestamps so tests start from a clean state.
+  _lastApprovalEmailSent.urgent    = null;
+  _lastApprovalEmailSent.nonUrgent = null;
 }
 
 // ---------------------------------------------------------------------------

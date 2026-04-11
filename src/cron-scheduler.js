@@ -1,11 +1,13 @@
 'use strict';
 
+const crypto = require('crypto');
 const cron = require('node-cron');
 const { getConfig }    = require('../config/cosa.config');
 const orchestrator     = require('./orchestrator');
 const emailGateway     = require('./email-gateway');
 const { createAlert, findRecentAlert, getLastToolOutput } = require('./session-store');
 const { createLogger } = require('./logger');
+const healthCheckTool  = require('./tools/health-check');
 
 const log = createLogger('cron-scheduler');
 
@@ -427,27 +429,37 @@ function buildAlertBody(result) {
 // ---------------------------------------------------------------------------
 
 /**
- * Execute a full health-check orchestrator session and handle the result.
- * healthy   → no email
- * degraded  → send 'warning' alert email (dedup 60 min)
- * unreachable → send 'critical' alert email (dedup 60 min)
+ * Execute a health check and alert the operator if the appliance is not healthy.
+ *
+ * Calls the health_check tool handler directly — no Claude API call needed.
+ * The tool result alone determines status, and buildAlertBody() formats the
+ * email body without LLM involvement.
+ *
+ * healthy      → log and return (0 API calls)
+ * degraded     → send 'warning' alert email (dedup 60 min)
+ * unreachable  → send 'critical' alert email (dedup 60 min)
+ *
  * @returns {Promise<void>}
  */
 async function runHealthCheckTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
 
-  const trigger                    = buildHealthCheckTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
-
-  const healthResult   = getLastToolOutput(sessionId, 'health_check') ?? {};
-  const overall_status = healthResult.overall_status ?? 'unreachable';
-
-  if (overall_status === 'healthy') {
-    log.info(`Health check complete: ${overall_status}`);
-    return;
+  // ── 1. Run health_check tool directly (no Claude session) ─────────────────
+  let healthResult;
+  try {
+    healthResult = await healthCheckTool.handler();
+  } catch (err) {
+    log.error(`Health check tool threw unexpectedly: ${err.message}`);
+    healthResult = { overall_status: 'unreachable', error: err.message };
   }
 
+  const overall_status = healthResult.overall_status ?? 'unreachable';
+  log.info(`Health check complete: ${overall_status}`);
+
+  if (overall_status === 'healthy') return;
+
+  // ── 2. Dedup check ─────────────────────────────────────────────────────────
   const severity = overall_status === 'unreachable' ? 'critical' : 'warning';
   const sinceIso = new Date(Date.now() - ALERT_DEDUP_WINDOW_MS).toISOString();
   const recent   = findRecentAlert(HEALTH_CHECK_CATEGORY, severity, sinceIso);
@@ -457,6 +469,7 @@ async function runHealthCheckTask() {
     return;
   }
 
+  // ── 3. Send alert email ────────────────────────────────────────────────────
   const applianceName = appliance.name ?? 'Appliance';
   const title  = overall_status === 'unreachable'
     ? `${applianceName} is UNREACHABLE`
@@ -471,7 +484,7 @@ async function runHealthCheckTask() {
   });
 
   createAlert({
-    session_id: sessionId,
+    session_id: crypto.randomUUID(), // no Claude session for health checks
     severity,
     category:   HEALTH_CHECK_CATEGORY,
     title,
@@ -1137,7 +1150,14 @@ function start() {
   };
 
   // Phase 2
-  schedule('health_check',  '0 * * * *',   runHealthCheckTask);
+  // Adaptive health-check windows (all times local to the appliance timezone):
+  //   11:00 AM – 2:00 PM  → every 30 min  (peak lunch)
+  //   2:00 PM  – 5:00 PM  → every hour    (afternoon lull)
+  //   5:00 PM  – 9:00 PM  → every 30 min  (peak dinner)
+  //   9:00 PM  – 11:00 AM → no check      (closed hours)
+  schedule('health_check_lunch',   '0,30 11-13 * * *', runHealthCheckTask);
+  schedule('health_check_midday',  '0 14-16 * * *',    runHealthCheckTask);
+  schedule('health_check_dinner',  '0,30 17-20 * * *', runHealthCheckTask);
   schedule('backup',        '0 3 * * *',   runBackupTask);
   schedule('backup_verify', '5 3 * * *',   runBackupVerifyTask);
   schedule('archive_check', '10 3 * * *',  runArchiveCheckTask);

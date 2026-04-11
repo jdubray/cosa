@@ -80,10 +80,26 @@ operator:
   name: "J"
   approval_timeout_minutes: 30
   urgent_approval_timeout_minutes: 5
+  # Quiet hours: no approval emails are sent before this local hour (24-h clock).
+  # The restaurant is closed overnight; non-urgent cron actions can wait until morning.
+  # Set to 0 to disable.
+  quiet_hours_start: 8
+  # Rate limits: maximum one approval email per interval across all pending requests.
+  # Non-urgent (medium-risk cron) emails are batched at most once per hour.
+  # Urgent (high/critical) emails are sent at most once every 15 minutes.
+  non_urgent_resend_interval_minutes: 60
+  urgent_resend_interval_minutes: 15
 
 cron:
-  health_check: "0 * * * *"
-  appliance_status_poll: "* * * * *"
+  # Adaptive health-check windows (override individual keys to adjust):
+  #   health_check_lunch:  11 AM–2 PM every 30 min  (peak lunch)
+  #   health_check_midday: 2 PM–5 PM every hour     (afternoon lull)
+  #   health_check_dinner: 5 PM–9 PM every 30 min   (peak dinner)
+  #   No health checks outside these windows (closed hours).
+  health_check_lunch:  "0,30 11-13 * * *"
+  health_check_midday: "0 14-16 * * *"
+  health_check_dinner: "0,30 17-20 * * *"
+  appliance_status_poll: "*/5 8-21 * * *"
 
 tools:
   health_check:
@@ -102,8 +118,18 @@ tools:
     enabled: true
     backup_dir: "/tmp/cosa-backups"
     timeout_s: 120
+    js_runtime: "bun"
     tables:
-      - readings
+      - orders
+      - order_items
+      - payments
+      - payment_errors
+      - merchants
+      - menu_items
+      - employees
+      - timesheets
+      - reservations
+      - feedback
   restart_appliance:
     enabled: true
     graceful_timeout_seconds: 60

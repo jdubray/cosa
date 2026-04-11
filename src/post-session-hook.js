@@ -17,8 +17,12 @@ const log = createLogger('post-session-hook');
 /** Minimum executed tool calls in a session before skill creation is considered. */
 const DEFAULT_MIN_TOOL_CALLS_FOR_SKILL = 3;
 
-/** Claude model used to generate skill documents. */
-const SKILL_GEN_MODEL = 'claude-sonnet-4-6';
+/**
+ * Claude model used to generate skill documents.
+ * Haiku is sufficient — skill gen is a short structured-extraction task
+ * (1024 token budget) and does not require Sonnet-level reasoning.
+ */
+const SKILL_GEN_MODEL = 'claude-haiku-4-5-20251001';
 
 /** Max tokens for skill generation response. */
 const SKILL_GEN_MAX_TOKENS = 1024;
@@ -56,20 +60,25 @@ function _healthCheckPatch(result) {
  * AC4: success → update lastBackup only.
  * AC5: failure → update lastBackup and activeAnomalies.
  *
+ * backup_run now returns backup_files: [{ table, path, row_count, checksum }]
+ * (one entry per exported table).
+ *
  * @param {object} result - Parsed backup_run tool output.
  * @returns {object} Partial memory patch.
  */
 function _backupRunPatch(result) {
-  const { success, backup_path, row_count, completed_at, error } = result;
+  const { success, backup_files = [], completed_at, error } = result;
 
   if (success) {
+    const totalRows = backup_files.reduce((sum, f) => sum + (f.row_count ?? 0), 0);
+    const tableList = backup_files.map(f => f.table).join(', ');
     return {
-      lastBackup: `${completed_at}: ${row_count} rows → ${backup_path}`,
+      lastBackup: `${completed_at}: ${totalRows} rows across [${tableList}]`,
     };
   }
 
   return {
-    lastBackup:     `${completed_at ?? new Date().toISOString()}: FAILED — ${error ?? 'unknown error'}`,
+    lastBackup:      `${completed_at ?? new Date().toISOString()}: FAILED — ${error ?? 'unknown error'}`,
     activeAnomalies: `Backup failed: ${error ?? 'unknown error'}`,
   };
 }
