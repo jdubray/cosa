@@ -89,6 +89,9 @@ operator:
   # Urgent (high/critical) emails are sent at most once every 15 minutes.
   non_urgent_resend_interval_minutes: 60
   urgent_resend_interval_minutes: 15
+  # Hard cap on outbound emails per calendar day (UTC).
+  # Gmail's limit is 500/day; 50 leaves headroom and catches runaway loops early.
+  daily_send_limit: 50
 
 cron:
   # Adaptive health-check windows (override individual keys to adjust):

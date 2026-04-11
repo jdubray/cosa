@@ -1,5 +1,8 @@
 'use strict';
 
+const fs             = require('fs');
+const os             = require('os');
+const path           = require('path');
 const nodemailer      = require('nodemailer');
 const { ImapFlow }    = require('imapflow');
 const { simpleParser } = require('mailparser');
@@ -32,6 +35,67 @@ const POLL_INTERVAL_MS = 60 * 1000;
  * Matches an 8-hex approval token or a bare DENY keyword.
  */
 const APPROVAL_RE = /\bAPPROVE-[0-9A-F]{8}\b|\bDENY\b/i;
+
+/**
+ * Path where the daily outbound send count is persisted.
+ * Survives process restarts within the same calendar day (UTC).
+ */
+const QUOTA_FILE = path.join(os.homedir(), '.cosa', 'email-quota.json');
+
+// ---------------------------------------------------------------------------
+// Daily send-quota helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Load today's send count from disk.
+ * Returns { date: 'YYYY-MM-DD', sent: N }.
+ * If the file is absent, corrupt, or from a previous day, returns a fresh record.
+ *
+ * @returns {{ date: string, sent: number }}
+ */
+function _loadQuota() {
+  try {
+    const raw    = fs.readFileSync(QUOTA_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    const today  = new Date().toISOString().slice(0, 10);
+    if (parsed.date === today && typeof parsed.sent === 'number') {
+      return { date: today, sent: parsed.sent };
+    }
+  } catch { /* absent or corrupt — start fresh */ }
+  return { date: new Date().toISOString().slice(0, 10), sent: 0 };
+}
+
+/**
+ * Persist the current quota state to disk (best-effort; errors are logged).
+ *
+ * @param {{ date: string, sent: number }} quota
+ */
+function _saveQuota(quota) {
+  try {
+    fs.mkdirSync(path.dirname(QUOTA_FILE), { recursive: true });
+    fs.writeFileSync(QUOTA_FILE, JSON.stringify(quota));
+  } catch (err) {
+    log.warn(`Failed to persist email quota: ${err.message}`);
+  }
+}
+
+/**
+ * Roll the quota to today if the stored date is stale.
+ * Mutates `quota` in place.
+ *
+ * @param {{ date: string, sent: number }} quota
+ */
+function _rollIfNewDay(quota) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (quota.date !== today) {
+    quota.date = today;
+    quota.sent = 0;
+    _saveQuota(quota);
+  }
+}
+
+/** In-memory daily send-quota state — loaded once at module init. */
+const _quota = _loadQuota();
 
 // ---------------------------------------------------------------------------
 // Module-level state
@@ -159,7 +223,34 @@ async function _dispatchMessage(msg) {
  * @returns {Promise<void>}
  */
 async function sendEmail({ to, subject, text, inReplyTo, references }) {
-  const { env } = getConfig();
+  const { env, appliance } = getConfig();
+
+  // ── Daily send-quota gate ─────────────────────────────────────────────────
+  // Hard cap to stay well within Gmail's 500/day limit.
+  // Default: 50/day.  Override with operator.daily_send_limit in appliance.yaml.
+  _rollIfNewDay(_quota);
+  const dailyLimit = appliance.operator?.daily_send_limit ?? 50;
+
+  if (_quota.sent >= dailyLimit) {
+    log.error(
+      `[email-gateway] Daily send limit (${dailyLimit}) reached — ` +
+      `dropping: "${subject}" → ${to}`
+    );
+    // Dead-letter so the email is not silently lost; it can be inspected later.
+    try {
+      saveDeadLetter({ subject, to, body: text }, 'daily_send_limit_exceeded');
+    } catch { /* best-effort */ }
+    return; // Do NOT throw — let the calling session continue gracefully.
+  }
+
+  if (_quota.sent >= Math.floor(dailyLimit * 0.8)) {
+    log.warn(
+      `[email-gateway] Daily send quota at ${_quota.sent + 1}/${dailyLimit} — ` +
+      `approaching limit`
+    );
+  }
+
+  // ── Send ───────────────────────────────────────────────────────────────────
   const transport = getSmtpTransport();
 
   /** @type {import('nodemailer').SendMailOptions} */
@@ -174,6 +265,10 @@ async function sendEmail({ to, subject, text, inReplyTo, references }) {
   if (references) mailOptions.references = references;
 
   await transport.sendMail(mailOptions);
+
+  _quota.sent++;
+  _saveQuota(_quota);
+  log.info(`[email-gateway] Sent ${_quota.sent}/${dailyLimit} today: "${subject}"`);
 }
 
 // ---------------------------------------------------------------------------
