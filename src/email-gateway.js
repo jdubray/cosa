@@ -347,14 +347,40 @@ async function _runPoll() {
         continue;
       }
 
-      const body = parsed.text?.trim() ?? '';
+      // Extract readable content from text/JSON attachments and append it to
+      // the body so COSA can see file contents without requiring orchestrator
+      // changes.  Binary attachments (images, PDFs, etc.) are ignored.
+      // Cap each attachment at 128 KB to guard against oversized payloads.
+      const MAX_ATTACHMENT_BYTES = 128 * 1024;
+      const attachmentTexts = (parsed.attachments ?? [])
+        .filter(a => {
+          const ct = (a.contentType ?? '').toLowerCase();
+          return ct.startsWith('text/') || ct === 'application/json';
+        })
+        .map(a => {
+          const label   = a.filename ? `[Attachment: ${a.filename}]` : '[Attachment]';
+          const raw     = a.content ?? Buffer.alloc(0);
+          const content = raw.slice(0, MAX_ATTACHMENT_BYTES).toString('utf8').trim();
+          const truncNote = raw.length > MAX_ATTACHMENT_BYTES
+            ? `\n[truncated — original size ${raw.length} bytes]`
+            : '';
+          return `${label}\n${content}${truncNote}`;
+        });
+
+      const body = [parsed.text?.trim() ?? '', ...attachmentTexts]
+        .filter(Boolean)
+        .join('\n\n');
+
       const msg = {
         from:      fromAddr,
         subject:   fetched.envelope?.subject  ?? '',
         body,
         messageId: fetched.envelope?.messageId ?? null,
       };
-      log.info(`Email received — subject: "${msg.subject}", body length: ${body.length}`);
+      log.info(
+        `Email received — subject: "${msg.subject}", body length: ${body.length}` +
+        (attachmentTexts.length ? `, attachments: ${attachmentTexts.length}` : '')
+      );
       _dispatchMessage(msg).catch(err => {
         log.error(`Session dispatch error: ${err.message}`);
         try {
