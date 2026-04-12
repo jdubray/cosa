@@ -178,6 +178,24 @@ tools:
     enabled: true
     watcher_timeout_ms: 200
     alert_cooldown_minutes: 30
+  shift_report:
+    enabled: true
+  backup_verify:
+    enabled: true
+  session_search:
+    enabled: true
+  archive_search:
+    enabled: true
+  process_monitor:
+    enabled: true
+  ips_alert:
+    enabled: true
+  jwt_secret_check:
+    enabled: true
+  token_rotation_remind:
+    enabled: true
+  pause_appliance:
+    enabled: true
   appliance_api_call:
     enabled: true
   watcher_register:
