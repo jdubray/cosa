@@ -5,16 +5,16 @@ appliance:
   timezone: "America/New_York"
 
 ssh:
-  host: "127.0.0.1"
-  port: 2222
-  user: "weather"
-  key_path: "/home/jdubray/.ssh/id_ed25519_cosa"
-  host_key_fingerprint: "SHA256:yuikjt8LL2KCTCwK+6WUqwfuaYG2A8TRGgg5nSrkaFs="
+  host: "192.168.1.248"
+  port: 22
+  user: "baanbaan"
+  key_path: "C:/Users/jjdub/.ssh/id_jdubray"
+  host_key_fingerprint: "SHA256:ye0zMzmC0bp9MsfrLKD4D+87kbSTC+DehYt7YvMf4rg"
   connect_timeout_ms: 5000
   command_timeout_ms: 30000
 
 appliance_api:
-  base_url: "http://127.0.0.1:3000"
+  base_url: "http://192.168.1.248:3000"
   health_endpoint: "/health"
   health_ready_endpoint: "/health/ready"
   request_timeout_ms: 10000
@@ -68,12 +68,12 @@ appliance_api:
 
 
 database:
-  path: "/mnt/c/Users/jjdub/code/cosa/dev/tools/weather-station/data/weather.db"
+  path: "/home/baanbaan/baan-baan-merchant/v2/data/merchant.db"
   read_only: true
 
 process_supervisor:
   type: "systemd"
-  service_name: "weather-station"
+  service_name: "baanbaan"
 
 operator:
   email: "jdubray@gmail.com"
@@ -149,8 +149,8 @@ tools:
   compliance_verify:
     enabled: true
     sensitive_files:
-      - "/home/weather/.env"
-      - "/home/weather/merchant.db"
+      - "/home/baanbaan/baan-baan-merchant/v2/.env"
+      - "/home/baanbaan/baan-baan-merchant/v2/data/merchant.db"
   pci_assessment:
     enabled: true
   settings_write:
@@ -163,22 +163,22 @@ tools:
       - maintenance_mode
   credential_audit:
     enabled: true
-    repo_path: "/home/weather"
+    repo_path: "/home/baanbaan/baan-baan-merchant/v2"
     suppressed_findings:
       - pattern: aws_access_key
         file: test/backup.test.ts
         line: 270
         reason: "test dummy key committed in test fixture — not a live credential"
   access_log_scan:
-    enabled: true
+    enabled: false
     log_path: "/var/log/nginx/access.log"
     lookback_minutes: 380
   git_audit:
     enabled: true
-    repo_path: "/home/weather"
+    repo_path: "/home/baanbaan/baan-baan-merchant/v2"
     lookback_hours: 8
     expected_authors:
-      - "weather-station@local"
+      - "baanbaan@local"
   appliance_status_poll:
     enabled: true
     watcher_timeout_ms: 200
@@ -227,7 +227,7 @@ monitoring:
   # using substring containment (case-sensitive).
   # Add any additional legitimate processes your appliance runs.
   expected_processes:
-    - node
+    - bun
     - sshd
     - systemd
     - bash

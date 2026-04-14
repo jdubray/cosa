@@ -28,6 +28,9 @@ Four production bugs fixed (backup alert, ips_alert approval loop, orphaned appr
 **Appliance identity mismatch (`config/appliance.yaml`)**
 - `appliance.name` updated from `"WeatherStation Dev Mock"` to `"Hanuman Thai Cafe"` — the old name propagated into the system prompt and all alert emails, causing the agent to reason about a weather station context.
 - `backup_run.tables` restored to the BaanBaan table list (`orders`, `order_items`, `payments`, `payment_errors`, `merchants`, `menu_items`, `employees`, `timesheets`, `reservations`, `feedback`) after being incorrectly reverted to `[readings]`.
+- Production SSH, API, and DB config corrected: `ssh.host/user/key_path/host_key_fingerprint`, `appliance_api.base_url`, `database.path`, `process_supervisor.service_name`, `git_audit.repo_path/expected_authors`, `credential_audit.repo_path`, `compliance_verify.sensitive_files` — all updated from WeatherStation dev-mock values to BaanBaan production values.
+- `access_log_scan` disabled (`enabled: false`) — no nginx on the BaanBaan appliance.
+- `monitoring.expected_processes`: replaced `node` with `bun` — BaanBaan runs on the Bun runtime.
 
 ### Added
 
