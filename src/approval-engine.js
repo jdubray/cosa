@@ -172,17 +172,24 @@ function _buildApprovalMachine(approvalId, onTerminal) {
 /**
  * Return the current hour (0–23) in the configured appliance timezone.
  *
+ * Uses Intl.DateTimeFormat with hourCycle 'h23' (always 0–23, never "24")
+ * in preference to toLocaleString hour12:false, which returns "24" for
+ * midnight on some runtimes (Node/WSL) and therefore never triggers quiet
+ * hours.  Falls back to the same Intl path with UTC rather than system
+ * local time, so that a WSL process whose system clock is UTC still
+ * evaluates quiet hours against the configured appliance timezone.
+ *
  * @param {string} tz - IANA timezone string (e.g. "America/New_York")
  * @returns {number}
  */
 function _localHour(tz) {
   try {
-    return parseInt(
-      new Date().toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }),
-      10
-    );
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' });
+    return parseInt(fmt.format(new Date()), 10);
   } catch {
-    return new Date().getHours(); // fallback: system local time
+    // tz is invalid or Intl is unavailable — fall back to UTC so that a
+    // UTC system clock does not silently bypass the quiet-hours gate.
+    return new Date().getUTCHours();
   }
 }
 
@@ -393,6 +400,27 @@ async function processInboundReply(msg) {
 
   const intents = _pending.get(approval.approval_id);
   if (!intents) {
+    // The approval is pending in the DB but the session that created it is no
+    // longer in memory (process restart, or session errored out before the
+    // reply arrived).  Notify the operator so the reply does not vanish silently.
+    try {
+      await emailGateway.sendEmail({
+        to:      appliance.operator.email,
+        subject: `[COSA] Approval Reply Received but Session Gone: ${approval.tool_name}`,
+        text: [
+          `Your reply for "${approval.tool_name}" (token: ${token}) was received,`,
+          `but the session that requested approval is no longer active.`,
+          ``,
+          `The action was NOT executed.`,
+          ``,
+          `This usually means COSA was restarted between when the approval email`,
+          `was sent and when your reply arrived.  The next scheduled run will`,
+          `create a new approval request if the condition still applies.`,
+        ].join('\n'),
+      });
+    } catch (emailErr) {
+      log.warn(`Failed to send orphaned-approval feedback email: ${emailErr.message}`);
+    }
     return { action: 'ambiguous', approvalId: null };
   }
 

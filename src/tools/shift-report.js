@@ -37,16 +37,16 @@ const INPUT_SCHEMA = {
         'When provided, overrides lookback_hours.',
     },
   },
-  required: [],
+  required:             [],
   additionalProperties: false,
 };
 
 const SCHEMA = {
   description:
-    'Aggregate appliance data for the previous shift period into a ' +
-    'structured summary.  Accepts a lookback window in hours (default 24, max 48) ' +
-    'or an explicit UTC date override (YYYY-MM-DD).  Returns temperature, humidity, ' +
-    'condition breakdown, and anomaly list.  Errors if no readings exist for the period.',
+    'Aggregate restaurant POS data for the previous shift period into a structured summary. ' +
+    'Accepts a lookback window in hours (default 24, max 48) or an explicit UTC date override (YYYY-MM-DD). ' +
+    'Returns order counts by status, payment revenue totals, payment error count, staff on shift, and anomalies. ' +
+    'Returns zero counts (does not throw) when no activity exists for the period.',
   inputSchema: INPUT_SCHEMA,
 };
 
@@ -66,20 +66,21 @@ const SCHEMA = {
  */
 function buildWindow(lookbackHours, date) {
   if (date) {
-    const periodStart = `${date}T00:00:00.000Z`;
-    const periodEnd   = `${date}T23:59:59.999Z`;
-    return { periodStart, periodEnd };
+    return {
+      periodStart: `${date}T00:00:00.000Z`,
+      periodEnd:   `${date}T23:59:59.999Z`,
+    };
   }
-
-  const now           = new Date();
-  const periodEnd     = now.toISOString();
-  const periodStart   = new Date(now.getTime() - lookbackHours * 60 * 60 * 1000).toISOString();
-  return { periodStart, periodEnd };
+  const now = new Date();
+  return {
+    periodStart: new Date(now.getTime() - lookbackHours * 60 * 60 * 1000).toISOString(),
+    periodEnd:   now.toISOString(),
+  };
 }
 
 /**
- * Build the sqlite3 aggregation command.
- * Query is passed via stdin to `sshBackend.exec` to avoid shell injection.
+ * Build the sqlite3 shell command.
+ * Query SQL is passed via stdin to avoid shell injection.
  *
  * @param {string} dbPath
  * @returns {string}
@@ -90,65 +91,88 @@ function buildCommand(dbPath) {
 }
 
 /**
- * Build the aggregation SQL for the readings table.
- *
- * Returns a single JSON row with aggregate metrics plus a JSON array of
- * condition breakdowns.
+ * Build the orders summary query.
  *
  * SECURITY NOTE: `periodStart` and `periodEnd` are embedded via string
- * interpolation because the SQL is piped to `sqlite3` via stdin and
- * parameterised queries are unavailable in that execution model.
- * Both values are either produced by `new Date()` (server-side, no user
- * input) or derived from a date string that has already been validated
- * against the strict YYYY-MM-DD pattern in `INPUT_SCHEMA`.  Do NOT loosen
- * that schema validation without reviewing these queries first.
- *
- * @param {string} periodStart - ISO timestamp
- * @param {string} periodEnd   - ISO timestamp
- * @returns {string}
- */
-function buildAggregationQuery(periodStart, periodEnd) {
-  // SQLite doesn't support ROUND(x,2) natively but does accept round(x,2).
-  return [
-    `SELECT`,
-    `  COUNT(*)                            AS total_readings,`,
-    `  round(MIN(temperature_c), 2)        AS temp_min,`,
-    `  round(MAX(temperature_c), 2)        AS temp_max,`,
-    `  round(AVG(temperature_c), 2)        AS temp_avg,`,
-    `  round(AVG(humidity_pct), 2)         AS humidity_avg,`,
-    `  round(MIN(humidity_pct), 2)         AS humidity_min,`,
-    `  round(MAX(humidity_pct), 2)         AS humidity_max`,
-    `FROM readings`,
-    `WHERE recorded_at >= '${periodStart}'`,
-    `  AND recorded_at <= '${periodEnd}'`,
-  ].join(' ');
-}
-
-/**
- * Build the condition breakdown query for the same window.
+ * interpolation because the SQL is piped to `sqlite3` via stdin.  Both
+ * values are either produced by `new Date()` (server-side) or validated
+ * against the strict YYYY-MM-DD pattern in `INPUT_SCHEMA`.
  *
  * @param {string} periodStart
  * @param {string} periodEnd
  * @returns {string}
  */
-function buildConditionsQuery(periodStart, periodEnd) {
+function buildOrdersQuery(periodStart, periodEnd) {
   return [
     `SELECT`,
-    `  weather_description AS condition,`,
-    `  COUNT(*)            AS count`,
-    `FROM readings`,
-    `WHERE recorded_at >= '${periodStart}'`,
-    `  AND recorded_at <= '${periodEnd}'`,
-    `GROUP BY weather_description`,
-    `ORDER BY count DESC`,
+    `  COUNT(*)                                                              AS total_orders,`,
+    `  COUNT(CASE WHEN status = 'completed'                       THEN 1 END) AS completed,`,
+    `  COUNT(CASE WHEN status = 'cancelled'                       THEN 1 END) AS cancelled,`,
+    `  COUNT(CASE WHEN status IN ('confirmed','preparing','ready') THEN 1 END) AS active`,
+    `FROM orders`,
+    `WHERE created_at >= '${periodStart}'`,
+    `  AND created_at <= '${periodEnd}'`,
+  ].join(' ');
+}
+
+/**
+ * Build the payments revenue query.
+ *
+ * @param {string} periodStart
+ * @param {string} periodEnd
+ * @returns {string}
+ */
+function buildRevenueQuery(periodStart, periodEnd) {
+  return [
+    `SELECT`,
+    `  COUNT(*)                  AS payment_count,`,
+    `  round(SUM(amount), 2)     AS total_revenue,`,
+    `  round(AVG(amount), 2)     AS avg_order_value`,
+    `FROM payments`,
+    `WHERE created_at >= '${periodStart}'`,
+    `  AND created_at <= '${periodEnd}'`,
+  ].join(' ');
+}
+
+/**
+ * Build the payment errors count query.
+ *
+ * @param {string} periodStart
+ * @param {string} periodEnd
+ * @returns {string}
+ */
+function buildPaymentErrorsQuery(periodStart, periodEnd) {
+  return [
+    `SELECT COUNT(*) AS error_count`,
+    `FROM payment_errors`,
+    `WHERE created_at >= '${periodStart}'`,
+    `  AND created_at <= '${periodEnd}'`,
+  ].join(' ');
+}
+
+/**
+ * Build the staff-on-shift query.
+ * Counts distinct employees whose timesheet clock-in falls within the window,
+ * including any who are still clocked in (clock_out IS NULL).
+ *
+ * @param {string} periodStart
+ * @param {string} periodEnd
+ * @returns {string}
+ */
+function buildStaffQuery(periodStart, periodEnd) {
+  return [
+    `SELECT COUNT(DISTINCT employee_id) AS staff_count`,
+    `FROM timesheets`,
+    `WHERE clock_in >= '${periodStart}'`,
+    `  AND (clock_out IS NULL OR clock_out <= '${periodEnd}')`,
   ].join(' ');
 }
 
 /**
  * Run a SQL statement against the appliance database via SSH.
  *
- * @param {string} cmd   - The sqlite3 shell command (built by buildCommand).
- * @param {string} sql   - SQL to pass via stdin.
+ * @param {string} cmd  - sqlite3 shell command (built by buildCommand).
+ * @param {string} sql  - SQL to pass via stdin.
  * @returns {Promise<object[]>}
  */
 async function execQuery(cmd, sql) {
@@ -161,26 +185,34 @@ async function execQuery(cmd, sql) {
 }
 
 /**
- * Identify anomalies from aggregate metrics.
+ * Identify anomalies from the aggregated shift metrics.
  *
  * Current rules:
- * - Temperature exceeds 40 °C or drops below -10 °C.
- * - Humidity exceeds 95 %.
+ * - More than 5 payment errors in the period.
+ * - Orders placed but zero payments recorded.
+ * - Cancellation rate exceeds 30 % (with at least 5 orders to avoid noise).
  *
- * @param {{ temp_min: number, temp_max: number, humidity_max: number }} metrics
+ * @param {{ totalOrders: number, cancelledOrders: number, paymentErrors: number, paymentCount: number }} metrics
  * @returns {string[]}
  */
-function detectAnomalies({ temp_min, temp_max, humidity_max }) {
+function detectAnomalies({ totalOrders, cancelledOrders, paymentErrors, paymentCount }) {
   const anomalies = [];
-  if (temp_max !== null && temp_max > 40) {
-    anomalies.push(`High temperature: ${temp_max} °C (threshold: 40 °C)`);
+
+  if (paymentErrors > 5) {
+    anomalies.push(`High payment error count: ${paymentErrors} errors in period`);
   }
-  if (temp_min !== null && temp_min < -10) {
-    anomalies.push(`Low temperature: ${temp_min} °C (threshold: -10 °C)`);
+
+  if (totalOrders > 0 && paymentCount === 0) {
+    anomalies.push(`Orders placed but no payments recorded — possible payment system issue`);
   }
-  if (humidity_max !== null && humidity_max > 95) {
-    anomalies.push(`High humidity: ${humidity_max} % (threshold: 95 %)`);
+
+  if (totalOrders >= 5 && cancelledOrders / totalOrders > 0.3) {
+    anomalies.push(
+      `High cancellation rate: ${cancelledOrders} of ${totalOrders} orders cancelled ` +
+      `(${Math.round((cancelledOrders / totalOrders) * 100)} %)`
+    );
   }
+
   return anomalies;
 }
 
@@ -189,70 +221,67 @@ function detectAnomalies({ temp_min, temp_max, humidity_max }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Aggregate appliance data into a structured shift report.
+ * Aggregate restaurant POS data into a structured shift report.
  *
  * @param {{ lookback_hours?: number, date?: string }} input
  * @returns {Promise<{
  *   period_start:    string,
  *   period_end:      string,
- *   total_readings:  number,
- *   temperature:     { min: number, max: number, avg: number, unit: string },
- *   humidity:        { min: number, max: number, avg: number, unit: string },
- *   conditions:      Array<{ condition: string, count: number }>,
+ *   orders:          { total: number, completed: number, cancelled: number, active: number },
+ *   revenue:         { payment_count: number, total: number, avg_order_value: number, currency: string },
+ *   payment_errors:  number,
+ *   staff_count:     number,
  *   anomalies:       string[],
  *   generated_at:    string,
  * }>}
- * @throws {Error} if no readings exist for the requested period.
  */
 async function handler({ lookback_hours = DEFAULT_LOOKBACK_HOURS, date } = {}) {
-  const { appliance } = getConfig();
-  const dbPath        = appliance.database.path;
+  const { appliance }     = getConfig();
+  const dbPath            = appliance.database.path;
   const effectiveLookback = Math.min(lookback_hours, MAX_LOOKBACK_HOURS);
 
   const { periodStart, periodEnd } = buildWindow(effectiveLookback, date);
   const cmd = buildCommand(dbPath);
 
-  // ── Run both queries in parallel ─────────────────────────────────────────
-  const [aggRows, condRows] = await Promise.all([
-    execQuery(cmd, buildAggregationQuery(periodStart, periodEnd)),
-    execQuery(cmd, buildConditionsQuery(periodStart, periodEnd)),
+  // ── Run all four queries in parallel ──────────────────────────────────────
+  const [orderRows, revenueRows, errorRows, staffRows] = await Promise.all([
+    execQuery(cmd, buildOrdersQuery(periodStart, periodEnd)),
+    execQuery(cmd, buildRevenueQuery(periodStart, periodEnd)),
+    execQuery(cmd, buildPaymentErrorsQuery(periodStart, periodEnd)),
+    execQuery(cmd, buildStaffQuery(periodStart, periodEnd)),
   ]);
 
-  const agg = aggRows[0] ?? {};
-
-  // ── AC5: Error if no readings for the period ──────────────────────────────
-  if (!agg.total_readings || agg.total_readings === 0) {
-    throw new Error(
-      `No readings found between ${periodStart} and ${periodEnd}. ` +
-      'The appliance may not have recorded data for this period.'
-    );
-  }
+  const orders  = orderRows[0]   ?? {};
+  const revenue = revenueRows[0] ?? {};
+  const errors  = errorRows[0]   ?? {};
+  const staff   = staffRows[0]   ?? {};
 
   const anomalies = detectAnomalies({
-    temp_min:    agg.temp_min,
-    temp_max:    agg.temp_max,
-    humidity_max: agg.humidity_max,
+    totalOrders:     orders.total_orders   ?? 0,
+    cancelledOrders: orders.cancelled      ?? 0,
+    paymentErrors:   errors.error_count    ?? 0,
+    paymentCount:    revenue.payment_count ?? 0,
   });
 
   return {
-    period_start:   periodStart,
-    period_end:     periodEnd,
-    total_readings: agg.total_readings,
-    temperature: {
-      min:  agg.temp_min,
-      max:  agg.temp_max,
-      avg:  agg.temp_avg,
-      unit: '°C',
+    period_start: periodStart,
+    period_end:   periodEnd,
+    orders: {
+      total:     orders.total_orders ?? 0,
+      completed: orders.completed    ?? 0,
+      cancelled: orders.cancelled    ?? 0,
+      active:    orders.active       ?? 0,
     },
-    humidity: {
-      min:  agg.humidity_min,
-      max:  agg.humidity_max,
-      avg:  agg.humidity_avg,
-      unit: '%',
+    revenue: {
+      payment_count:   revenue.payment_count   ?? 0,
+      total:           revenue.total_revenue   ?? 0,
+      avg_order_value: revenue.avg_order_value ?? 0,
+      currency:        'USD',
     },
-    conditions:  condRows,
+    payment_errors: errors.error_count ?? 0,
+    staff_count:    staff.staff_count  ?? 0,
     anomalies,
-    generated_at: new Date().toISOString(),
+    generated_at:   new Date().toISOString(),
   };
 }
 

@@ -2,6 +2,7 @@
 
 const sshBackend       = require('../ssh-backend');
 const { getConfig }    = require('../../config/cosa.config');
+const { isSuppressionActive } = require('../session-store');
 const { createLogger } = require('../logger');
 
 const log = createLogger('credential-audit');
@@ -196,6 +197,56 @@ async function fetchGitignoreCoverage(repoPath) {
 }
 
 // ---------------------------------------------------------------------------
+// Suppression helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a stable fingerprint for a finding.
+ * Format: `<pattern>:<file>:<line>` — e.g. `aws_access_key:test/backup.test.ts:270`
+ *
+ * @param {{ pattern: string, file: string, line: number }} finding
+ * @returns {string}
+ */
+function fingerprintFinding(finding) {
+  return `${finding.pattern}:${finding.file}:${finding.line}`;
+}
+
+/**
+ * Return true if this finding is suppressed either in the DB or via the
+ * static `tools.credential_audit.suppressed_findings` list in appliance.yaml.
+ *
+ * Static config format (appliance.yaml):
+ *   tools:
+ *     credential_audit:
+ *       suppressed_findings:
+ *         - pattern: aws_access_key
+ *           file: test/backup.test.ts
+ *           line: 270
+ *           reason: test dummy key
+ *
+ * @param {{ pattern: string, file: string, line: number }} finding
+ * @param {Array<{ pattern: string, file: string, line: number }>} staticList
+ * @returns {boolean}
+ */
+function _isSuppressed(finding, staticList) {
+  const fp = fingerprintFinding(finding);
+
+  // DB check first.
+  try {
+    if (isSuppressionActive(fp)) return true;
+  } catch {
+    // session.db unavailable — fall through to static check.
+  }
+
+  // Static config check.
+  return staticList.some(
+    (s) => s.pattern === finding.pattern &&
+           s.file    === finding.file    &&
+           Number(s.line) === finding.line
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 
@@ -219,8 +270,11 @@ async function handler() {
   }
 
   const { appliance } = getConfig();
-  const toolCfg  = appliance.tools?.credential_audit ?? {};
-  const repoPath = toolCfg.repo_path ?? DEFAULT_REPO_PATH;
+  const toolCfg       = appliance.tools?.credential_audit ?? {};
+  const repoPath      = toolCfg.repo_path ?? DEFAULT_REPO_PATH;
+  const staticSuppressions = Array.isArray(toolCfg.suppressed_findings)
+    ? toolCfg.suppressed_findings
+    : [];
 
   log.info(`Starting credential audit on repo: ${repoPath}`);
 
@@ -261,8 +315,21 @@ async function handler() {
         severity:    pattern.severity,
         description: pattern.description,
         snippet:     redactSnippet(match.content, pattern.name),
+        fingerprint: fingerprintFinding({ pattern: pattern.name, file: match.file, line: match.line }),
       });
     }
+  }
+
+  // ── 1b. Filter suppressed findings ────────────────────────────────────────
+
+  const suppressed = findings.filter((f) => _isSuppressed(f, staticSuppressions));
+  const active     = findings.filter((f) => !_isSuppressed(f, staticSuppressions));
+
+  if (suppressed.length > 0) {
+    log.info(
+      `Suppressed ${suppressed.length} known finding(s): ` +
+      suppressed.map((f) => f.fingerprint).join(', ')
+    );
   }
 
   // ── 2. Check .gitignore coverage ──────────────────────────────────────────
@@ -274,15 +341,15 @@ async function handler() {
 
   // ── 3. Build summary ───────────────────────────────────────────────────────
 
-  const criticalCount = findings.filter((f) => f.severity === 'critical').length;
-  const highCount     = findings.filter((f) => f.severity === 'high').length;
+  const criticalCount = active.filter((f) => f.severity === 'critical').length;
+  const highCount     = active.filter((f) => f.severity === 'high').length;
 
   const coverageIssues = [];
   if (!coversEnv)     coverageIssues.push('.env not covered by .gitignore');
   if (!coversSecrets) coverageIssues.push('secrets/ not covered by .gitignore');
 
   let summary;
-  if (findings.length === 0 && coverageIssues.length === 0) {
+  if (active.length === 0 && coverageIssues.length === 0) {
     summary = 'No credential exposures detected. .gitignore coverage is adequate.';
   } else {
     const parts = [];
@@ -293,15 +360,17 @@ async function handler() {
   }
 
   log.info(
-    `Credential audit complete: ${findings.length} finding(s), ` +
+    `Credential audit complete: ${active.length} active finding(s), ` +
+    `${suppressed.length} suppressed, ` +
     `coversEnv=${coversEnv}, coversSecrets=${coversSecrets}`
   );
 
   return {
     summary,
-    findings,
+    findings:          active,
+    suppressedFindings: suppressed,
     gitignoreCoverage,
-    totalFindingCount: findings.length,
+    totalFindingCount: active.length,
     checked_at,
   };
 }

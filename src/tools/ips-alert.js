@@ -11,7 +11,7 @@ const log = createLogger('ips-alert');
 // ---------------------------------------------------------------------------
 
 const NAME       = 'ips_alert';
-const RISK_LEVEL = 'medium';
+const RISK_LEVEL = 'read';
 
 /** Default expiry window when autoExpireMinutes is not provided. */
 const DEFAULT_EXPIRE_MINUTES = 30;

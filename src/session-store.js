@@ -146,6 +146,19 @@ const MIGRATIONS = [
     last_alerted_at   TEXT,
     enabled           INTEGER NOT NULL DEFAULT 1
   )`,
+
+  `CREATE TABLE IF NOT EXISTS suppressed_findings (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint    TEXT NOT NULL UNIQUE,
+    finding_type   TEXT NOT NULL DEFAULT 'credential',
+    reason         TEXT,
+    suppressed_by  TEXT,
+    suppressed_at  TEXT NOT NULL,
+    expires_at     TEXT
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_suppressed_findings_fingerprint
+     ON suppressed_findings(fingerprint)`,
 ];
 
 /**
@@ -650,6 +663,70 @@ function safeParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
+// ---------------------------------------------------------------------------
+// Suppressed findings
+// ---------------------------------------------------------------------------
+
+/**
+ * Persist a finding suppression.
+ *
+ * @param {{
+ *   fingerprint:   string,
+ *   finding_type?: string,
+ *   reason?:       string,
+ *   suppressed_by?: string,
+ *   expires_at?:   string|null,
+ * }} data
+ */
+function createSuppression({ fingerprint, finding_type = 'credential', reason = null, suppressed_by = null, expires_at = null }) {
+  getDb()
+    .prepare(
+      `INSERT INTO suppressed_findings
+         (fingerprint, finding_type, reason, suppressed_by, suppressed_at, expires_at)
+       VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
+       ON CONFLICT(fingerprint) DO UPDATE SET
+         reason        = excluded.reason,
+         suppressed_by = excluded.suppressed_by,
+         suppressed_at = excluded.suppressed_at,
+         expires_at    = excluded.expires_at`
+    )
+    .run(fingerprint, finding_type, reason, suppressed_by, expires_at);
+}
+
+/**
+ * Return true if a fingerprint is currently suppressed (not expired).
+ *
+ * @param {string} fingerprint
+ * @returns {boolean}
+ */
+function isSuppressionActive(fingerprint) {
+  const row = getDb()
+    .prepare(
+      `SELECT 1 FROM suppressed_findings
+        WHERE fingerprint = ?
+          AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        LIMIT 1`
+    )
+    .get(fingerprint);
+  return row != null;
+}
+
+/**
+ * Return all active suppressions.
+ *
+ * @returns {Array<{ fingerprint: string, finding_type: string, reason: string|null, suppressed_by: string|null, suppressed_at: string, expires_at: string|null }>}
+ */
+function listSuppressions() {
+  return getDb()
+    .prepare(
+      `SELECT fingerprint, finding_type, reason, suppressed_by, suppressed_at, expires_at
+         FROM suppressed_findings
+        WHERE expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        ORDER BY suppressed_at DESC`
+    )
+    .all();
+}
+
 /**
  * Write a failed inbound message to the dead-letter table.
  * Called when _dispatchMessage throws so the message is not silently lost.
@@ -692,6 +769,10 @@ module.exports = {
   // Alerts
   createAlert,
   findRecentAlert,
+  // Suppressed findings
+  createSuppression,
+  isSuppressionActive,
+  listSuppressions,
   // Dead-letter
   saveDeadLetter,
 };

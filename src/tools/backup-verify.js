@@ -24,7 +24,7 @@ const INPUT_SCHEMA = {
       type:        'string',
       description:
         'Absolute path to the .jsonl backup file to verify. ' +
-        'If omitted, the most recent readings_*.jsonl file in the ' +
+        'If omitted, the most recent *.jsonl file in the ' +
         'configured backup directory is used.',
     },
   },
@@ -79,8 +79,8 @@ function buildScript(backupDir, backupPathOverride) {
     ? `BACKUP_PATH='${shEscape(backupPathOverride)}'`
     : [
         `BACKUP_PATH=""`,
-        `if ls ${qDir}/readings_*.jsonl 1>/dev/null 2>&1; then`,
-        `  BACKUP_PATH=$(ls -t ${qDir}/readings_*.jsonl | head -1)`,
+        `if ls ${qDir}/*.jsonl 1>/dev/null 2>&1; then`,
+        `  BACKUP_PATH=$(ls -t ${qDir}/*.jsonl | head -1)`,
         `fi`,
       ].join('\n');
 

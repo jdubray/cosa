@@ -121,3 +121,15 @@ You are working on the **debugging** thread. Focus on:
 | Plugin not loading | `src/main/plugin-loader.js` — check manifest and exports |
 
 <!-- puffin:generated-end -->
+
+## BaanBaan POS — Modification Policy
+
+**Never modify BaanBaan POS code directly** (`/home/baanbaan/baan-baan-merchant/` on the appliance, or any copy of that repo).
+
+The BaanBaan POS is developed by a separate agent. The correct process when a POS change is needed:
+
+1. **Write a spec** describing the required change — endpoint contract, schema deviation, behaviour, acceptance criteria.
+2. **Hand the spec to the operator** (jdubray@gmail.com) who brings it to the BaanBaan development agent.
+3. **Wait for confirmation** that the change has been deployed before updating any COSA-side config (watchers, API endpoint definitions, etc.) that depends on it.
+
+This applies to all changes: bug fixes, new endpoints, schema changes, permission changes, and configuration inside the BaanBaan repo.

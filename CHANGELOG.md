@@ -6,6 +6,39 @@ Format: [Semantic Versioning](https://semver.org). Sections: **Added**, **Change
 
 ---
 
+## [1.0.4] — 2026-04-14
+
+Four production bugs fixed (backup alert, ips_alert approval loop, orphaned approval silence, shift report crash) plus the credential-audit suppression workflow.
+
+### Fixed
+
+**Backup verification (`src/tools/backup-verify.js`)**
+- Auto-detect glob hardcoded to `readings_*.jsonl` — verify kept finding the stale April 9 zero-byte file (created before the empty-table fix, no sidecar) every night and sending a "corrupt backup" alert. Glob is now `*.jsonl` so it finds the most recently modified backup file regardless of table name.
+
+**IPS alert approval loop (`src/tools/ips-alert.js`)**
+- `RISK_LEVEL` changed from `'medium'` to `'read'`. Security alerts from cron sessions were blocked behind operator approval before they could be sent — a chicken-and-egg design flaw. Security notifications are now auto-approved in all session types.
+
+**Orphaned approval silently dropped (`src/approval-engine.js`)**
+- When an operator replied to an approval email but the originating session was no longer in memory (process restart between request and reply), `processInboundReply` returned `'ambiguous'` without any feedback. The operator's reply now generates a "session gone" email explaining the action was not executed and the next scheduled run will re-request.
+- `_localHour()` rewritten to use `Intl.DateTimeFormat` with `hourCycle: 'h23'` instead of `toLocaleString hour12: false` — the old form returns `"24"` at midnight on Node/WSL, permanently disabling quiet-hours suppression for overnight cron tasks.
+
+**Shift report wrong appliance (`src/tools/shift-report.js`)**
+- Tool was written for the WeatherStation mock (queried `temperature_c`, `humidity_pct`, `weather_description` from a `readings` table). Completely rewritten for the BaanBaan restaurant POS: now queries `orders` (counts by status), `payments` (revenue totals), `payment_errors` (error count), and `timesheets` (staff on shift) in parallel. Anomaly detection covers high payment errors, orders with no payments, and high cancellation rate. Returns zero counts rather than throwing when no activity exists.
+
+**Appliance identity mismatch (`config/appliance.yaml`)**
+- `appliance.name` updated from `"WeatherStation Dev Mock"` to `"Hanuman Thai Cafe"` — the old name propagated into the system prompt and all alert emails, causing the agent to reason about a weather station context.
+- `backup_run.tables` restored to the BaanBaan table list (`orders`, `order_items`, `payments`, `payment_errors`, `merchants`, `menu_items`, `employees`, `timesheets`, `reservations`, `feedback`) after being incorrectly reverted to `[readings]`.
+
+### Added
+
+**Credential-audit finding suppression**
+- `src/session-store.js` — `suppressed_findings` table with `createSuppression()`, `isSuppressionActive()`, and `listSuppressions()`. Suppressions are keyed by fingerprint (`pattern:file:line`) and support optional expiry.
+- `src/tools/credential-audit.js` — Each finding now carries a `fingerprint` field. Active findings are filtered against both the DB suppression table and a static `tools.credential_audit.suppressed_findings` list in `appliance.yaml`. Returns `{ findings, suppressedFindings }` so the agent can distinguish new alerts from already-acknowledged ones.
+- `src/email-gateway.js` — `SUPPRESS_RE` pattern and `_processSuppressReply()` handler. Operator can silence a recurring finding by replying to any IPS alert email with `SUPPRESS <fingerprint> [reason]`. Sends a confirmation email and persists the suppression to the DB.
+- `src/cron-scheduler.js` — Credential-audit cron prompt updated to explain the suppression mechanism and instruct the agent to include a `SUPPRESS <fingerprint> <reason>` response option for each active finding in the IPS alert.
+
+---
+
 ## [1.0.3] — 2026-04-09
 
 Hotfixes from first production deployment against the Baanbaan POS appliance.

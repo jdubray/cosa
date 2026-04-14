@@ -37,6 +37,13 @@ const POLL_INTERVAL_MS = 60 * 1000;
 const APPROVAL_RE = /\bAPPROVE-[0-9A-F]{8}\b|\bDENY\b/i;
 
 /**
+ * Pattern that identifies a finding-suppression reply.
+ * Format: SUPPRESS <fingerprint> [optional reason]
+ * Example: SUPPRESS aws_access_key:test/backup.test.ts:270 test dummy key
+ */
+const SUPPRESS_RE = /\bSUPPRESS\s+\S+:\S+:\d+/i;
+
+/**
  * Path where the daily outbound send count is persisted.
  * Survives process restarts within the same calendar day (UTC).
  */
@@ -198,10 +205,59 @@ async function _dispatchMessage(msg) {
   // Lazy-require breaks the circular dependency with approval-engine.
   const approvalEngine = require('./approval-engine');
   const text = `${msg.subject} ${msg.body}`;
+
+  if (SUPPRESS_RE.test(text)) {
+    await _processSuppressReply(msg, text);
+    return;
+  }
+
   if (APPROVAL_RE.test(text)) {
     await approvalEngine.processInboundReply(msg);
   } else if (_onNewSession) {
     await _onNewSession(msg);
+  }
+}
+
+/**
+ * Parse and persist a SUPPRESS reply from the operator.
+ *
+ * Accepted format (case-insensitive):
+ *   SUPPRESS <pattern>:<file>:<line> [optional reason text]
+ *
+ * @param {{ from: string }} msg
+ * @param {string} text  - Combined subject + body (already assembled by caller)
+ */
+async function _processSuppressReply(msg, text) {
+  const { createSuppression } = require('./session-store');
+  const { getConfig }         = require('../config/cosa.config');
+  const { appliance }         = getConfig();
+  const operatorEmail         = appliance.operator?.email;
+
+  const match = text.match(/\bSUPPRESS\s+(\S+:\S+:\d+)\s*(.*)/i);
+  if (!match) return;
+
+  const fingerprint = match[1].toLowerCase();
+  const reason      = match[2].trim() || null;
+
+  createSuppression({
+    fingerprint,
+    finding_type:   'credential',
+    reason,
+    suppressed_by:  msg.from,
+  });
+
+  log.info(`Finding suppressed by operator: ${fingerprint} — ${reason ?? '(no reason)'}`);
+
+  if (operatorEmail) {
+    try {
+      await sendEmail({
+        to:      operatorEmail,
+        subject: `[COSA] Finding suppressed: ${fingerprint}`,
+        text:    `The following finding has been suppressed and will no longer trigger alerts:\n\n  ${fingerprint}\n\nReason: ${reason ?? '(none provided)'}\nSuppressed by: ${msg.from}\n\nTo re-enable this finding, remove it from the suppressed_findings table in session.db or contact your COSA operator.`,
+      });
+    } catch (err) {
+      log.warn(`Failed to send suppression confirmation email: ${err.message}`);
+    }
   }
 }
 

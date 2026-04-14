@@ -289,7 +289,17 @@ function buildCredentialAuditTrigger() {
     source:  'credential-audit',
     message: `Scheduled credential audit. Run credential_audit to check all stored credentials for age, strength, and exposure risk.
 
-If any finding is present (any credential is weak, expired, or at risk), immediately run ips_alert with the findings summary to alert the operator.
+The tool returns a "findings" array (active, not suppressed) and a "suppressedFindings" array (already acknowledged).
+Only alert on active findings. If findings is empty, do not send any alert.
+
+If any active finding is present, immediately run ips_alert with:
+- The findings summary as evidence
+- A "RESPONSE OPTIONS" section that includes, for each finding, a pre-formatted SUPPRESS command:
+    SUPPRESS <fingerprint> <short reason>
+  where <fingerprint> is the finding's "fingerprint" field from the tool output.
+  Example response option line: "SUPPRESS aws_access_key:test/backup.test.ts:270 test dummy — not a real key"
+
+The operator can reply to the alert email with any SUPPRESS line to permanently silence that finding.
 
 Current time: ${new Date().toISOString()}`,
   };
