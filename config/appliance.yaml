@@ -9,7 +9,7 @@ ssh:
   port: 22
   user: "baanbaan"
   key_path: "C:/Users/jjdub/.ssh/id_jdubray"
-  host_key_fingerprint: "SHA256:ye0zMzmC0bp9MsfrLKD4D+87kbSTC+DehYt7YvMf4rg"
+  host_key_fingerprint: "SHA256:ye0zMzmC0bp9MsfrLKD4D+87kbSTC+DehYt7YvMf4rg="
   connect_timeout_ms: 5000
   command_timeout_ms: 30000
 
