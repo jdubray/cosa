@@ -218,10 +218,11 @@ tools:
     enabled: true
     # Absolute path to BaanBaan's .env file on the appliance.
     env_file_path: "/home/baanbaan/baan-baan-merchant/v2/.env"
-    # List of .env keys whose values should be replaced with the new public IP.
-    # Only keys already present in the file are touched (safe no-op for absent keys).
+    # List of .env keys whose values should be updated with the new public IP.
+    # Comma-separated list values are handled correctly: only the old IP entry
+    # is replaced in place; all other IPs in the list are preserved.
     watched_keys:
-      - COSA_ALLOWED_IP
+      - ALLOWED_MERCHANT_IPS
     # Restart the BaanBaan service after updating .env so the change takes effect.
     restart_service_on_change: true
     service_name: "baanbaan"

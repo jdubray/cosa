@@ -486,24 +486,62 @@ function _isValidIpv4(ip) {
 }
 
 /**
- * Update a single key in the remote .env file using sed.
+ * Update a single key in the remote .env file.
+ *
+ * Handles two value shapes:
+ *  - Scalar  ("KEY=x.x.x.x")         → replace the whole value with newIp.
+ *  - List    ("KEY=a,b,c,...")        → replace oldIp in the list; if oldIp is
+ *                                       absent (first run), prepend newIp instead.
+ *
  * Only executes when the key is already present in the file (safe no-op otherwise).
  *
- * @param {string} envFilePath - Absolute path on the remote appliance.
- * @param {string} key         - .env key (e.g. 'COSA_ALLOWED_IP').
- * @param {string} ip          - Already-validated IPv4 address.
+ * @param {string}      envFilePath - Absolute path on the remote appliance.
+ * @param {string}      key         - .env key (e.g. 'ALLOWED_MERCHANT_IPS').
+ * @param {string|null} oldIp       - Previously known IP (null on first run).
+ * @param {string}      newIp       - Already-validated IPv4 address.
  * @returns {Promise<{ updated: boolean, error: string|null }>}
  */
-async function _updateEnvKey(envFilePath, key, ip) {
+async function _updateEnvKey(envFilePath, key, oldIp, newIp) {
   // grep exits 0 when the key exists; 1 when absent.
-  const grepResult = await sshBackend.exec(`grep -q '^${key}=' '${envFilePath}'`);
-  if (grepResult.exitCode !== 0) {
+  const existsResult = await sshBackend.exec(`grep -q '^${key}=' '${envFilePath}'`);
+  if (existsResult.exitCode !== 0) {
     return { updated: false, error: `Key ${key} not found in ${envFilePath}` };
   }
 
-  // Use | as delimiter so / in paths does not need escaping.
-  const sedCmd = `sed -i 's|^${key}=.*|${key}=${ip}|' '${envFilePath}'`;
-  const sedResult = await sshBackend.exec(sedCmd);
+  // Read current value so we can handle comma-separated lists correctly.
+  const readResult = await sshBackend.exec(`grep '^${key}=' '${envFilePath}'`);
+  if (readResult.exitCode !== 0) {
+    return { updated: false, error: `Failed to read ${key} from ${envFilePath}` };
+  }
+
+  const currentLine  = readResult.stdout.trim();
+  const eqIdx        = currentLine.indexOf('=');
+  const currentValue = eqIdx >= 0 ? currentLine.slice(eqIdx + 1) : '';
+  const isList       = currentValue.includes(',');
+
+  let newValue;
+  if (isList) {
+    const parts = currentValue.split(',').map(s => s.trim());
+    if (oldIp && parts.includes(oldIp)) {
+      // Replace old IP in place — preserves position and all other entries.
+      newValue = parts.map(p => (p === oldIp ? newIp : p)).join(',');
+    } else if (parts.includes(newIp)) {
+      // Already present — nothing to do.
+      return { updated: false, error: null };
+    } else {
+      // Old IP not in list (first run) — prepend new IP.
+      newValue = [newIp, ...parts].join(',');
+    }
+  } else {
+    // Scalar: replace the whole value.
+    newValue = newIp;
+  }
+
+  // Escape characters that have special meaning as a sed | delimiter or
+  // in the replacement side (& means "matched text" in sed).
+  const escapedValue = newValue.replace(/[|\\&]/g, '\\$&');
+  const sedCmd       = `sed -i 's|^${key}=.*|${key}=${escapedValue}|' '${envFilePath}'`;
+  const sedResult    = await sshBackend.exec(sedCmd);
   if (sedResult.exitCode !== 0) {
     return { updated: false, error: `sed failed (exit ${sedResult.exitCode}): ${sedResult.stderr.trim()}` };
   }
@@ -625,7 +663,7 @@ async function runInternetIpWatchTask() {
     } else {
       for (const key of watchedKeys) {
         try {
-          const { updated, error } = await _updateEnvKey(envFilePath, key, newIp);
+          const { updated, error } = await _updateEnvKey(envFilePath, key, state.lastKnownIp, newIp);
           if (updated) {
             updatedKeys.push(key);
             log.info(`[internet-ip-watch] Updated ${key} → ${newIp}`);
