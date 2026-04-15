@@ -214,6 +214,8 @@ tools:
     enabled: true
   watcher_set_enabled:
     enabled: true
+  internet_ip_check:
+    enabled: true
   internet_ip_watch:
     enabled: true
     # Absolute path to BaanBaan's .env file on the appliance.
