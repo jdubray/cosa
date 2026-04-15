@@ -685,7 +685,7 @@ async function runInternetIpWatchTask() {
   let restartedService = false;
   if (updatedKeys.length > 0 && restartOnChange && sshBackend.isConnected()) {
     try {
-      const restartResult = await sshBackend.exec(`systemctl restart ${serviceName}`);
+      const restartResult = await sshBackend.exec(`sudo systemctl restart ${serviceName}`);
       if (restartResult.exitCode === 0) {
         restartedService = true;
         log.info(`[internet-ip-watch] Service ${serviceName} restarted`);
