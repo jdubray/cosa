@@ -1,13 +1,17 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs     = require('fs');
+const path   = require('path');
 const cron = require('node-cron');
 const { getConfig }    = require('../config/cosa.config');
 const orchestrator     = require('./orchestrator');
 const emailGateway     = require('./email-gateway');
+const sshBackend       = require('./ssh-backend');
 const { createAlert, findRecentAlert, getLastToolOutput } = require('./session-store');
 const { createLogger } = require('./logger');
-const healthCheckTool  = require('./tools/health-check');
+const healthCheckTool        = require('./tools/health-check');
+const internetIpCheckTool    = require('./tools/internet-ip-check');
 
 const log = createLogger('cron-scheduler');
 
@@ -35,6 +39,7 @@ const DIGEST_DEDUP_WINDOW_MS = 6 * 24 * 60 * 60 * 1000;
 const MONTHLY_DEDUP_WINDOW_MS = 25 * 24 * 60 * 60 * 1000;
 
 /** Category tags stored in the alerts table. */
+const INTERNET_IP_WATCH_CATEGORY  = 'internet_ip_watch';
 const HEALTH_CHECK_CATEGORY       = 'health_check';
 const BACKUP_CATEGORY             = 'backup';
 const ARCHIVE_CHECK_CATEGORY      = 'archive_check';
@@ -432,6 +437,269 @@ function buildAlertBody(result) {
 
   lines.push('', '--- Automated alert from COSA ---');
   return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Internet IP watch — state helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {{ lastKnownIp: string|null, internetWasDown: boolean, lastCheckedAt: string, lastChangedAt: string|null }} IpState
+ */
+
+/** @returns {string} */
+function _ipStateFilePath() {
+  const dataDir = process.env.COSA_DATA_DIR || './data';
+  return path.join(dataDir, 'ip-state.json');
+}
+
+/**
+ * Read persisted IP state from disk.  Returns defaults when the file is absent.
+ * @returns {IpState}
+ */
+function _readIpState() {
+  try {
+    const raw = fs.readFileSync(_ipStateFilePath(), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return { lastKnownIp: null, internetWasDown: false, lastCheckedAt: null, lastChangedAt: null };
+  }
+}
+
+/**
+ * Persist IP state to disk (synchronous — small JSON, no race risk at 2-min interval).
+ * @param {IpState} state
+ */
+function _writeIpState(state) {
+  fs.writeFileSync(_ipStateFilePath(), JSON.stringify(state, null, 2), 'utf8');
+}
+
+/**
+ * Validate that a string is a dotted-decimal IPv4 address.
+ * Prevents shell injection when the value is embedded in a sed command.
+ * @param {string|null} ip
+ * @returns {boolean}
+ */
+function _isValidIpv4(ip) {
+  if (typeof ip !== 'string') return false;
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(ip);
+}
+
+/**
+ * Update a single key in the remote .env file using sed.
+ * Only executes when the key is already present in the file (safe no-op otherwise).
+ *
+ * @param {string} envFilePath - Absolute path on the remote appliance.
+ * @param {string} key         - .env key (e.g. 'COSA_ALLOWED_IP').
+ * @param {string} ip          - Already-validated IPv4 address.
+ * @returns {Promise<{ updated: boolean, error: string|null }>}
+ */
+async function _updateEnvKey(envFilePath, key, ip) {
+  // grep exits 0 when the key exists; 1 when absent.
+  const grepResult = await sshBackend.exec(`grep -q '^${key}=' '${envFilePath}'`);
+  if (grepResult.exitCode !== 0) {
+    return { updated: false, error: `Key ${key} not found in ${envFilePath}` };
+  }
+
+  // Use | as delimiter so / in paths does not need escaping.
+  const sedCmd = `sed -i 's|^${key}=.*|${key}=${ip}|' '${envFilePath}'`;
+  const sedResult = await sshBackend.exec(sedCmd);
+  if (sedResult.exitCode !== 0) {
+    return { updated: false, error: `sed failed (exit ${sedResult.exitCode}): ${sedResult.stderr.trim()}` };
+  }
+
+  return { updated: true, error: null };
+}
+
+/**
+ * Build the plain-text alert email body for a public-IP change event.
+ *
+ * @param {{ applianceName: string, oldIp: string|null, newIp: string, wasDown: boolean, updatedKeys: string[], restartedService: boolean, errors: string[] }} params
+ * @returns {string}
+ */
+function buildIpChangeAlertBody({ applianceName, oldIp, newIp, wasDown, updatedKeys, restartedService, errors }) {
+  const eventDescription = wasDown
+    ? 'Internet connectivity was restored after an outage.'
+    : 'The public IP address changed unexpectedly.';
+
+  const lines = [
+    `COSA detected a public IP change on ${applianceName}:`,
+    '',
+    eventDescription,
+    '',
+    `Previous IP:  ${oldIp ?? '(unknown — first run)'}`,
+    `New IP:       ${newIp}`,
+    '',
+  ];
+
+  if (updatedKeys.length > 0) {
+    lines.push(`Updated .env keys: ${updatedKeys.join(', ')}`);
+  } else {
+    lines.push('No .env keys were updated (none matched the watched_keys list).');
+  }
+
+  lines.push(`Service restart: ${restartedService ? 'yes' : 'no (disabled or skipped)'}`);
+
+  if (errors.length > 0) {
+    lines.push('', 'Errors:');
+    for (const e of errors) lines.push(`  - ${e}`);
+  }
+
+  lines.push('', '--- Automated alert from COSA ---');
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Internet IP watch task
+// ---------------------------------------------------------------------------
+
+/**
+ * Poll the public IP every 2 minutes.
+ *
+ * - Internet down  → mark state, log, return (no alert spam while down).
+ * - Recovery or IP change → update watched .env keys via SSH, optionally
+ *   restart the appliance service, email the operator.
+ *
+ * @returns {Promise<void>}
+ */
+async function runInternetIpWatchTask() {
+  const { appliance } = getConfig();
+  const watchConfig   = appliance.tools?.internet_ip_watch ?? {};
+
+  if (watchConfig.enabled === false) return;
+
+  const operatorEmail    = appliance.operator.email;
+  const applianceName    = appliance.name ?? 'Appliance';
+  const envFilePath      = watchConfig.env_file_path ?? null;
+  const watchedKeys      = watchConfig.watched_keys ?? [];
+  const restartOnChange  = watchConfig.restart_service_on_change !== false;
+  const serviceName      = watchConfig.service_name ?? 'baanbaan';
+
+  // ── 1. Check current public IP ────────────────────────────────────────────
+  let checkResult;
+  try {
+    checkResult = await internetIpCheckTool.handler();
+  } catch (err) {
+    log.error(`[internet-ip-watch] IP check threw: ${err.message}`);
+    return;
+  }
+
+  const state = _readIpState();
+
+  // ── 2. Internet is down ───────────────────────────────────────────────────
+  if (!checkResult.internetUp) {
+    if (!state.internetWasDown) {
+      log.warn('[internet-ip-watch] Internet appears to be down — will recover automatically');
+    }
+    _writeIpState({ ...state, internetWasDown: true, lastCheckedAt: checkResult.checkedAt });
+    return;
+  }
+
+  const newIp = checkResult.publicIp;
+
+  if (!_isValidIpv4(newIp)) {
+    log.error(`[internet-ip-watch] Unexpected IP format from ipify: ${newIp}`);
+    return;
+  }
+
+  const wasDown   = state.internetWasDown;
+  const ipChanged = state.lastKnownIp !== null && state.lastKnownIp !== newIp;
+
+  // ── 3. No change → update heartbeat and return ────────────────────────────
+  if (!wasDown && !ipChanged) {
+    _writeIpState({ ...state, internetWasDown: false, lastCheckedAt: checkResult.checkedAt });
+    log.info(`[internet-ip-watch] Public IP stable: ${newIp}`);
+    return;
+  }
+
+  const changeReason = wasDown ? 'internet recovery' : 'IP change';
+  log.info(`[internet-ip-watch] ${changeReason}: ${state.lastKnownIp ?? '(none)'} → ${newIp}`);
+
+  // ── 4. Update .env keys via SSH ───────────────────────────────────────────
+  const updatedKeys = [];
+  const errors      = [];
+
+  if (envFilePath && watchedKeys.length > 0) {
+    if (!sshBackend.isConnected()) {
+      errors.push('SSH not connected — .env keys not updated');
+    } else {
+      for (const key of watchedKeys) {
+        try {
+          const { updated, error } = await _updateEnvKey(envFilePath, key, newIp);
+          if (updated) {
+            updatedKeys.push(key);
+            log.info(`[internet-ip-watch] Updated ${key} → ${newIp}`);
+          } else {
+            errors.push(error);
+            log.warn(`[internet-ip-watch] ${error}`);
+          }
+        } catch (err) {
+          errors.push(`${key}: ${err.message}`);
+          log.error(`[internet-ip-watch] Failed to update ${key}: ${err.message}`);
+        }
+      }
+    }
+  }
+
+  // ── 5. Restart service if any key was updated ─────────────────────────────
+  let restartedService = false;
+  if (updatedKeys.length > 0 && restartOnChange && sshBackend.isConnected()) {
+    try {
+      const restartResult = await sshBackend.exec(`systemctl restart ${serviceName}`);
+      if (restartResult.exitCode === 0) {
+        restartedService = true;
+        log.info(`[internet-ip-watch] Service ${serviceName} restarted`);
+      } else {
+        errors.push(`systemctl restart ${serviceName} failed (exit ${restartResult.exitCode})`);
+        log.error(`[internet-ip-watch] Service restart failed: ${restartResult.stderr.trim()}`);
+      }
+    } catch (err) {
+      errors.push(`Service restart: ${err.message}`);
+      log.error(`[internet-ip-watch] Service restart threw: ${err.message}`);
+    }
+  }
+
+  // ── 6. Persist new state ──────────────────────────────────────────────────
+  _writeIpState({
+    lastKnownIp:     newIp,
+    internetWasDown: false,
+    lastCheckedAt:   checkResult.checkedAt,
+    lastChangedAt:   checkResult.checkedAt,
+  });
+
+  // ── 7. Alert operator ─────────────────────────────────────────────────────
+  const title = wasDown
+    ? `${applianceName} — Internet restored, public IP updated to ${newIp}`
+    : `${applianceName} — Public IP changed to ${newIp}`;
+
+  const body    = buildIpChangeAlertBody({
+    applianceName,
+    oldIp: state.lastKnownIp,
+    newIp,
+    wasDown,
+    updatedKeys,
+    restartedService,
+    errors,
+  });
+  const sentAt  = new Date().toISOString();
+
+  await emailGateway.sendEmail({
+    to:      operatorEmail,
+    subject: `[COSA Alert] ${title}`,
+    text:    body,
+  });
+
+  createAlert({
+    session_id: crypto.randomUUID(),
+    severity:   errors.length > 0 ? 'warning' : 'info',
+    category:   INTERNET_IP_WATCH_CATEGORY,
+    title,
+    body,
+    sent_at:    sentAt,
+    email_to:   operatorEmail,
+  });
+
+  log.info(`[internet-ip-watch] Alert sent: ${title}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1159,6 +1427,9 @@ function start() {
     log.info(`Cron registered: ${key} (${expr})`);
   };
 
+  // Internet IP watch — every 2 minutes, 24/7
+  schedule('internet_ip_watch', '*/2 * * * *', runInternetIpWatchTask);
+
   // Phase 2
   // Adaptive health-check windows (all times local to the appliance timezone):
   //   11:00 AM – 2:00 PM  → every 30 min  (peak lunch)
@@ -1208,6 +1479,7 @@ module.exports = {
   start,
   stop,
   // Individual task runners exported for testing and manual invocation.
+  runInternetIpWatchTask,
   runHealthCheckTask,
   runBackupTask,
   runBackupVerifyTask,
@@ -1243,4 +1515,9 @@ module.exports = {
   buildPciAssessmentTrigger,
   buildTokenRotationRemindTrigger,
   _getMondayDateString,
+  // IP watch helpers exported for testing.
+  _isValidIpv4,
+  _readIpState,
+  _writeIpState,
+  buildIpChangeAlertBody,
 };

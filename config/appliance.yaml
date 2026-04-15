@@ -94,6 +94,9 @@ operator:
   daily_send_limit: 50
 
 cron:
+  # Public IP monitor — runs every 2 minutes, 24/7.
+  # Detects internet outages and IP changes; updates BaanBaan .env on recovery.
+  internet_ip_watch: "*/2 * * * *"
   # Adaptive health-check windows (override individual keys to adjust):
   #   health_check_lunch:  11 AM–2 PM every 30 min  (peak lunch)
   #   health_check_midday: 2 PM–5 PM every hour     (afternoon lull)
@@ -211,6 +214,17 @@ tools:
     enabled: true
   watcher_set_enabled:
     enabled: true
+  internet_ip_watch:
+    enabled: true
+    # Absolute path to BaanBaan's .env file on the appliance.
+    env_file_path: "/home/baanbaan/baan-baan-merchant/v2/.env"
+    # List of .env keys whose values should be replaced with the new public IP.
+    # Only keys already present in the file are touched (safe no-op for absent keys).
+    watched_keys:
+      - COSA_ALLOWED_IP
+    # Restart the BaanBaan service after updating .env so the change takes effect.
+    restart_service_on_change: true
+    service_name: "baanbaan"
 
 network:
   # MAC addresses of devices that are authorized on the local network.
