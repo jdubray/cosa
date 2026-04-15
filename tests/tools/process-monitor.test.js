@@ -97,6 +97,24 @@ const SS_WITH_UNKNOWN_PORT =
   SS_KNOWN_ONLY +
   'LISTEN 0 128 0.0.0.0:4444  0.0.0.0:*\n';
 
+/**
+ * `ss -tlnp` output with a Puppeteer/Chromium CDP port on 127.0.0.1.
+ * The process name "node" is in expected_processes, so this should be
+ * treated as a known localhost-only ephemeral port and NOT flagged.
+ */
+const SS_WITH_LOCALHOST_EXPECTED_PORT =
+  SS_KNOWN_ONLY +
+  'LISTEN 0 10 127.0.0.1:45951 0.0.0.0:* users:(("node",pid=9999,fd=65))\n';
+
+/**
+ * `ss -tlnp` output with a localhost port owned by an UNEXPECTED process.
+ * Even though it is localhost-only it should still be flagged — the process
+ * is not in the expected list.
+ */
+const SS_WITH_LOCALHOST_UNKNOWN_PORT =
+  SS_KNOWN_ONLY +
+  'LISTEN 0 10 127.0.0.1:9999 0.0.0.0:* users:(("miner",pid=7777,fd=3))\n';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -291,6 +309,48 @@ describe('AC4 — unknownProcesses and listeningPorts returned', () => {
   it('unknown_ports is empty when all ports are known', async () => {
     const result = await handler();
     expect(result.unknown_ports).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Localhost-only port suppression
+// ---------------------------------------------------------------------------
+
+describe('Localhost-only port suppression', () => {
+  it('does NOT flag a localhost-only port owned by an expected process', async () => {
+    setupExec(PS_ALL_KNOWN, SS_WITH_LOCALHOST_EXPECTED_PORT);
+    const result = await handler();
+    expect(result.unknown_ports).not.toContain(45951);
+    expect(result.unknown_ports).toHaveLength(0);
+  });
+
+  it('localhost-only expected port does not cause summary to report unknown ports', async () => {
+    setupExec(PS_ALL_KNOWN, SS_WITH_LOCALHOST_EXPECTED_PORT);
+    const result = await handler();
+    expect(result.summary).toMatch(/all processes match/i);
+  });
+
+  it('localhost-only port owned by an UNEXPECTED process IS flagged', async () => {
+    setupExec(PS_ALL_KNOWN, SS_WITH_LOCALHOST_UNKNOWN_PORT);
+    const result = await handler();
+    expect(result.unknown_ports).toContain(9999);
+  });
+
+  it('localhost-only expected port does NOT promote unknown process severity to high', async () => {
+    // An unknown process is present but the only non-known port is localhost+expected
+    setupExec(PS_WITH_UNKNOWN_USER, SS_WITH_LOCALHOST_EXPECTED_PORT);
+    const result = await handler();
+    expect(result.unknown_processes[0].severity).toBe('medium');
+  });
+
+  it('0.0.0.0 port owned by expected process is still flagged (not localhost-only)', async () => {
+    // Even if the process is known, a non-loopback binding is still flagged
+    const ssPublicExpected =
+      SS_KNOWN_ONLY +
+      'LISTEN 0 10 0.0.0.0:8888 0.0.0.0:* users:(("node",pid=9999,fd=65))\n';
+    setupExec(PS_ALL_KNOWN, ssPublicExpected);
+    const result = await handler();
+    expect(result.unknown_ports).toContain(8888);
   });
 });
 

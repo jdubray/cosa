@@ -103,6 +103,50 @@ function parseListeningPorts(stdout) {
 }
 
 /**
+ * Parse `ss -tlnp` output into rich port detail records that include the bind
+ * address and owning process name.  Used to suppress localhost-only ephemeral
+ * ports (e.g. Puppeteer Chrome DevTools Protocol) that are not reachable
+ * from outside the host.
+ *
+ * @param {string} stdout
+ * @returns {Array<{ port: number, localAddr: string, processName: string|null }>}
+ */
+function parsePortDetails(stdout) {
+  const details = [];
+
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('State') || trimmed.startsWith('Proto')) continue;
+
+    // Match "localAddr:port" — handles "127.0.0.1:45951", "0.0.0.0:22", "*:3000"
+    const addrPortMatch = trimmed.match(/(\S+):(\d+)\s+\S+/);
+    if (!addrPortMatch) continue;
+
+    const localAddr = addrPortMatch[1];
+    const port      = parseInt(addrPortMatch[2], 10);
+    if (isNaN(port) || port <= 0 || port >= 65536) continue;
+
+    // Extract owning process name from users:(("procname",...))
+    const procMatch   = trimmed.match(/users:\(\("([^"]+)"/);
+    const processName = procMatch ? procMatch[1] : null;
+
+    details.push({ port, localAddr, processName });
+  }
+
+  return details;
+}
+
+/**
+ * Return true if the bind address is loopback-only (not reachable externally).
+ *
+ * @param {string} addr
+ * @returns {boolean}
+ */
+function isLocalhostOnly(addr) {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '[::1]';
+}
+
+/**
  * Determine whether a process command matches any expected process pattern.
  * Matching is substring containment (case-sensitive) against the COMMAND column.
  *
@@ -119,23 +163,24 @@ function isExpected(command, expectedPatterns) {
  *
  * Rules (highest wins):
  *   critical — unknown binary running as root
- *   high     — unknown process with a port in the listening set
- *   medium   — unknown process (no port, not root)
+ *   high     — unknown process when any truly-unknown port is open
+ *   medium   — unknown process (no unknown port, not root)
+ *
+ * "Truly unknown" means: not in known_ports AND not a localhost-only port
+ * owned by an expected process (e.g. Puppeteer CDP).
  *
  * @param {{ user: string, pid: number, command: string }} proc
- * @param {Set<number>} listeningPortSet - Ports actually open on the host.
- * @param {Set<number>} knownPortSet     - Ports allowed by config.
+ * @param {Set<number>} unknownPortSet - Ports that are genuinely unaccounted for.
  * @returns {'critical'|'high'|'medium'}
  */
-function classifySeverity(proc, listeningPortSet, knownPortSet) {
+function classifySeverity(proc, unknownPortSet) {
   if (proc.user === 'root') return 'critical';
 
-  // Check if this process has an open port that is NOT in the known set.
-  // We can't easily map a specific PID to a specific port from ps alone, so
-  // if there are any unknown listening ports we promote unknown processes to
-  // 'high'. This is conservative — the full correlation is in the port report.
-  const hasUnknownPort = [...listeningPortSet].some((p) => !knownPortSet.has(p));
-  if (hasUnknownPort) return 'high';
+  // We can't map a specific PID to a specific port from ps alone, so we
+  // promote all unknown processes to 'high' when any genuinely unknown port is
+  // open. localhost-only ports owned by expected processes are already excluded
+  // from unknownPortSet by the caller.
+  if (unknownPortSet.size > 0) return 'high';
 
   return 'medium';
 }
@@ -182,7 +227,17 @@ async function handler() {
   const ssResult = await sshBackend.exec(CMD_SS);
   // ss/netstat exit codes vary; we tolerate non-zero if stdout has data.
   const listeningPorts = parseListeningPorts(ssResult.stdout);
-  const listeningPortSet = new Set(listeningPorts);
+
+  // ── Filter out localhost-only ports owned by expected processes ───────────
+  // Puppeteer/Chrome DevTools Protocol uses --remote-debugging-port=0 which
+  // assigns an ephemeral loopback port each run.  These ports are not reachable
+  // from outside the host and should not be treated as unknown.
+  const portDetails = parsePortDetails(ssResult.stdout);
+  const localhostKnownPorts = new Set(
+    portDetails
+      .filter((d) => isLocalhostOnly(d.localAddr) && d.processName && isExpected(d.processName, expectedPatterns))
+      .map((d) => d.port)
+  );
 
   // ── Classify each process ─────────────────────────────────────────────────
   const processes = rawProcesses.map((proc) => {
@@ -190,6 +245,12 @@ async function handler() {
     const suspicious = !expected;
     return { ...proc, expected, suspicious };
   });
+
+  // ── Unknown listening ports (not in known_ports config, not localhost-only expected) ──
+  const unknownListeningPorts = listeningPorts.filter(
+    (p) => !knownPortSet.has(p) && !localhostKnownPorts.has(p)
+  );
+  const unknownPortSet = new Set(unknownListeningPorts);
 
   // ── Collect unknown processes and assign severity ─────────────────────────
   const unknownProcesses = processes
@@ -200,11 +261,8 @@ async function handler() {
       cpu:      proc.cpu,
       mem:      proc.mem,
       command:  proc.command,
-      severity: classifySeverity(proc, listeningPortSet, knownPortSet),
+      severity: classifySeverity(proc, unknownPortSet),
     }));
-
-  // ── Unknown listening ports (not in known_ports config) ───────────────────
-  const unknownListeningPorts = listeningPorts.filter((p) => !knownPortSet.has(p));
 
   // Build enriched listeningPorts array.
   const listeningPortsReport = listeningPorts.map((port) => ({

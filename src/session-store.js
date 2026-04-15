@@ -616,6 +616,22 @@ function findRecentAlert(category, severity, sinceIso) {
 }
 
 /**
+ * Return the single most recent alert for a given category, regardless of
+ * severity.  Used to detect whether a recovery notification should be sent
+ * after the appliance returns to a healthy state.
+ *
+ * @param {string} category
+ * @returns {object|undefined} The matching row, or undefined if none found.
+ */
+function findLastAlertByCategory(category) {
+  return getDb()
+    .prepare(
+      `SELECT * FROM alerts WHERE category = ? ORDER BY sent_at DESC LIMIT 1`
+    )
+    .get(category);
+}
+
+/**
  * Mark a session as having had context compression applied.
  * Sets `is_compressed = 1` on the sessions row.
  *
@@ -769,6 +785,7 @@ module.exports = {
   // Alerts
   createAlert,
   findRecentAlert,
+  findLastAlertByCategory,
   // Suppressed findings
   createSuppression,
   isSuppressionActive,

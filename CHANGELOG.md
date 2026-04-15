@@ -6,6 +6,37 @@ Format: [Semantic Versioning](https://semver.org). Sections: **Added**, **Change
 
 ---
 
+## [1.0.5] — 2026-04-15
+
+Three false-positive alert sources silenced and one new recovery notification added.
+
+### Added
+
+**Health check recovery notification (`src/cron-scheduler.js`, `src/session-store.js`)**
+- When the appliance returns to healthy after a prior `critical` or `warning` alert, COSA now sends a `[COSA Resolved]` email so the operator knows the issue cleared without having to check manually.
+- `session-store.js` — `findLastAlertByCategory(category)` returns the most recent alert for a category regardless of severity. Used to detect the healthy-after-alert transition.
+- `cron-scheduler.js` — `buildRecoveryBody()` and recovery path in `runHealthCheckTask()`. Recovery email fires once; subsequent healthy runs are silent (last alert has `severity='resolved'`).
+- `tests/staging/f5-cron-recovery.test.js` — 6 new staging tests covering the transition, email content, DB row, no-duplicate guard, and the no-prior-alert silent case.
+
+### Fixed
+
+**Spurious UNREACHABLE health-check alerts (`config/appliance.yaml`)**
+- BaanBaan API binds to `127.0.0.1:3000` (localhost only) and is not reachable via HTTP from the COSA host. `tools.health_check.http_check` set to `false` — SSH connectivity + systemd process check is sufficient to confirm service state.
+
+**Process monitor: Puppeteer CDP port flagged as unknown (`src/tools/process-monitor.js`, `config/appliance.yaml`)**
+- Puppeteer launches Chromium with `--remote-debugging-port=0`, which assigns a fresh ephemeral loopback port each run. The port was never in `known_ports` so it always fired a HIGH alert.
+- Added `parsePortDetails()` and `isLocalhostOnly()`. Localhost-only ports owned by a process that matches `expected_processes` are now excluded from `unknown_ports` and do not escalate process severity. Externally-bound ports and localhost ports owned by unknown processes still alert normally.
+- Added `chromium` to `monitoring.expected_processes` — resolves the 194 "unknown process" count caused by Chromium renderer sub-processes.
+- Removed stale port `33113` from `known_ports` (was labelled as Chromium CDP but was never actually used since `--remote-debugging-port=0` is always ephemeral).
+- 5 new unit tests covering the localhost suppression logic (AC: localhost+expected → suppressed, localhost+unexpected → flagged, public+expected → flagged, severity not escalated by localhost-only port).
+
+**Credential audit false positives (`config/appliance.yaml`)**
+- Added suppression rules for `password_assignment` in `public/js/app.js` (form state variables, not credentials) and `src/routes/merchants.ts` (AES-256-GCM webhook secret helpers), and `base64_secret` in `src/routes/merchants.ts`.
+- Removed stale suppression comment; AWS example key in `test/backup.test.ts:270` remains suppressed.
+- `docs/baanbaan_gitignore_credential_cleanup_spec.md` — spec for BaanBaan dev agent: remove committed `e2e/gift-card-debug-results.json` test artifact and add `secrets/` + `v2/e2e/*.json` to `.gitignore`.
+
+---
+
 ## [1.0.4] — 2026-04-14
 
 Four production bugs fixed (backup alert, ips_alert approval loop, orphaned approval silence, shift report crash) plus the credential-audit suppression workflow.

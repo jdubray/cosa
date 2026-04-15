@@ -8,7 +8,7 @@ const { getConfig }    = require('../config/cosa.config');
 const orchestrator     = require('./orchestrator');
 const emailGateway     = require('./email-gateway');
 const sshBackend       = require('./ssh-backend');
-const { createAlert, findRecentAlert, getLastToolOutput } = require('./session-store');
+const { createAlert, findRecentAlert, findLastAlertByCategory, getLastToolOutput } = require('./session-store');
 const { createLogger } = require('./logger');
 const healthCheckTool        = require('./tools/health-check');
 const internetIpCheckTool    = require('./tools/internet-ip-check');
@@ -439,6 +439,37 @@ function buildAlertBody(result) {
   return lines.join('\n');
 }
 
+/**
+ * Compose a plain-text recovery email body when the appliance returns to healthy.
+ * @param {object} result
+ * @returns {string}
+ */
+function buildRecoveryBody(result) {
+  const lines = [
+    'COSA automated health check: issue resolved.',
+    '',
+    `Status:       HEALTHY`,
+    `Checked at:   ${result.checked_at ?? new Date().toISOString()}`,
+    '',
+    `SSH Connected:  ${result.ssh_connected}`,
+    `HTTP Health:    ${result.http_health?.reachable
+      ? `reachable (${result.http_health.status_code})`
+      : 'unreachable'}`,
+    `HTTP Ready:     ${result.http_ready?.reachable
+      ? `reachable (${result.http_ready.status_code})`
+      : 'unreachable'}`,
+  ];
+
+  if (result.process) {
+    lines.push(
+      `Process:        ${result.process.running ? 'running' : 'not running'} (${result.process.active_state})`
+    );
+  }
+
+  lines.push('', '--- Automated alert from COSA ---');
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Internet IP watch — state helpers
 // ---------------------------------------------------------------------------
@@ -775,7 +806,35 @@ async function runHealthCheckTask() {
   const overall_status = healthResult.overall_status ?? 'unreachable';
   log.info(`Health check complete: ${overall_status}`);
 
-  if (overall_status === 'healthy') return;
+  if (overall_status === 'healthy') {
+    // ── Recovery notification: send once when transitioning from an alert ────
+    const lastAlert = findLastAlertByCategory(HEALTH_CHECK_CATEGORY);
+    if (lastAlert && lastAlert.severity !== 'resolved') {
+      const applianceName = appliance.name ?? 'Appliance';
+      const title  = `${applianceName} is HEALTHY`;
+      const body   = buildRecoveryBody(healthResult);
+      const sentAt = new Date().toISOString();
+
+      await emailGateway.sendEmail({
+        to:      operatorEmail,
+        subject: `[COSA Resolved] ${title}`,
+        text:    body,
+      });
+
+      createAlert({
+        session_id: crypto.randomUUID(),
+        severity:   'resolved',
+        category:   HEALTH_CHECK_CATEGORY,
+        title,
+        body,
+        sent_at:    sentAt,
+        email_to:   operatorEmail,
+      });
+
+      log.info(`Recovery alert sent: ${applianceName} back to healthy`);
+    }
+    return;
+  }
 
   // ── 2. Dedup check ─────────────────────────────────────────────────────────
   const severity = overall_status === 'unreachable' ? 'critical' : 'warning';
