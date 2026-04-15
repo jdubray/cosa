@@ -640,17 +640,19 @@ async function runInternetIpWatchTask() {
     return;
   }
 
-  const wasDown   = state.internetWasDown;
-  const ipChanged = state.lastKnownIp !== null && state.lastKnownIp !== newIp;
+  const wasDown    = state.internetWasDown;
+  const isFirstRun = state.lastKnownIp === null;
+  const ipChanged  = !isFirstRun && state.lastKnownIp !== newIp;
 
-  // ── 3. No change → update heartbeat and return ────────────────────────────
-  if (!wasDown && !ipChanged) {
-    _writeIpState({ ...state, internetWasDown: false, lastCheckedAt: checkResult.checkedAt });
+  // ── 3. No change and not first run → update heartbeat and return ──────────
+  if (!wasDown && !ipChanged && !isFirstRun) {
+    // Always persist lastKnownIp so the next genuine change is detected.
+    _writeIpState({ ...state, lastKnownIp: newIp, internetWasDown: false, lastCheckedAt: checkResult.checkedAt });
     log.info(`[internet-ip-watch] Public IP stable: ${newIp}`);
     return;
   }
 
-  const changeReason = wasDown ? 'internet recovery' : 'IP change';
+  const changeReason = wasDown ? 'internet recovery' : isFirstRun ? 'first run' : 'IP change';
   log.info(`[internet-ip-watch] ${changeReason}: ${state.lastKnownIp ?? '(none)'} → ${newIp}`);
 
   // ── 4. Update .env keys via SSH ───────────────────────────────────────────
