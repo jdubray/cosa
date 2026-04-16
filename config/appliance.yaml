@@ -253,12 +253,44 @@ monitoring:
   # using substring containment (case-sensitive).
   # Add any additional legitimate processes your appliance runs.
   expected_processes:
+    # BaanBaan application
     - bun
+    # Chromium / Puppeteer (PDF export) — covers main process + renderer/gpu/utility/crashpad children
+    - chromium
+    # SSH
     - sshd
+    - sshd-session
+    - ssh-agent
+    # Init and process supervision
     - systemd
+    - lwrespawn
+    # Shells and transient commands
     - bash
+    - sh
     - ps
-    - chromium  # Puppeteer headless Chrome spawned by BaanBaan for PDF/screenshot export
+    - journalctl
+    # Kernel threads (commands enclosed in square brackets, e.g. [kworker/0:0])
+    - "["
+    # Wayland / Pi desktop environment
+    - labwc
+    - wf-panel
+    - pcmanfm
+    - kanshi
+    - gtk-nop
+    # Audio
+    - pipewire
+    - wireplumber
+    - mpris-proxy
+    # D-Bus and system services
+    - dbus-daemon
+    - avahi-daemon
+    - polkitd
+    - fusermount
+    # XDG portals and GNOME VFS
+    - xdg-desktop-portal
+    - gvfsd
+    # Cloudflare tunnel
+    - cloudflared
   # Ports that are legitimately open on this appliance (numeric).
   # Note: Chromium CDP (remote-debugging-port=0) uses an ephemeral loopback port
   # each run — it is NOT listed here because the port number changes every time.

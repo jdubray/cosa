@@ -35,6 +35,14 @@ Three false-positive alert sources silenced and one new recovery notification ad
 - Removed stale suppression comment; AWS example key in `test/backup.test.ts:270` remains suppressed.
 - `docs/baanbaan_gitignore_credential_cleanup_spec.md` — spec for BaanBaan dev agent: remove committed `e2e/gift-card-debug-results.json` test artifact and add `secrets/` + `v2/e2e/*.json` to `.gitignore`.
 
+## [1.0.5-1] — 2026-04-16
+
+### Fixed
+
+**Process monitor baseline noise (`config/appliance.yaml`)**
+- Expanded `expected_processes` to cover all legitimate processes on this Raspberry Pi appliance: kernel threads (`[`), Wayland/Pi desktop (`labwc`, `wf-panel`, `pcmanfm`, `kanshi`, `gtk-nop`), audio (`pipewire`, `wireplumber`, `mpris-proxy`), system services (`dbus-daemon`, `avahi-daemon`, `polkitd`, `fusermount`), XDG portals and GNOME VFS (`xdg-desktop-portal`, `gvfsd`), SSH sessions (`sshd-session`, `ssh-agent`), and `cloudflared`.
+- Reduces unknown process count from ~191 to near zero, eliminating false-positive CRITICAL alerts from the security scan session.
+
 ---
 
 ## [1.0.4] — 2026-04-14
