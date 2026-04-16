@@ -480,8 +480,10 @@ function buildRecoveryBody(result) {
 
 /** @returns {string} */
 function _ipStateFilePath() {
-  const dataDir = process.env.COSA_DATA_DIR || './data';
-  return path.join(dataDir, 'ip-state.json');
+  // Use the same resolution as session-store (path.resolve) so the path is
+  // absolute and stable regardless of working directory at call time.
+  const { env } = getConfig();
+  return path.resolve(env.dataDir, 'ip-state.json');
 }
 
 /**
@@ -499,10 +501,13 @@ function _readIpState() {
 
 /**
  * Persist IP state to disk (synchronous — small JSON, no race risk at 2-min interval).
+ * Creates the data directory if it does not exist.
  * @param {IpState} state
  */
 function _writeIpState(state) {
-  fs.writeFileSync(_ipStateFilePath(), JSON.stringify(state, null, 2), 'utf8');
+  const filePath = _ipStateFilePath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf8');
 }
 
 /**
@@ -683,7 +688,16 @@ async function runInternetIpWatchTask() {
     return;
   }
 
-  const changeReason = wasDown ? 'internet recovery' : isFirstRun ? 'first run' : 'IP change';
+  // ── 3b. First run — persist the IP silently, no alert needed ─────────────
+  // This avoids a spurious alert every time COSA restarts.  A genuine IP
+  // change (from a previously known value) still triggers the full alert path.
+  if (isFirstRun && !wasDown) {
+    _writeIpState({ lastKnownIp: newIp, internetWasDown: false, lastCheckedAt: checkResult.checkedAt, lastChangedAt: null });
+    log.info(`[internet-ip-watch] First run — recorded public IP: ${newIp}`);
+    return;
+  }
+
+  const changeReason = wasDown ? 'internet recovery' : 'IP change';
   log.info(`[internet-ip-watch] ${changeReason}: ${state.lastKnownIp ?? '(none)'} → ${newIp}`);
 
   // ── 4. Update .env keys via SSH ───────────────────────────────────────────
