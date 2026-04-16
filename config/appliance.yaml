@@ -263,7 +263,10 @@ monitoring:
     - ssh-agent
     # Init and process supervision
     - systemd
-    - lwrespawn
+    - init
+    # Console login (multi-user.target)
+    - login
+    - agetty
     # Shells and transient commands
     - bash
     - sh
@@ -271,9 +274,9 @@ monitoring:
     - journalctl
     # Kernel threads (commands enclosed in square brackets, e.g. [kworker/0:0])
     - "["
-    # Audio (pipewire may still run for system audio)
-    - pipewire
-    - wireplumber
+    # Print spooler (receipt printing)
+    - cupsd
+    - cups-browsed
     # System daemons
     - cron
     - udisksd
@@ -286,9 +289,6 @@ monitoring:
     - avahi-daemon
     - polkitd
     - fusermount
-    # XDG portals and GNOME VFS
-    - xdg-desktop-portal
-    - gvfsd
     # Cloudflare tunnel
     - cloudflared
   # Ports that are legitimately open on this appliance (numeric).
