@@ -125,9 +125,9 @@ function buildOrdersQuery(periodStart, periodEnd) {
 function buildRevenueQuery(periodStart, periodEnd) {
   return [
     `SELECT`,
-    `  COUNT(*)                  AS payment_count,`,
-    `  round(SUM(amount), 2)     AS total_revenue,`,
-    `  round(AVG(amount), 2)     AS avg_order_value`,
+    `  COUNT(*)                              AS payment_count,`,
+    `  round(SUM(amount_cents) / 100.0, 2)  AS total_revenue,`,
+    `  round(AVG(amount_cents) / 100.0, 2)  AS avg_order_value`,
     `FROM payments`,
     `WHERE created_at >= '${periodStart}'`,
     `  AND created_at <= '${periodEnd}'`,
