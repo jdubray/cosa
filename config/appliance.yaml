@@ -271,46 +271,24 @@ monitoring:
     - journalctl
     # Kernel threads (commands enclosed in square brackets, e.g. [kworker/0:0])
     - "["
-    # Wayland / Pi desktop environment
-    - labwc
-    - wf-panel
-    - pcmanfm
-    - kanshi
-    - gtk-nop
-    # Audio
+    # Audio (pipewire may still run for system audio)
     - pipewire
     - wireplumber
-    - mpris-proxy
-    # System daemons (root-owned)
-    - accounts-daemon
-    - bluetoothd
+    # System daemons
     - cron
     - udisksd
     - NetworkManager
     - wpa_supplicant
-    - ModemManager
     - upowerd
-    # Display manager and login
-    - lightdm
-    - login
-    - agetty
+    - accounts-daemon
     # D-Bus and system services
     - dbus-daemon
     - avahi-daemon
     - polkitd
-    - polkit-mate-agent
     - fusermount
-    - sd-pam
     # XDG portals and GNOME VFS
     - xdg-desktop-portal
-    - xdg-permission-store
-    - xdg-document-portal
     - gvfsd
-    - gvfs-udisks2-monitor
-    - gvfs-mtp-monitor
-    - gvfs-goa-monitor
-    - gvfs-afc-monitor
-    - gvfs-gphoto2-monitor
     # Cloudflare tunnel
     - cloudflared
   # Ports that are legitimately open on this appliance (numeric).
