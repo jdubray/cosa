@@ -264,6 +264,7 @@ monitoring:
     # Init and process supervision
     - systemd
     - init
+    - (sd-pam)
     # Console login (multi-user.target)
     - login
     - agetty
