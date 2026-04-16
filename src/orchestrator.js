@@ -45,7 +45,7 @@ const SONNET_MODEL = 'claude-sonnet-4-6';
  * operator may ask multi-step questions that require several tool round-trips.
  * Cron sessions are single-focused tasks and 20 is sufficient.
  */
-const MAX_ITERATIONS_EMAIL = 40;
+const MAX_ITERATIONS_EMAIL = 20;
 const MAX_ITERATIONS_CRON  = 20;
 
 /**

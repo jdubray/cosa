@@ -1559,10 +1559,10 @@ function start() {
   schedule('weekly_digest', '0 2 * * 1',   runWeeklyDigestTask);
 
   // Phase 3 — every 6 hours
-  schedule('git_audit',       '0 */6 * * *', runGitAuditTask);
-  schedule('process_monitor', '0 */6 * * *', runProcessMonitorTask);
-  schedule('network_scan',    '0 */6 * * *', runNetworkScanTask);
-  schedule('access_log_scan', '0 */6 * * *', runAccessLogScanTask);
+  schedule('git_audit',       '0 */8 * * *', runGitAuditTask);
+  schedule('process_monitor', '0 */8 * * *', runProcessMonitorTask);
+  schedule('network_scan',    '0 */8 * * *', runNetworkScanTask);
+  schedule('access_log_scan', '0 */8 * * *', runAccessLogScanTask);
 
   // Phase 3 — weekly Monday 2:00 AM
   schedule('security_digest',    '0 2 * * 1', runWeeklySecurityDigestTask);
