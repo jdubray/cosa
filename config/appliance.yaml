@@ -281,14 +281,36 @@ monitoring:
     - pipewire
     - wireplumber
     - mpris-proxy
+    # System daemons (root-owned)
+    - accounts-daemon
+    - bluetoothd
+    - cron
+    - udisksd
+    - NetworkManager
+    - wpa_supplicant
+    - ModemManager
+    - upowerd
+    # Display manager and login
+    - lightdm
+    - login
+    - agetty
     # D-Bus and system services
     - dbus-daemon
     - avahi-daemon
     - polkitd
+    - polkit-mate-agent
     - fusermount
+    - sd-pam
     # XDG portals and GNOME VFS
     - xdg-desktop-portal
+    - xdg-permission-store
+    - xdg-document-portal
     - gvfsd
+    - gvfs-udisks2-monitor
+    - gvfs-mtp-monitor
+    - gvfs-goa-monitor
+    - gvfs-afc-monitor
+    - gvfs-gphoto2-monitor
     # Cloudflare tunnel
     - cloudflared
   # Ports that are legitimately open on this appliance (numeric).
