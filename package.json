@@ -1,6 +1,6 @@
 {
   "name": "cosa",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "COSA — Code-Operate-Secure Agent for appliance management",
   "main": "src/main.js",
   "scripts": {
