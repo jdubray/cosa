@@ -145,8 +145,8 @@ function buildPaymentErrorsQuery(periodStart, periodEnd) {
   return [
     `SELECT COUNT(*) AS error_count`,
     `FROM payment_errors`,
-    `WHERE created_at >= '${periodStart}'`,
-    `  AND created_at <= '${periodEnd}'`,
+    `WHERE occurred_at >= '${periodStart}'`,
+    `  AND occurred_at <= '${periodEnd}'`,
   ].join(' ');
 }
 
