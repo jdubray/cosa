@@ -124,7 +124,9 @@ tools:
     enabled: true
     backup_dir: "/tmp/cosa-backups"
     timeout_s: 120
-    js_runtime: "bun"
+    # Absolute path required: non-interactive SSH shells don't source bun's
+    # PATH additions, so `bun` alone resolves to "command not found".
+    js_runtime: "/home/baanbaan/.bun/bin/bun"
     tables:
       - orders
       - order_items
