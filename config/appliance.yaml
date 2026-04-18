@@ -129,7 +129,6 @@ tools:
     js_runtime: "/home/baanbaan/.bun/bin/bun"
     tables:
       - orders
-      - order_items
       - payments
       - payment_errors
       - merchants
