@@ -168,11 +168,30 @@ tools:
   credential_audit:
     enabled: true
     repo_path: "/home/baanbaan/baan-baan-merchant/v2"
+    # Suppression entries match by (pattern, file, [line]):
+    #   - pattern + file + line : exact single-line suppression
+    #   - pattern + file        : whole-file suppression (line omitted)
+    #   - pattern + file ending in '/' : directory-prefix suppression
     suppressed_findings:
+      # AWS access key: canonical AWS docs example (AKIAIOSFODNN7EXAMPLE) in the
+      # backup-test fixture. File-level (line drifts as the test evolves).
       - pattern: aws_access_key
         file: test/backup.test.ts
-        line: 270
-        reason: "test dummy key committed in test fixture — not a live credential"
+        reason: "AKIAIOSFODNN7EXAMPLE — canonical AWS documentation example key; non-functional"
+
+      # Test fixtures: unit tests create ephemeral test users with hardcoded
+      # passwords. None reach production; blanket-suppress the whole tree.
+      - pattern: password_assignment
+        file: test/
+        reason: "Bun unit test fixtures; test-user credentials, never live"
+      - pattern: password_assignment
+        file: e2e/
+        reason: "Playwright e2e fixtures; ephemeral test accounts, never live"
+      - pattern: base64_secret
+        file: e2e/
+        reason: "e2e test artifacts (sandbox session tokens). gift-card-debug-results.json scheduled for git removal via docs/baanbaan_gitignore_credential_cleanup_spec.md"
+
+      # Application-code false positives (whole-file suppression).
       - pattern: password_assignment
         file: public/js/app.js
         reason: "JS state variables initialised to null and populated from form inputs; not hardcoded credentials"

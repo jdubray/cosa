@@ -215,17 +215,27 @@ function fingerprintFinding(finding) {
  * Return true if this finding is suppressed either in the DB or via the
  * static `tools.credential_audit.suppressed_findings` list in appliance.yaml.
  *
- * Static config format (appliance.yaml):
+ * Static config supports three match modes (pattern must match in all cases):
+ *   1. Exact tuple — `{ pattern, file, line }` matches a single finding.
+ *   2. Whole-file — `{ pattern, file }` (line omitted) matches every finding
+ *      of `pattern` in that exact file.
+ *   3. Directory prefix — `{ pattern, file }` where `file` ends with `/`
+ *      matches every finding of `pattern` whose path starts with `file`.
+ *
+ * Example (appliance.yaml):
  *   tools:
  *     credential_audit:
  *       suppressed_findings:
  *         - pattern: aws_access_key
  *           file: test/backup.test.ts
  *           line: 270
- *           reason: test dummy key
+ *           reason: canonical AWS docs example key
+ *         - pattern: password_assignment
+ *           file: test/
+ *           reason: unit test fixtures, never live
  *
  * @param {{ pattern: string, file: string, line: number }} finding
- * @param {Array<{ pattern: string, file: string, line: number }>} staticList
+ * @param {Array<{ pattern: string, file: string, line?: number }>} staticList
  * @returns {boolean}
  */
 function _isSuppressed(finding, staticList) {
@@ -238,12 +248,24 @@ function _isSuppressed(finding, staticList) {
     // session.db unavailable — fall through to static check.
   }
 
-  // Static config check.
-  return staticList.some(
-    (s) => s.pattern === finding.pattern &&
-           s.file    === finding.file    &&
-           Number(s.line) === finding.line
-  );
+  return staticList.some((s) => {
+    if (s.pattern !== finding.pattern) return false;
+    if (typeof s.file !== 'string' || !s.file) return false;
+
+    // Directory-prefix match: entry file ends with '/'.
+    if (s.file.endsWith('/')) {
+      return finding.file.startsWith(s.file);
+    }
+
+    // Exact file path required from here.
+    if (s.file !== finding.file) return false;
+
+    // Line omitted → whole-file suppression.
+    if (s.line == null) return true;
+
+    // Explicit line → exact-line suppression.
+    return Number(s.line) === finding.line;
+  });
 }
 
 // ---------------------------------------------------------------------------

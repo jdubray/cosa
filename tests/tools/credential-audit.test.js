@@ -18,9 +18,10 @@
 // Mocks — hoisted before any require()
 // ---------------------------------------------------------------------------
 
-const mockIsConnected = jest.fn();
-const mockExec        = jest.fn();
-const mockGetConfig   = jest.fn();
+const mockIsConnected        = jest.fn();
+const mockExec               = jest.fn();
+const mockGetConfig          = jest.fn();
+const mockIsSuppressionActive = jest.fn();
 
 jest.mock('../../src/ssh-backend', () => ({
   isConnected: (...a) => mockIsConnected(...a),
@@ -29,6 +30,10 @@ jest.mock('../../src/ssh-backend', () => ({
 
 jest.mock('../../config/cosa.config', () => ({
   getConfig: (...a) => mockGetConfig(...a),
+}));
+
+jest.mock('../../src/session-store', () => ({
+  isSuppressionActive: (...a) => mockIsSuppressionActive(...a),
 }));
 
 jest.mock('../../src/logger', () => ({
@@ -103,6 +108,7 @@ function makeExecForPattern(patternSubstring, matchStdout, gitignoreResult = GIT
 beforeEach(() => {
   mockGetConfig.mockReturnValue(BASE_CONFIG);
   mockIsConnected.mockReturnValue(true);
+  mockIsSuppressionActive.mockReturnValue(false);
   // Default: no matches for any pattern; full gitignore coverage.
   mockExec.mockImplementation((cmd) => {
     if (cmd.includes('.gitignore') || cmd.includes('cat ')) {
@@ -294,7 +300,7 @@ describe('AC4 — base64-encoded secrets and password= patterns', () => {
   it('detects password_assignment pattern with high severity', async () => {
     mockExec.mockImplementation((cmd) => {
       if (cmd.includes('.gitignore') || cmd.includes('cat ')) return Promise.resolve(GITIGNORE_FULL);
-      if (cmd.includes('password')) {
+      if (cmd.includes('[=:]')) {
         return Promise.resolve({
           stdout: grepLine('src/db.js', 15, "password = 'myS3cretPass'"),
           stderr: '',
@@ -511,5 +517,239 @@ describe('AC7 — gitignoreCoverage object', () => {
     });
     const result = await handler();
     expect(result.summary).toMatch(/critical finding/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Static suppression modes (appliance.yaml tools.credential_audit.suppressed_findings)
+// ---------------------------------------------------------------------------
+
+describe('static suppression — exact tuple (pattern + file + line)', () => {
+  it('suppresses a finding whose pattern, file, and line all match', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        tools: {
+          credential_audit: {
+            repo_path: '/home/weather',
+            suppressed_findings: [
+              { pattern: 'aws_access_key', file: 'test/backup.test.ts', line: 270, reason: 'test dummy' },
+            ],
+          },
+        },
+      },
+    });
+    mockExec.mockImplementation((cmd) => {
+      if (cmd.includes('.gitignore') || cmd.includes('cat ')) return Promise.resolve(GITIGNORE_FULL);
+      if (cmd.includes('AKIA')) {
+        return Promise.resolve({
+          stdout: grepLine('test/backup.test.ts', 270, "const k='AKIAIOSFODNN7EXAMPLE';"),
+          stderr: '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve(NO_MATCH);
+    });
+
+    const result = await handler();
+    expect(result.findings).toHaveLength(0);
+    expect(result.suppressedFindings).toHaveLength(1);
+    expect(result.suppressedFindings[0].file).toBe('test/backup.test.ts');
+  });
+
+  it('does NOT suppress when line differs from the tuple entry', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        tools: {
+          credential_audit: {
+            repo_path: '/home/weather',
+            suppressed_findings: [
+              { pattern: 'aws_access_key', file: 'test/backup.test.ts', line: 270, reason: 'test dummy' },
+            ],
+          },
+        },
+      },
+    });
+    mockExec.mockImplementation((cmd) => {
+      if (cmd.includes('.gitignore') || cmd.includes('cat ')) return Promise.resolve(GITIGNORE_FULL);
+      if (cmd.includes('AKIA')) {
+        return Promise.resolve({
+          stdout: grepLine('test/backup.test.ts', 999, "const k='AKIAIOSFODNN7EXAMPLE';"),
+          stderr: '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve(NO_MATCH);
+    });
+
+    const result = await handler();
+    expect(result.findings).toHaveLength(1);
+    expect(result.suppressedFindings).toHaveLength(0);
+  });
+});
+
+describe('static suppression — whole-file (line omitted)', () => {
+  it('suppresses every finding of the pattern in the exact file', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        tools: {
+          credential_audit: {
+            repo_path: '/home/weather',
+            suppressed_findings: [
+              { pattern: 'password_assignment', file: 'src/routes/merchants.ts', reason: 'SMTP config' },
+            ],
+          },
+        },
+      },
+    });
+    mockExec.mockImplementation((cmd) => {
+      if (cmd.includes('.gitignore') || cmd.includes('cat ')) return Promise.resolve(GITIGNORE_FULL);
+      if (cmd.includes('[=:]')) {
+        return Promise.resolve({
+          stdout: [
+            grepLine('src/routes/merchants.ts', 10, "password='a1b2c3d4'"),
+            grepLine('src/routes/merchants.ts', 42, "password: 'zyxwvut9'"),
+          ].join('\n'),
+          stderr: '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve(NO_MATCH);
+    });
+
+    const result = await handler();
+    expect(result.findings).toHaveLength(0);
+    expect(result.suppressedFindings).toHaveLength(2);
+  });
+
+  it('does NOT suppress findings in other files', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        tools: {
+          credential_audit: {
+            repo_path: '/home/weather',
+            suppressed_findings: [
+              { pattern: 'password_assignment', file: 'src/routes/merchants.ts', reason: 'SMTP config' },
+            ],
+          },
+        },
+      },
+    });
+    mockExec.mockImplementation((cmd) => {
+      if (cmd.includes('.gitignore') || cmd.includes('cat ')) return Promise.resolve(GITIGNORE_FULL);
+      if (cmd.includes('[=:]')) {
+        return Promise.resolve({
+          stdout: grepLine('src/routes/auth.ts', 5, "password='real-secret'"),
+          stderr: '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve(NO_MATCH);
+    });
+
+    const result = await handler();
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].file).toBe('src/routes/auth.ts');
+  });
+});
+
+describe('static suppression — directory prefix (file ends with /)', () => {
+  it('suppresses every finding of the pattern whose path starts with the prefix', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        tools: {
+          credential_audit: {
+            repo_path: '/home/weather',
+            suppressed_findings: [
+              { pattern: 'password_assignment', file: 'test/', reason: 'test fixtures' },
+            ],
+          },
+        },
+      },
+    });
+    mockExec.mockImplementation((cmd) => {
+      if (cmd.includes('.gitignore') || cmd.includes('cat ')) return Promise.resolve(GITIGNORE_FULL);
+      if (cmd.includes('[=:]')) {
+        return Promise.resolve({
+          stdout: [
+            grepLine('test/auth.test.ts', 10, "password='testpw1'"),
+            grepLine('test/payment.test.ts', 42, "password='testpw2'"),
+            grepLine('test/nested/foo.test.ts', 7, "password='testpw3'"),
+          ].join('\n'),
+          stderr: '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve(NO_MATCH);
+    });
+
+    const result = await handler();
+    expect(result.findings).toHaveLength(0);
+    expect(result.suppressedFindings).toHaveLength(3);
+  });
+
+  it('does NOT suppress findings outside the prefix', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        tools: {
+          credential_audit: {
+            repo_path: '/home/weather',
+            suppressed_findings: [
+              { pattern: 'password_assignment', file: 'test/', reason: 'test fixtures' },
+            ],
+          },
+        },
+      },
+    });
+    mockExec.mockImplementation((cmd) => {
+      if (cmd.includes('.gitignore') || cmd.includes('cat ')) return Promise.resolve(GITIGNORE_FULL);
+      if (cmd.includes('[=:]')) {
+        return Promise.resolve({
+          stdout: [
+            grepLine('test/auth.test.ts', 10, "password='testpw1'"),
+            grepLine('src/routes/auth.ts', 5, "password='prodpw'"),
+          ].join('\n'),
+          stderr: '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve(NO_MATCH);
+    });
+
+    const result = await handler();
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].file).toBe('src/routes/auth.ts');
+    expect(result.suppressedFindings).toHaveLength(1);
+    expect(result.suppressedFindings[0].file).toBe('test/auth.test.ts');
+  });
+
+  it('does NOT suppress when pattern differs from the suppression entry', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        tools: {
+          credential_audit: {
+            repo_path: '/home/weather',
+            suppressed_findings: [
+              { pattern: 'password_assignment', file: 'test/', reason: 'test fixtures' },
+            ],
+          },
+        },
+      },
+    });
+    mockExec.mockImplementation((cmd) => {
+      if (cmd.includes('.gitignore') || cmd.includes('cat ')) return Promise.resolve(GITIGNORE_FULL);
+      if (cmd.includes('AKIA')) {
+        return Promise.resolve({
+          stdout: grepLine('test/backup.test.ts', 99, "const k='AKIAIOSFODNN7EXAMPLE';"),
+          stderr: '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve(NO_MATCH);
+    });
+
+    const result = await handler();
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].pattern).toBe('aws_access_key');
+    expect(result.suppressedFindings).toHaveLength(0);
   });
 });
