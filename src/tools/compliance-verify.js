@@ -323,13 +323,77 @@ function parseListeningPorts(stdout) {
 }
 
 /**
+ * Parse `ss -tlnp` output into rich port detail records that include the bind
+ * address and owning process name. Used to suppress localhost-only ephemeral
+ * ports (e.g. Puppeteer Chrome DevTools Protocol) that are not reachable
+ * from outside the host. Mirrors the logic in process-monitor.js.
+ *
+ * @param {string} stdout
+ * @returns {Array<{ port: number, localAddr: string, processName: string|null }>}
+ */
+function parsePortDetails(stdout) {
+  const details = [];
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('State') || trimmed.startsWith('Proto')) continue;
+    const addrPortMatch = trimmed.match(/(\S+):(\d+)\s+\S+/);
+    if (!addrPortMatch) continue;
+    const localAddr = addrPortMatch[1];
+    const port      = parseInt(addrPortMatch[2], 10);
+    if (isNaN(port) || port <= 0 || port >= 65536) continue;
+    const procMatch   = trimmed.match(/users:\(\("([^"]+)"/);
+    const processName = procMatch ? procMatch[1] : null;
+    details.push({ port, localAddr, processName });
+  }
+  return details;
+}
+
+/** @param {string} addr */
+function isLocalhostOnly(addr) {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '[::1]';
+}
+
+/**
+ * Substring match against the monitoring.expected_processes list.
+ * @param {string} command
+ * @param {string[]} expectedPatterns
+ */
+function isExpected(command, expectedPatterns) {
+  return expectedPatterns.some((pattern) => command.includes(pattern));
+}
+
+/**
+ * Compute the set of localhost-only ephemeral ports that should be ignored:
+ * ports bound to 127.0.0.1/::1 whose owning process matches any expected
+ * pattern (e.g. Puppeteer/chromium CDP port assigned via --remote-debugging-port=0).
+ *
+ * @param {string} ssStdout - Raw output of `ss -tlnp`.
+ * @param {string[]} expectedPatterns - monitoring.expected_processes.
+ * @returns {Set<number>}
+ */
+function computeLocalhostKnownPorts(ssStdout, expectedPatterns) {
+  return new Set(
+    parsePortDetails(ssStdout)
+      .filter((d) =>
+        isLocalhostOnly(d.localAddr) &&
+        d.processName &&
+        isExpected(d.processName, expectedPatterns)
+      )
+      .map((d) => d.port)
+  );
+}
+
+/**
  * @param {number[]} listeningPorts
  * @param {Set<number>} knownPortSet
+ * @param {Set<number>} localhostKnownPorts - Ephemeral loopback ports owned by expected processes.
  * @returns {{ check: string, status: 'pass'|'fail'|'warning', evidence: string }}
  */
-function checkListeningServices(listeningPorts, knownPortSet) {
+function checkListeningServices(listeningPorts, knownPortSet, localhostKnownPorts) {
   const CHECK   = 'listening_services';
-  const unknown = listeningPorts.filter((p) => !knownPortSet.has(p));
+  const unknown = listeningPorts.filter(
+    (p) => !knownPortSet.has(p) && !localhostKnownPorts.has(p)
+  );
 
   if (unknown.length === 0) {
     return {
@@ -379,6 +443,7 @@ async function handler() {
   const knownPortSet = new Set(
     (appliance.monitoring?.known_ports ?? []).map(Number)
   );
+  const expectedProcessPatterns = (appliance.monitoring?.expected_processes ?? []).map(String);
 
   // ── Fire all SSH commands in parallel ────────────────────────────────────
   const statCmd = buildStatCmd(sensitiveFiles);
@@ -412,9 +477,11 @@ async function handler() {
     findings.push(evaluateFilePermissions(checkName, filePath, statMap.get(filePath)));
   }
 
-  // 5: listening services
-  const listeningPorts = parseListeningPorts(ssResult.stdout);
-  findings.push(checkListeningServices(listeningPorts, knownPortSet));
+  // 5: listening services — suppress localhost-only ephemeral ports owned by
+  // expected processes (e.g. Puppeteer/chromium CDP via --remote-debugging-port=0).
+  const listeningPorts      = parseListeningPorts(ssResult.stdout);
+  const localhostKnownPorts = computeLocalhostKnownPorts(ssResult.stdout, expectedProcessPatterns);
+  findings.push(checkListeningServices(listeningPorts, knownPortSet, localhostKnownPorts));
 
   // ── Tally ────────────────────────────────────────────────────────────────
   const passCount    = findings.filter((f) => f.status === 'pass').length;

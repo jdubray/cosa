@@ -304,6 +304,68 @@ describe('AC5 – listening services', () => {
     expect(f.evidence).toMatch(/22/);
     expect(f.evidence).toMatch(/443/);
   });
+
+  test('suppresses localhost-only ephemeral port owned by expected process (Puppeteer CDP)', async () => {
+    getConfig.mockReturnValue({
+      appliance: {
+        monitoring: {
+          known_ports:        [22, 443, 3000],
+          expected_processes: ['chromium', 'bun'],
+        },
+        tools: { compliance_verify: { sensitive_files: ['/home/weather/.env'] } },
+      },
+    });
+    setupExec(happyRoutes({
+      stat: ok('600 /home/weather/.env'),
+      ss:   ok(
+        'LISTEN 0 128 0.0.0.0:22 *:* users:(("sshd",pid=1,fd=3))\n' +
+        'LISTEN 0 128 127.0.0.1:41915 *:* users:(("chromium",pid=12345,fd=7))'
+      ),
+    }));
+    const result = await handler();
+    const f = result.findings.find((x) => x.check === 'listening_services');
+    expect(f.status).toBe('pass');
+  });
+
+  test('does NOT suppress when the same port is bound to 0.0.0.0 (externally reachable)', async () => {
+    getConfig.mockReturnValue({
+      appliance: {
+        monitoring: {
+          known_ports:        [22, 443, 3000],
+          expected_processes: ['chromium'],
+        },
+        tools: { compliance_verify: { sensitive_files: ['/home/weather/.env'] } },
+      },
+    });
+    setupExec(happyRoutes({
+      stat: ok('600 /home/weather/.env'),
+      ss:   ok('LISTEN 0 128 0.0.0.0:41915 *:* users:(("chromium",pid=12345,fd=7))'),
+    }));
+    const result = await handler();
+    const f = result.findings.find((x) => x.check === 'listening_services');
+    expect(f.status).toBe('fail');
+    expect(f.evidence).toContain('41915');
+  });
+
+  test('does NOT suppress localhost-only port owned by an UNEXPECTED process', async () => {
+    getConfig.mockReturnValue({
+      appliance: {
+        monitoring: {
+          known_ports:        [22, 443, 3000],
+          expected_processes: ['chromium'],
+        },
+        tools: { compliance_verify: { sensitive_files: ['/home/weather/.env'] } },
+      },
+    });
+    setupExec(happyRoutes({
+      stat: ok('600 /home/weather/.env'),
+      ss:   ok('LISTEN 0 128 127.0.0.1:41915 *:* users:(("nc",pid=99,fd=3))'),
+    }));
+    const result = await handler();
+    const f = result.findings.find((x) => x.check === 'listening_services');
+    expect(f.status).toBe('fail');
+    expect(f.evidence).toContain('41915');
+  });
 });
 
 // ---------------------------------------------------------------------------
