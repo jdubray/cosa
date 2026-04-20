@@ -14,8 +14,11 @@ const NAME       = 'network_scan';
 const RISK_LEVEL = 'read';
 
 // Static command — never constructed from user input.
-// `arp -a` enumerates the ARP cache: format is `hostname (ip) at mac [ether] on iface`
-const CMD_ARP = 'arp -a';
+// `ip neigh` enumerates the kernel neighbour table (iproute2). Format per line:
+//   <ip> dev <iface> lladdr <mac> <STATE>
+// `FAILED` / `INCOMPLETE` entries lack `lladdr` and are skipped. `ip` is always
+// available on Debian/Raspberry Pi OS, unlike `arp` which requires net-tools.
+const CMD_NEIGH = 'ip neigh';
 
 const INPUT_SCHEMA = {
   type:                 'object',
@@ -26,7 +29,7 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Enumerate all devices visible on the local network ARP cache and flag ' +
+    'Enumerate all devices visible in the local network neighbour cache and flag ' +
     'unknown MAC addresses. Compares each discovered MAC against the ' +
     'known_mac_addresses list in appliance.yaml. Returns a devices array with ' +
     'a known flag for each entry and a separate unknownDevices array. ' +
@@ -55,35 +58,35 @@ function normaliseMac(raw) {
 }
 
 /**
- * Parse `arp -a` stdout into an array of device objects.
+ * Parse `ip neigh` stdout into an array of device objects.
  *
- * Typical line format (Linux):
- *   hostname (192.168.1.1) at aa:bb:cc:dd:ee:ff [ether] on eth0
+ * Typical line format (iproute2):
+ *   192.168.1.1 dev wlan0 lladdr aa:bb:cc:dd:ee:ff REACHABLE
+ *   fe80::1 dev wlan0 lladdr aa:bb:cc:dd:ee:ff router STALE
  *
- * Incomplete/pending entries (MAC is `<incomplete>` or `(incomplete)`) are
- * silently skipped — they represent hosts that no longer respond.
+ * Entries without `lladdr` (state FAILED or INCOMPLETE) are silently skipped —
+ * the kernel tried but could not resolve the MAC. `ip neigh` does not perform
+ * reverse-DNS, so the IP is used as the hostname.
  *
  * @param {string} stdout
  * @returns {{ ip: string, mac: string, hostname: string, iface: string }[]}
  */
-function parseArpOutput(stdout) {
+function parseNeighOutput(stdout) {
   const devices = [];
 
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // hostname (ip) at mac [ether] on iface
-    const match = trimmed.match(
-      /^(\S+)\s+\(([^)]+)\)\s+at\s+(\S+)(?:\s+\[(\w+)\])?\s+on\s+(\S+)/
-    );
+    // <ip> dev <iface> lladdr <mac> ...
+    const match = trimmed.match(/^(\S+)\s+dev\s+(\S+)\s+lladdr\s+(\S+)/);
     if (!match) continue;
 
-    const [, hostname, ip, rawMac, , iface] = match;
+    const [, ip, iface, rawMac] = match;
     const mac = normaliseMac(rawMac);
-    if (!mac) continue; // skip `<incomplete>` entries
+    if (!mac) continue;
 
-    devices.push({ hostname: hostname === '?' ? ip : hostname, ip, mac, iface });
+    devices.push({ hostname: ip, ip, mac, iface });
   }
 
   return devices;
@@ -135,7 +138,7 @@ async function handler() {
   const checked_at = new Date().toISOString();
 
   if (!sshBackend.isConnected()) {
-    throw new Error('SSH not connected — cannot run arp -a');
+    throw new Error('SSH not connected — cannot run ip neigh');
   }
 
   // ── 1. Read known MACs from config ────────────────────────────────────────
@@ -149,16 +152,16 @@ async function handler() {
     if (mac) knownMacMap.set(mac, entry.name ?? mac);
   }
 
-  // ── 2. Execute arp -a ─────────────────────────────────────────────────────
-  log.info('Executing arp -a');
-  const result = await sshBackend.exec(CMD_ARP);
+  // ── 2. Execute ip neigh ───────────────────────────────────────────────────
+  log.info('Executing ip neigh');
+  const result = await sshBackend.exec(CMD_NEIGH);
 
   if (result.exitCode !== 0 && !result.stdout) {
-    throw new Error(`arp -a failed (exit ${result.exitCode}): ${result.stderr}`);
+    throw new Error(`ip neigh failed (exit ${result.exitCode}): ${result.stderr}`);
   }
 
   // ── 3. Parse and classify ─────────────────────────────────────────────────
-  const raw = parseArpOutput(result.stdout);
+  const raw = parseNeighOutput(result.stdout);
 
   const devices = raw.map((d) => {
     const known = knownMacMap.has(d.mac);
