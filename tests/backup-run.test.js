@@ -2,6 +2,14 @@
 
 jest.mock('../src/ssh-backend');
 jest.mock('../config/cosa.config');
+jest.mock('../src/logger', () => ({
+  createLogger: () => ({
+    debug: jest.fn(),
+    info:  jest.fn(),
+    warn:  jest.fn(),
+    error: jest.fn(),
+  }),
+}));
 
 const sshBackend    = require('../src/ssh-backend');
 const { getConfig } = require('../config/cosa.config');
@@ -14,8 +22,11 @@ const { handler }   = require('../src/tools/backup-run');
 const DB_PATH    = '/data/appliance.db';
 const BACKUP_DIR = '/tmp/cosa-backups';
 
+/** Last config set via setConfig — used to seed the discovery mock. */
+let _currentConfig = null;
+
 function setConfig(overrides = {}) {
-  getConfig.mockReturnValue({
+  _currentConfig = {
     appliance: {
       database: { path: DB_PATH },
       tools: {
@@ -27,31 +38,64 @@ function setConfig(overrides = {}) {
         },
       },
     },
+  };
+  getConfig.mockReturnValue(_currentConfig);
+}
+
+function configuredTables() {
+  return _currentConfig?.appliance?.tools?.backup_run?.tables ?? [];
+}
+
+/**
+ * Build a discovery response containing the given table names.
+ * Default: all configured tables exist (no schema drift).
+ */
+function discoveryResponse(tables = configuredTables()) {
+  return { stdout: tables.join('\n') + '\n', stderr: '', exitCode: 0 };
+}
+
+function isDiscoveryCmd(cmd) {
+  return typeof cmd === 'string' && cmd.includes('sqlite_master');
+}
+
+/**
+ * Simulate a successful pipeline:
+ *   1. Discovery returns `existing` tables (defaults to all configured).
+ *   2. Backup script returns the given rowCount/checksum pairs.
+ */
+function mockSshSuccess(pairs = [{ rowCount: 10, checksum: 'abc123' }], existing = null) {
+  const tables = existing ?? configuredTables();
+  sshBackend.exec = jest.fn().mockImplementation((cmd) => {
+    if (isDiscoveryCmd(cmd)) return Promise.resolve(discoveryResponse(tables));
+    const lines = pairs.flatMap((p) => [`${p.rowCount}`, p.checksum]);
+    return Promise.resolve({ stdout: lines.join('\n') + '\n', stderr: '', exitCode: 0 });
   });
 }
 
-/** Simulate a successful SSH exec that returns N pairs of rowCount/checksum. */
-function mockSshSuccess(pairs = [{ rowCount: 10, checksum: 'abc123' }]) {
-  const lines = pairs.flatMap(p => [`${p.rowCount}`, p.checksum]);
-  sshBackend.exec = jest.fn().mockResolvedValue({
-    stdout:   lines.join('\n') + '\n',
-    stderr:   '',
-    exitCode: 0,
-  });
-}
-
-/** Simulate a failed SSH exec (non-zero exit). */
+/**
+ * Discovery succeeds; backup-script call fails with the given non-zero exit.
+ */
 function mockSshFailure(exitCode = 127, stderr = 'bash: node: command not found') {
-  sshBackend.exec = jest.fn().mockResolvedValue({
-    stdout:   '',
-    stderr,
-    exitCode,
+  sshBackend.exec = jest.fn().mockImplementation((cmd) => {
+    if (isDiscoveryCmd(cmd)) return Promise.resolve(discoveryResponse());
+    return Promise.resolve({ stdout: '', stderr, exitCode });
   });
 }
 
-/** Simulate a network-level SSH exception. */
+/**
+ * Discovery succeeds; backup-script call throws a network error.
+ */
 function mockSshError(message = 'Connection refused') {
-  sshBackend.exec = jest.fn().mockRejectedValue(new Error(message));
+  sshBackend.exec = jest.fn().mockImplementation((cmd) => {
+    if (isDiscoveryCmd(cmd)) return Promise.resolve(discoveryResponse());
+    return Promise.reject(new Error(message));
+  });
+}
+
+/** Find the backup-script call (bash -s) and return its stdin script. */
+function getBackupScript() {
+  const call = sshBackend.exec.mock.calls.find((c) => c[0] === 'bash -s');
+  return call ? call[1] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +117,7 @@ describe('AC1 — JS runtime resolution', () => {
 
     await handler();
 
-    const script = sshBackend.exec.mock.calls[0][1];
+    const script = getBackupScript();
     expect(script).toContain('$(which bun 2>/dev/null || which node 2>/dev/null || echo \'\')');
   });
 
@@ -83,7 +127,7 @@ describe('AC1 — JS runtime resolution', () => {
 
     await handler();
 
-    const script = sshBackend.exec.mock.calls[0][1];
+    const script = getBackupScript();
     expect(script).toContain("JSRT='bun'");
     expect(script).not.toContain('which bun');
   });
@@ -93,7 +137,7 @@ describe('AC1 — JS runtime resolution', () => {
 
     await handler();
 
-    const script = sshBackend.exec.mock.calls[0][1];
+    const script = getBackupScript();
     expect(script).toContain('[ -z "$JSRT" ]');
     expect(script).toContain('exit 1');
   });
@@ -150,7 +194,7 @@ describe('AC2 — tables configuration required', () => {
       checksum:  'aabbcc',
     });
     expect(result.backup_files[0].path).toMatch(/readings_.*\.jsonl$/);
-    const script = sshBackend.exec.mock.calls[0][1];
+    const script = getBackupScript();
     expect(script).toContain('SELECT * FROM readings');
   });
 });
@@ -172,7 +216,7 @@ describe('AC3 — multi-table', () => {
 
     await handler();
 
-    const script = sshBackend.exec.mock.calls[0][1];
+    const script = getBackupScript();
     for (const table of TABLES) {
       expect(script).toContain(`SELECT * FROM ${table}`);
     }
@@ -314,7 +358,7 @@ describe('AC5 — result shape on success', () => {
 
     await handler();
 
-    const script = sshBackend.exec.mock.calls[0][1];
+    const script = getBackupScript();
     // Must guard with !d.trim() before JSON.parse to handle 0-byte sqlite3 output
     expect(script).toContain("if(!d.trim())return;");
   });
@@ -324,7 +368,7 @@ describe('AC5 — result shape on success', () => {
 
     await handler();
 
-    const script = sshBackend.exec.mock.calls[0][1];
+    const script = getBackupScript();
     // Must write sqlite3 output to a temp file first...
     expect(script).toContain('TMPJSON=$(mktemp)');
     expect(script).toMatch(/sqlite3.*>\s*"\$TMPJSON"/);
@@ -334,5 +378,95 @@ describe('AC5 — result shape on success', () => {
     expect(script).toContain('rm -f "$TMPJSON"');
     // Must NOT have a direct sqlite3 | runtime pipe
     expect(script).not.toMatch(/sqlite3.*\|.*"\$JSRT"/);
+  });
+});
+
+// ===========================================================================
+// AC6 — schema-drift guard (discover tables before backup)
+// ===========================================================================
+
+describe('AC6 — schema-drift guard', () => {
+  test('queries sqlite_master before building the backup script', async () => {
+    setConfig({ tables: ['orders'] });
+    mockSshSuccess();
+
+    await handler();
+
+    const discoveryCall = sshBackend.exec.mock.calls.find((c) =>
+      typeof c[0] === 'string' && c[0].includes('sqlite_master')
+    );
+    expect(discoveryCall).toBeDefined();
+    // Discovery must run BEFORE the backup script.
+    const backupCallIndex    = sshBackend.exec.mock.calls.findIndex((c) => c[0] === 'bash -s');
+    const discoveryCallIndex = sshBackend.exec.mock.calls.indexOf(discoveryCall);
+    expect(discoveryCallIndex).toBeLessThan(backupCallIndex);
+  });
+
+  test('skips configured tables that do not exist in the DB (warn, do not fail)', async () => {
+    setConfig({ tables: ['orders', 'order_items', 'merchants'] });
+    // Discovery reports only `orders` and `merchants` — `order_items` is gone.
+    mockSshSuccess(
+      [
+        { rowCount: 100, checksum: 'hash1' },
+        { rowCount:  20, checksum: 'hash2' },
+      ],
+      ['orders', 'merchants', 'feedback', 'users'],
+    );
+
+    const result = await handler();
+
+    expect(result.success).toBe(true);
+    expect(result.backup_files).toHaveLength(2);
+    expect(result.backup_files.map((f) => f.table)).toEqual(['orders', 'merchants']);
+    expect(result.skipped_tables).toEqual(['order_items']);
+
+    // Backup script MUST NOT mention the missing table.
+    const script = getBackupScript();
+    expect(script).not.toContain('FROM order_items');
+    expect(script).toContain('FROM orders');
+    expect(script).toContain('FROM merchants');
+  });
+
+  test('returns success: false when every configured table is missing', async () => {
+    setConfig({ tables: ['readings', 'sensors'] });
+    mockSshSuccess([], ['orders', 'merchants']); // nothing configured matches
+
+    const result = await handler();
+
+    expect(result.success).toBe(false);
+    expect(result.backup_files).toEqual([]);
+    expect(result.skipped_tables).toEqual(['readings', 'sensors']);
+    expect(result.error).toMatch(/None of the configured tables exist/i);
+    // Backup script must NOT have been invoked — don't run an empty bash -s.
+    const backupCall = sshBackend.exec.mock.calls.find((c) => c[0] === 'bash -s');
+    expect(backupCall).toBeUndefined();
+  });
+
+  test('returns success: false when discovery itself fails (sqlite3 error)', async () => {
+    setConfig({ tables: ['orders'] });
+    sshBackend.exec = jest.fn().mockImplementation((cmd) => {
+      if (isDiscoveryCmd(cmd)) {
+        return Promise.resolve({ stdout: '', stderr: 'unable to open database', exitCode: 1 });
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    });
+
+    const result = await handler();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/enumerate tables|sqlite_master/i);
+    // Backup script must NOT have been invoked after discovery failure.
+    const backupCall = sshBackend.exec.mock.calls.find((c) => c[0] === 'bash -s');
+    expect(backupCall).toBeUndefined();
+  });
+
+  test('skipped_tables is empty (not undefined) when no drift', async () => {
+    setConfig({ tables: ['orders'] });
+    mockSshSuccess();
+
+    const result = await handler();
+
+    expect(result.success).toBe(true);
+    expect(result.skipped_tables).toEqual([]);
   });
 });

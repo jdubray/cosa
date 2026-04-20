@@ -2,6 +2,9 @@
 
 const sshBackend = require('../ssh-backend');
 const { getConfig } = require('../../config/cosa.config');
+const { createLogger } = require('../logger');
+
+const log = createLogger('backup-run');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,9 +32,12 @@ const SCHEMA = {
     'Export one or more appliance database tables to timestamped JSONL files ' +
     'on the appliance, writing a .sha256 sidecar for each.  Tables and the JS ' +
     'runtime used for serialization are configurable in appliance.yaml.  ' +
-    'Returns backup_files (one entry per table with path, row_count, checksum) ' +
-    'and timing.  Returns success: false with a structured error on SSH or ' +
-    'script failure — does not throw.',
+    'Before the backup runs, the tool queries sqlite_master to filter out any ' +
+    'configured tables that no longer exist in the schema (schema drift is a ' +
+    'warning, not a failure). Returns backup_files (one entry per backed-up ' +
+    'table with path, row_count, checksum), skipped_tables (configured but ' +
+    'missing from the DB), and timing. Returns success: false with a ' +
+    'structured error on SSH, discovery, or script failure — does not throw.',
   inputSchema: INPUT_SCHEMA,
 };
 
@@ -140,6 +146,40 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
 }
 
 /**
+ * Discover the set of user tables that currently exist in the appliance DB.
+ *
+ * Used to filter the configured `tables` list before building the main backup
+ * script. This turns schema drift (a table was renamed or dropped upstream)
+ * from a hard abort — `set -euo pipefail` kills the whole backup on the first
+ * sqlite3 "no such table" error — into a non-fatal warning: we skip the missing
+ * table and back up the rest.
+ *
+ * Returns `null` if discovery itself failed (SSH or sqlite3 error); the caller
+ * treats that as a backup failure and surfaces it to the operator.
+ *
+ * @param {string} dbPath
+ * @returns {Promise<Set<string> | null>}
+ */
+async function discoverExistingTables(dbPath) {
+  const qDb = `'${shEscape(dbPath)}'`;
+  const cmd =
+    `sqlite3 ${qDb} ` +
+    `"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"`;
+
+  let result;
+  try {
+    result = await sshBackend.exec(cmd);
+  } catch {
+    return null;
+  }
+  if (result.exitCode !== 0) return null;
+
+  return new Set(
+    result.stdout.split('\n').map((s) => s.trim()).filter(Boolean)
+  );
+}
+
+/**
  * Race an SSH exec against a hard timeout.
  *
  * @param {string}      command
@@ -208,7 +248,47 @@ async function handler() {
   const startMs   = Date.now();
   const fileTs    = isoToFileTs(startedAt);
 
-  const script = buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr);
+  // ── Schema-drift guard ────────────────────────────────────────────────────
+  // Query sqlite_master first so that a stale configured table name (dropped
+  // upstream) becomes a skipped-with-warning, not a fail-the-entire-backup.
+  const existing = await discoverExistingTables(dbPath);
+  if (existing === null) {
+    return {
+      success:      false,
+      backup_files: [],
+      started_at:   startedAt,
+      completed_at: new Date().toISOString(),
+      duration_ms:  Date.now() - startMs,
+      error:        'Failed to enumerate tables from sqlite_master — aborting before backup.',
+    };
+  }
+
+  const skippedTables  = tables.filter((t) => !existing.has(t));
+  const tablesToBackup = tables.filter((t) =>  existing.has(t));
+
+  if (skippedTables.length > 0) {
+    log.warn(
+      `Skipping ${skippedTables.length} configured table(s) missing from DB: ` +
+      `[${skippedTables.join(', ')}]. Update appliance.yaml to remove them.`
+    );
+  }
+
+  if (tablesToBackup.length === 0) {
+    return {
+      success:        false,
+      backup_files:   [],
+      skipped_tables: skippedTables,
+      started_at:     startedAt,
+      completed_at:   new Date().toISOString(),
+      duration_ms:    Date.now() - startMs,
+      error:
+        `None of the configured tables exist in the DB. ` +
+        `Configured: [${tables.join(', ')}]. ` +
+        `Existing (sample): [${[...existing].slice(0, 10).join(', ')}${existing.size > 10 ? ', ...' : ''}].`,
+    };
+  }
+
+  const script = buildScript(dbPath, backupDir, tablesToBackup, fileTs, runtimeExpr);
 
   // ── Execute backup script via SSH ─────────────────────────────────────────
   let execResult;
@@ -240,9 +320,9 @@ async function handler() {
     };
   }
 
-  // ── Parse 2×N output lines: row_count\nchecksum per table ─────────────────
+  // ── Parse 2×N output lines: row_count\nchecksum per backed-up table ───────
   const lines = stdout.trim().split('\n');
-  const backupFiles = tables.map((table, i) => {
+  const backupFiles = tablesToBackup.map((table, i) => {
     const backupFile = `${table}_${fileTs}.jsonl`;
     const rowCount   = parseInt(lines[i * 2], 10);
     const checksum   = (lines[i * 2 + 1] ?? '').trim();
@@ -255,11 +335,12 @@ async function handler() {
   });
 
   return {
-    success:      true,
-    backup_files: backupFiles,
-    started_at:   startedAt,
-    completed_at: completedAt,
-    duration_ms:  durationMs,
+    success:        true,
+    backup_files:   backupFiles,
+    skipped_tables: skippedTables,
+    started_at:     startedAt,
+    completed_at:   completedAt,
+    duration_ms:    durationMs,
   };
 }
 
