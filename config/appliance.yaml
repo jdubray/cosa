@@ -261,11 +261,29 @@ tools:
 network:
   # MAC addresses of devices that are authorized on the local network.
   # Each entry has a mac (colon-separated, lowercase) and an optional name.
+  #
+  # Baseline captured 2026-04-20 after the first successful network_scan
+  # (previously failing because `arp` was not installed on the Pi).
+  # The cafe-router and BaanBaan Pi entries are verified. The remaining
+  # four entries are trust-on-first-use — the OUIs match commercial
+  # restaurant gear (Sony on 00:11:62 = likely POS receipt printers;
+  # the others suspected delivery tablets / Clover POS) and the cafe
+  # operator has confirmed "most likely printers, delivery tablets,
+  # Clover POS". Walk the cafe and correlate each IP to a physical
+  # device to replace "suspected" labels with actual names.
   known_mac_addresses:
-    - mac: "b8:27:eb:00:00:01"
-      name: "Baanbaan Pi"
-    - mac: "dc:a6:32:00:00:02"
-      name: "Router"
+    - mac: "cc:32:e5:01:c8:92"
+      name: "Cafe router / gateway (192.168.1.1)"
+    - mac: "2c:cf:67:45:ac:8f"
+      name: "BaanBaan Pi (self, 192.168.1.248)"
+    - mac: "00:11:62:2b:27:57"
+      name: "Sony device @ 192.168.1.179 (suspected printer/POS; web admin on :80)"
+    - mac: "00:11:62:45:49:15"
+      name: "Sony device @ 192.168.1.217 (suspected printer/POS; web admin on :80)"
+    - mac: "88:a2:9e:66:f3:4e"
+      name: "Cafe device @ 192.168.1.144 (suspected delivery tablet or Clover POS)"
+    - mac: "c8:6e:08:e4:e2:60"
+      name: "Cafe device @ 192.168.1.122 (suspected delivery tablet or Clover POS)"
 
 monitoring:
   # Processes expected to be running at all times on this appliance.
