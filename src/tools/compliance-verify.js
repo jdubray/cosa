@@ -437,8 +437,8 @@ async function handler() {
 
   // ── Gather configurable file paths ───────────────────────────────────────
   const sensitiveFiles = appliance.tools?.compliance_verify?.sensitive_files ?? [
-    '/home/weather/.env',
-    '/home/weather/merchant.db',
+    '/home/baanbaan/baan-baan-merchant/v2/.env',
+    '/home/baanbaan/baan-baan-merchant/v2/data/merchant.db',
   ];
   const knownPortSet = new Set(
     (appliance.monitoring?.known_ports ?? []).map(Number)

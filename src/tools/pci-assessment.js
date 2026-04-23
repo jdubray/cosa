@@ -21,7 +21,7 @@ const CMD_DUPLICATE_UIDS    = "awk -F: 'seen[$3]++ {print $1, $3}' /etc/passwd 2
 const CMD_SSHD_PASSWORD_AUTH = 'grep -i "PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null';
 const CMD_AUTH_LOG_LINES    = 'wc -l /var/log/auth.log 2>/dev/null || echo "0 not-found"';
 const CMD_AUTH_LOG_STAT     = 'stat -c "%a %n" /var/log/auth.log 2>/dev/null || echo "not-found /var/log/auth.log"';
-const CMD_SECURITY_MD       = 'find /home/weather -name "SECURITY.md" -maxdepth 4 2>/dev/null | head -1';
+const CMD_SECURITY_MD       = 'find /home/baanbaan/baan-baan-merchant/v2 -name "SECURITY.md" -maxdepth 4 2>/dev/null | head -1';
 
 const INPUT_SCHEMA = {
   type:                 'object',
@@ -362,7 +362,7 @@ function check12_1(securityMdResult) {
 
   return req(
     ID, DESC, 'warning',
-    'SECURITY.md not found in /home/weather (searched up to 4 levels deep).',
+    'SECURITY.md not found in /home/baanbaan/baan-baan-merchant/v2 (searched up to 4 levels deep).',
     'Create a SECURITY.md documenting the security policy, incident response contacts, and vulnerability disclosure process.'
   );
 }

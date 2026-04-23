@@ -16,7 +16,7 @@ const RISK_LEVEL = 'read';
 
 // Default path to the git working tree on the remote appliance.
 // Override via tools.credential_audit.repo_path in appliance.yaml.
-const DEFAULT_REPO_PATH = '/home/weather';
+const DEFAULT_REPO_PATH = '/home/baanbaan/baan-baan-merchant/v2';
 
 const INPUT_SCHEMA = {
   type:                 'object',

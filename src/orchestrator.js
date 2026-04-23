@@ -235,12 +235,27 @@ async function callClaudeAction({ messages, systemPrompt, tools, apiKey, session
   }
 
   // AC3: Claude API call proceeds with the (possibly compressed) messages array.
+  // Prompt caching: mark the system prompt and the tools block as cacheable so
+  // repeat iterations within the same agent loop read the static prefix from
+  // cache (~10% of base input price) instead of re-billing the full prefix
+  // every turn.  Cache is ephemeral (5 min TTL).
+  const cachedSystem = typeof systemPrompt === 'string'
+    ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
+    : systemPrompt;
+
+  const cachedTools = tools.length > 0
+    ? [
+        ...tools.slice(0, -1),
+        { ...tools[tools.length - 1], cache_control: { type: 'ephemeral' } },
+      ]
+    : tools;
+
   const client   = new Anthropic({ apiKey });
   const response = await client.messages.create({
     model:      model,
     max_tokens: maxTokens,
-    system:     systemPrompt,
-    tools,
+    system:     cachedSystem,
+    tools:      cachedTools,
     messages:   workingMessages,
   });
 

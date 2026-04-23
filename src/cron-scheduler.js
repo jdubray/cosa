@@ -12,6 +12,11 @@ const { createAlert, findRecentAlert, findLastAlertByCategory, getLastToolOutput
 const { createLogger } = require('./logger');
 const healthCheckTool        = require('./tools/health-check');
 const internetIpCheckTool    = require('./tools/internet-ip-check');
+const credentialAuditTool    = require('./tools/credential-audit');
+const ipsAlertTool           = require('./tools/ips-alert');
+const backupVerifyTool       = require('./tools/backup-verify');
+const gitAuditTool           = require('./tools/git-audit');
+const sessionSearchTool      = require('./tools/session-search');
 
 const log = createLogger('cron-scheduler');
 
@@ -283,29 +288,6 @@ IMPORTANT: Your response IS the email body — it will be sent to the operator a
 Retrieve the appliance name from the config and use it in the subject.
 The email subject will be: [COSA] Weekly Security Digest — <appliance name> — ${weekOf}
 Plain text only — no HTML, no markdown.
-
-Current time: ${new Date().toISOString()}`,
-  };
-}
-
-/** @returns {{ type: string, source: string, message: string }} */
-function buildCredentialAuditTrigger() {
-  return {
-    type:    'cron',
-    source:  'credential-audit',
-    message: `Scheduled credential audit. Run credential_audit to check all stored credentials for age, strength, and exposure risk.
-
-The tool returns a "findings" array (active, not suppressed) and a "suppressedFindings" array (already acknowledged).
-Only alert on active findings. If findings is empty, do not send any alert.
-
-If any active finding is present, immediately run ips_alert with:
-- The findings summary as evidence
-- A "RESPONSE OPTIONS" section that includes, for each finding, a pre-formatted SUPPRESS command:
-    SUPPRESS <fingerprint> <short reason>
-  where <fingerprint> is the finding's "fingerprint" field from the tool output.
-  Example response option line: "SUPPRESS aws_access_key:test/backup.test.ts:270 test dummy — not a real key"
-
-The operator can reply to the alert email with any SUPPRESS line to permanently silence that finding.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -957,10 +939,13 @@ async function runBackupVerifyTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
 
-  const trigger                    = buildBackupVerifyTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
-
-  const verifyResult = getLastToolOutput(sessionId, 'backup_verify') ?? {};
+  let verifyResult;
+  try {
+    verifyResult = await backupVerifyTool.handler({});
+  } catch (err) {
+    log.error(`[backup-verify] tool threw: ${err.message}`);
+    verifyResult = { verified: false, error: err.message };
+  }
 
   if (verifyResult.verified) {
     log.info(`Backup verification passed: ${verifyResult.backup_path}`);
@@ -997,7 +982,7 @@ async function runBackupVerifyTask() {
   });
 
   createAlert({
-    session_id: sessionId,
+    session_id: crypto.randomUUID(), // no Claude session for backup_verify
     severity:   'critical',
     category:   BACKUP_CATEGORY,
     title,
@@ -1025,6 +1010,31 @@ async function runArchiveCheckTask() {
 
   if (recent) {
     log.info(`Suppressed duplicate archive-check alert (last sent: ${recent.sent_at})`);
+    return;
+  }
+
+  // Pre-filter: search the session store directly for backup-anomaly mentions
+  // in the past 7 days.  Skip the Claude session entirely when there's nothing
+  // for it to narrate — the common case on a healthy appliance.
+  const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  let searchResult;
+  try {
+    searchResult = sessionSearchTool.handler({
+      query: 'backup AND (failure OR anomaly OR corrupt OR mismatch)',
+      limit: 20,
+    });
+  } catch (err) {
+    log.error(`[archive-check] session_search threw: ${err.message}`);
+    return;
+  }
+
+  const recentMatches = (searchResult?.results ?? []).filter(r => {
+    const ts = Date.parse(r.started_at ?? r.created_at ?? '');
+    return Number.isFinite(ts) && ts >= sevenDaysAgoMs;
+  });
+
+  if (recentMatches.length === 0) {
+    log.info('Archive check clean: no backup anomaly mentions in the past 7 days');
     return;
   }
 
@@ -1157,23 +1167,37 @@ async function runWeeklyDigestTask() {
  * @returns {Promise<void>}
  */
 async function runGitAuditTask() {
-  const trigger                    = buildGitAuditTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
-
-  const auditResult = getLastToolOutput(sessionId, 'git_audit') ?? {};
-  const severity    = auditResult.severity ?? 'none';
-
-  if (['medium', 'high', 'critical'].includes(severity)) {
-    createAlert({
-      session_id: sessionId,
-      severity,
-      category:   GIT_AUDIT_CATEGORY,
-      title:      `Git audit: ${severity} finding`,
-      body:       JSON.stringify(auditResult),
-      sent_at:    new Date().toISOString(),
-      email_to:   null,
-    });
+  // Run the tool directly first so we can skip the Claude session entirely
+  // on clean runs (severity < medium), which is the common case.
+  let auditResult;
+  try {
+    auditResult = await gitAuditTool.handler({});
+  } catch (err) {
+    log.error(`[git-audit] tool threw: ${err.message}`);
+    auditResult = { severity: 'none', error: err.message };
   }
+
+  const severity = auditResult.severity ?? 'none';
+
+  if (!['medium', 'high', 'critical'].includes(severity)) {
+    log.info(`Git audit complete: severity=${severity}`);
+    return;
+  }
+
+  // Anomaly — run a Claude session so Claude can call ips_alert with a
+  // narrative summary alongside the structured alert record below.
+  const trigger                   = buildGitAuditTrigger();
+  const { session_id: sessionId } = await runSessionWithTimeout(trigger);
+
+  createAlert({
+    session_id: sessionId,
+    severity,
+    category:   GIT_AUDIT_CATEGORY,
+    title:      `Git audit: ${severity} finding`,
+    body:       JSON.stringify(auditResult),
+    sent_at:    new Date().toISOString(),
+    email_to:   null,
+  });
 
   log.info(`Git audit complete: severity=${severity}`);
 }
@@ -1307,30 +1331,92 @@ async function runWeeklySecurityDigestTask() {
 }
 
 /**
- * Run credential_audit on Monday at 2:00 AM.  Claude is instructed to call
- * ips_alert within the session if any finding is present.
+ * Pick the worst severity across a list of findings.
+ * Ordering: critical > high > warning.
+ * @param {Array<{ severity?: string }>} findings
+ * @returns {'critical'|'high'|'warning'}
+ */
+function _worstSeverity(findings) {
+  if (findings.some(f => f.severity === 'critical')) return 'critical';
+  if (findings.some(f => f.severity === 'high'))     return 'high';
+  return 'warning';
+}
+
+/**
+ * Run credential_audit on Monday at 2:00 AM.
+ *
+ * No orchestrator / LLM session is used — the tool is invoked directly and the
+ * alert body is built mechanically from its JSON output. This prevents the
+ * composer (previously Haiku) from hallucinating fingerprints or conflating the
+ * already-suppressed findings list with the active findings list.
+ *
  * @returns {Promise<void>}
  */
 async function runCredentialAuditTask() {
-  const trigger                    = buildCredentialAuditTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
-
-  const auditResult  = getLastToolOutput(sessionId, 'credential_audit') ?? {};
-  const findingCount = (auditResult.findings ?? []).length;
-
-  if (findingCount > 0) {
-    createAlert({
-      session_id: sessionId,
-      severity:   auditResult.severity ?? 'warning',
-      category:   CREDENTIAL_AUDIT_CATEGORY,
-      title:      `Credential audit: ${findingCount} finding(s)`,
-      body:       JSON.stringify(auditResult),
-      sent_at:    new Date().toISOString(),
-      email_to:   null,
-    });
+  let auditResult;
+  try {
+    auditResult = await credentialAuditTool.handler();
+  } catch (err) {
+    log.error(`Credential audit threw: ${err.message}`);
+    return;
   }
 
-  log.info(`Credential audit complete: ${findingCount} finding(s)`);
+  const findings           = Array.isArray(auditResult.findings)           ? auditResult.findings           : [];
+  const suppressedFindings = Array.isArray(auditResult.suppressedFindings) ? auditResult.suppressedFindings : [];
+
+  if (findings.length === 0) {
+    log.info(
+      `Credential audit complete: 0 active finding(s), ${suppressedFindings.length} suppressed`
+    );
+    return;
+  }
+
+  const severity = _worstSeverity(findings);
+
+  // Evidence lines are built mechanically — one per active finding, each
+  // quoting the exact file:line and fingerprint from the tool output. No
+  // suppressed finding ever touches this list.
+  const evidence = findings.map(f =>
+    `${f.description ?? f.pattern} — ${f.file}:${f.line} — ${f.snippet ?? ''} ` +
+    `(fingerprint: ${f.fingerprint})`
+  );
+
+  const responseOptions = findings.map(
+    f => `SUPPRESS ${f.fingerprint} <reason>`
+  );
+
+  let ipsResult;
+  try {
+    ipsResult = await ipsAlertTool.handler({
+      severity,
+      incidentType:        `Credential Exposure — ${findings.length} active finding(s) detected`,
+      evidence,
+      actionsAlreadyTaken: 'Credential audit completed. Secret values redacted in output. No state changes made.',
+      responseOptions,
+      autoExpireMinutes:   30,
+    });
+  } catch (err) {
+    log.error(`Credential audit: ips_alert dispatch failed: ${err.message}`);
+    return;
+  }
+
+  createAlert({
+    session_id: ipsResult?.alertRef ?? `cred-audit-${Date.now()}`,
+    severity,
+    category:   CREDENTIAL_AUDIT_CATEGORY,
+    title:      `Credential audit: ${findings.length} finding(s)`,
+    body:       JSON.stringify({
+      findings,
+      gitignoreCoverage: auditResult.gitignoreCoverage,
+    }),
+    sent_at:    new Date().toISOString(),
+    email_to:   null,
+  });
+
+  log.info(
+    `Credential audit complete: ${findings.length} active finding(s) ` +
+    `(${severity}), ${suppressedFindings.length} suppressed — alert sent`
+  );
 }
 
 /**
@@ -1622,7 +1708,6 @@ module.exports = {
   buildNetworkScanTrigger,
   buildAccessLogScanTrigger,
   buildWeeklySecurityDigestTrigger,
-  buildCredentialAuditTrigger,
   buildComplianceVerifyTrigger,
   buildWebhookHmacTrigger,
   buildJwtSecretCheckTrigger,

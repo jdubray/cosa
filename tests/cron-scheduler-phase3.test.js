@@ -39,6 +39,36 @@ jest.mock('../src/logger', () => ({
   createLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
 }));
 
+const mockCredentialAuditHandler = jest.fn();
+jest.mock('../src/tools/credential-audit', () => ({
+  name:    'credential_audit',
+  handler: (...a) => mockCredentialAuditHandler(...a),
+}));
+
+const mockIpsAlertHandler = jest.fn();
+jest.mock('../src/tools/ips-alert', () => ({
+  name:    'ips_alert',
+  handler: (...a) => mockIpsAlertHandler(...a),
+}));
+
+const mockGitAuditHandler = jest.fn();
+jest.mock('../src/tools/git-audit', () => ({
+  name:    'git_audit',
+  handler: (...a) => mockGitAuditHandler(...a),
+}));
+
+const mockBackupVerifyHandler = jest.fn();
+jest.mock('../src/tools/backup-verify', () => ({
+  name:    'backup_verify',
+  handler: (...a) => mockBackupVerifyHandler(...a),
+}));
+
+const mockSessionSearchHandler = jest.fn();
+jest.mock('../src/tools/session-search', () => ({
+  name:    'session_search',
+  handler: (...a) => mockSessionSearchHandler(...a),
+}));
+
 // ---------------------------------------------------------------------------
 // Module under test
 // ---------------------------------------------------------------------------
@@ -62,7 +92,6 @@ const {
   buildNetworkScanTrigger,
   buildAccessLogScanTrigger,
   buildWeeklySecurityDigestTrigger,
-  buildCredentialAuditTrigger,
   buildComplianceVerifyTrigger,
   buildWebhookHmacTrigger,
   buildJwtSecretCheckTrigger,
@@ -92,6 +121,11 @@ beforeEach(() => {
   mockFindRecentAlert.mockReturnValue(undefined);
   mockCronSchedule.mockReturnValue({ stop: mockTaskStop });
   mockGetLastToolOutput.mockReturnValue({});
+  mockCredentialAuditHandler.mockResolvedValue({ findings: [], suppressedFindings: [], gitignoreCoverage: { coversEnv: true, coversSecrets: true } });
+  mockIpsAlertHandler.mockResolvedValue({ sent: true, alertRef: 'IPS-TEST-001' });
+  mockGitAuditHandler.mockResolvedValue({ severity: 'none' });
+  mockBackupVerifyHandler.mockResolvedValue({ verified: true, backup_path: '/tmp/cosa-backups/latest.jsonl' });
+  mockSessionSearchHandler.mockReturnValue({ results: [], total_found: 0 });
 });
 
 afterEach(() => {
@@ -136,7 +170,7 @@ describe('AC1 – git_audit every 6 hours', () => {
   });
 
   test('creates alert when git_audit severity is medium', async () => {
-    mockGetLastToolOutput.mockReturnValue({ severity: 'medium' });
+    mockGitAuditHandler.mockResolvedValue({ severity: 'medium' });
     await runGitAuditTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
       category: 'git_audit',
@@ -145,7 +179,7 @@ describe('AC1 – git_audit every 6 hours', () => {
   });
 
   test('creates alert when git_audit severity is high', async () => {
-    mockGetLastToolOutput.mockReturnValue({ severity: 'high' });
+    mockGitAuditHandler.mockResolvedValue({ severity: 'high' });
     await runGitAuditTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
       severity: 'high',
@@ -153,7 +187,7 @@ describe('AC1 – git_audit every 6 hours', () => {
   });
 
   test('creates alert when git_audit severity is critical', async () => {
-    mockGetLastToolOutput.mockReturnValue({ severity: 'critical' });
+    mockGitAuditHandler.mockResolvedValue({ severity: 'critical' });
     await runGitAuditTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
       severity: 'critical',
@@ -161,13 +195,13 @@ describe('AC1 – git_audit every 6 hours', () => {
   });
 
   test('does NOT create alert when severity is low', async () => {
-    mockGetLastToolOutput.mockReturnValue({ severity: 'low' });
+    mockGitAuditHandler.mockResolvedValue({ severity: 'low' });
     await runGitAuditTask();
     expect(mockCreateAlert).not.toHaveBeenCalled();
   });
 
   test('does NOT create alert when severity is absent', async () => {
-    mockGetLastToolOutput.mockReturnValue({});
+    mockGitAuditHandler.mockResolvedValue({});
     await runGitAuditTask();
     expect(mockCreateAlert).not.toHaveBeenCalled();
   });
@@ -327,34 +361,150 @@ describe('AC5 – weekly security digest Monday 2:00 AM', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC6: credential_audit — Monday 2:00 AM, ips_alert if any finding
+// AC6: credential_audit — Monday 2:00 AM, direct tool call (no orchestrator)
+//
+// The task calls credential-audit.handler() and ips-alert.handler() directly.
+// No LLM is involved in composing the alert body — evidence lines are built
+// mechanically from the findings array, which guarantees the body cannot cite
+// fingerprints or files that don't exist in the tool's active-findings list.
 // ---------------------------------------------------------------------------
 
 describe('AC6 – credential_audit Monday 2:00 AM', () => {
-  test('trigger source is credential-audit', () => {
-    const trigger = buildCredentialAuditTrigger();
-    expect(trigger.source).toBe('credential-audit');
+  test('calls credential_audit handler directly (no orchestrator session)', async () => {
+    await runCredentialAuditTask();
+    expect(mockCredentialAuditHandler).toHaveBeenCalledTimes(1);
+    expect(mockRunSession).not.toHaveBeenCalled();
   });
 
-  test('trigger message instructs ips_alert if finding present', () => {
-    const { message } = buildCredentialAuditTrigger();
-    expect(message).toMatch(/ips_alert/);
-    expect(message).toMatch(/finding/i);
-  });
-
-  test('creates alert when credential_audit has findings', async () => {
-    mockGetLastToolOutput.mockReturnValue({
-      findings: [{ file: '.env', severity: 'critical' }],
+  test('does NOT send alert or createAlert when findings array is empty', async () => {
+    mockCredentialAuditHandler.mockResolvedValue({
+      findings:           [],
+      suppressedFindings: [{ pattern: 'password_assignment', file: 'test/auth.test.ts', line: 161 }],
+      gitignoreCoverage:  { coversEnv: true, coversSecrets: true },
     });
     await runCredentialAuditTask();
+    expect(mockIpsAlertHandler).not.toHaveBeenCalled();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+  });
+
+  test('sends ips_alert and creates alert row when findings present', async () => {
+    mockCredentialAuditHandler.mockResolvedValue({
+      findings: [{
+        file:        'public/js/dashboard.js',
+        line:        6442,
+        pattern:     'password_assignment',
+        severity:    'high',
+        description: 'Plain-text password assignment',
+        snippet:     'const password = document.getElementById([REDACTED])',
+        fingerprint: 'password_assignment:public/js/dashboard.js:6442',
+      }],
+      suppressedFindings: [],
+      gitignoreCoverage:  { coversEnv: true, coversSecrets: true },
+    });
+    await runCredentialAuditTask();
+    expect(mockIpsAlertHandler).toHaveBeenCalledTimes(1);
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
       category: 'credential_audit',
     }));
   });
 
-  test('does NOT create alert when no findings', async () => {
-    mockGetLastToolOutput.mockReturnValue({ findings: [] });
+  test('uses critical severity when any active finding is critical', async () => {
+    mockCredentialAuditHandler.mockResolvedValue({
+      findings: [
+        { file: 'src/x.ts', line: 10, pattern: 'aws_access_key', severity: 'critical',
+          description: 'AWS key', snippet: 'k = AKIA[REDACTED]',
+          fingerprint: 'aws_access_key:src/x.ts:10' },
+        { file: 'src/y.ts', line: 20, pattern: 'password_assignment', severity: 'high',
+          description: 'pwd', snippet: 'p = [REDACTED]',
+          fingerprint: 'password_assignment:src/y.ts:20' },
+      ],
+      suppressedFindings: [],
+      gitignoreCoverage:  { coversEnv: true, coversSecrets: true },
+    });
     await runCredentialAuditTask();
+    const payload = mockIpsAlertHandler.mock.calls[0][0];
+    expect(payload.severity).toBe('critical');
+  });
+
+  test('uses high severity when all active findings are high (none critical)', async () => {
+    mockCredentialAuditHandler.mockResolvedValue({
+      findings: [
+        { file: 'public/js/dashboard.js', line: 6442, pattern: 'password_assignment', severity: 'high',
+          description: 'pwd', snippet: '[REDACTED]',
+          fingerprint: 'password_assignment:public/js/dashboard.js:6442' },
+      ],
+      suppressedFindings: [],
+      gitignoreCoverage:  { coversEnv: true, coversSecrets: true },
+    });
+    await runCredentialAuditTask();
+    const payload = mockIpsAlertHandler.mock.calls[0][0];
+    expect(payload.severity).toBe('high');
+  });
+
+  test('evidence contains one entry per active finding, quoting file:line and fingerprint', async () => {
+    mockCredentialAuditHandler.mockResolvedValue({
+      findings: [
+        { file: 'public/js/dashboard.js', line: 6442, pattern: 'password_assignment', severity: 'high',
+          description: 'Plain-text password assignment',
+          snippet: 'const password = [REDACTED]',
+          fingerprint: 'password_assignment:public/js/dashboard.js:6442' },
+      ],
+      suppressedFindings: [],
+      gitignoreCoverage:  { coversEnv: true, coversSecrets: true },
+    });
+    await runCredentialAuditTask();
+    const payload = mockIpsAlertHandler.mock.calls[0][0];
+    expect(payload.evidence).toHaveLength(1);
+    expect(payload.evidence[0]).toMatch(/public\/js\/dashboard\.js:6442/);
+    expect(payload.evidence[0]).toMatch(/password_assignment:public\/js\/dashboard\.js:6442/);
+  });
+
+  test('suppressedFindings never appear in ips_alert evidence or responseOptions', async () => {
+    mockCredentialAuditHandler.mockResolvedValue({
+      findings: [
+        { file: 'public/js/dashboard.js', line: 6442, pattern: 'password_assignment', severity: 'high',
+          description: 'pwd', snippet: '[REDACTED]',
+          fingerprint: 'password_assignment:public/js/dashboard.js:6442' },
+      ],
+      suppressedFindings: [
+        { file: 'test/auth.test.ts',    line: 161, pattern: 'password_assignment', severity: 'high',
+          description: 'pwd', snippet: '[REDACTED]',
+          fingerprint: 'password_assignment:test/auth.test.ts:161' },
+        { file: 'test/backup.test.ts',  line: 270, pattern: 'aws_access_key', severity: 'critical',
+          description: 'AWS key', snippet: '[REDACTED]',
+          fingerprint: 'aws_access_key:test/backup.test.ts:270' },
+      ],
+      gitignoreCoverage: { coversEnv: true, coversSecrets: true },
+    });
+    await runCredentialAuditTask();
+    const payload      = mockIpsAlertHandler.mock.calls[0][0];
+    const allText      = [...payload.evidence, ...(payload.responseOptions ?? [])].join('\n');
+    expect(allText).not.toMatch(/test\/auth\.test\.ts/);
+    expect(allText).not.toMatch(/test\/backup\.test\.ts/);
+    expect(allText).not.toMatch(/aws_access_key:test/);
+  });
+
+  test('responseOptions include a SUPPRESS line for each active finding using its fingerprint', async () => {
+    mockCredentialAuditHandler.mockResolvedValue({
+      findings: [
+        { file: 'public/js/dashboard.js', line: 6442, pattern: 'password_assignment', severity: 'high',
+          description: 'pwd', snippet: '[REDACTED]',
+          fingerprint: 'password_assignment:public/js/dashboard.js:6442' },
+      ],
+      suppressedFindings: [],
+      gitignoreCoverage:  { coversEnv: true, coversSecrets: true },
+    });
+    await runCredentialAuditTask();
+    const payload = mockIpsAlertHandler.mock.calls[0][0];
+    const suppressLine = payload.responseOptions.find(o => o.startsWith('SUPPRESS '));
+    expect(suppressLine).toBeDefined();
+    expect(suppressLine).toContain('password_assignment:public/js/dashboard.js:6442');
+  });
+
+  test('swallows handler errors instead of throwing (cron task must not hang the loop)', async () => {
+    mockCredentialAuditHandler.mockRejectedValue(new Error('SSH not connected'));
+    await expect(runCredentialAuditTask()).resolves.toBeUndefined();
+    expect(mockIpsAlertHandler).not.toHaveBeenCalled();
     expect(mockCreateAlert).not.toHaveBeenCalled();
   });
 });

@@ -196,6 +196,9 @@ tools:
         file: public/js/app.js
         reason: "JS state variables initialised to null and populated from form inputs; not hardcoded credentials"
       - pattern: password_assignment
+        file: public/js/dashboard.js
+        reason: "Finix form-input read (document.getElementById('finix-password-input').value); not a hardcoded credential"
+      - pattern: password_assignment
         file: src/routes/merchants.ts
         reason: "receiptEmailPassword is user-supplied SMTP config; webhook secret uses randomBytes(32)+AES-256-GCM — correct pattern"
       - pattern: base64_secret
