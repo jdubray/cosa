@@ -127,9 +127,11 @@ describe('T-2.2 — Shift report email delivery', () => {
     expect(mockSentEmails[0].subject).toBe(`[COSA] Shift Report: ${today}`);
   });
 
-  it('email body is the orchestrator response (plain text)', async () => {
+  it('email body is the rendered shift-report template (plain text)', async () => {
     await cronScheduler.runShiftReportTask();
-    expect(mockSentEmails[0].text).toContain('Daily Shift Report');
+    expect(mockSentEmails[0].text).toContain('COSA — Shift Report');
+    expect(mockSentEmails[0].text).toContain('ORDERS');
+    expect(mockSentEmails[0].text).toContain('REVENUE');
   });
 
   it('creates an alert row with category=shift_report', async () => {

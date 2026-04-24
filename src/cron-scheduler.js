@@ -20,6 +20,7 @@ const backupRunTool          = require('./tools/backup-run');
 const processMonitorTool     = require('./tools/process-monitor');
 const networkScanTool        = require('./tools/network-scan');
 const accessLogScanTool      = require('./tools/access-log-scan');
+const shiftReportTool        = require('./tools/shift-report');
 
 const log = createLogger('cron-scheduler');
 
@@ -1069,6 +1070,50 @@ async function runArchiveCheckTask() {
  * Subject format: [COSA] Shift Report: YYYY-MM-DD
  * @returns {Promise<void>}
  */
+function formatShiftReportBody(data) {
+  const fmtTime  = iso => (iso ? iso.replace('T', ' ').replace(/\.\d+Z$/, ' UTC') : 'n/a');
+  const fmtMoney = n   => `$${Number(n ?? 0).toFixed(2)}`;
+
+  const orders    = data.orders  ?? {};
+  const revenue   = data.revenue ?? {};
+  const anomalies = data.anomalies ?? [];
+  const currency  = revenue.currency ?? 'USD';
+
+  const lines = [
+    'COSA — Shift Report',
+    '',
+    `Period:  ${fmtTime(data.period_start)}  →  ${fmtTime(data.period_end)}`,
+    '',
+    'ORDERS',
+    `  Total:      ${orders.total     ?? 0}`,
+    `  Completed:  ${orders.completed ?? 0}`,
+    `  Cancelled:  ${orders.cancelled ?? 0}`,
+    `  Active:     ${orders.active    ?? 0}`,
+    '',
+    'REVENUE',
+    `  Payments:       ${revenue.payment_count ?? 0}`,
+    `  Total:          ${fmtMoney(revenue.total)} ${currency}`,
+    `  Avg/order:      ${fmtMoney(revenue.avg_order_value)}`,
+    '',
+    'STAFF',
+    `  On shift:       ${data.staff_count ?? 0}`,
+    '',
+    'SYSTEM',
+    `  Payment errors: ${data.payment_errors ?? 0}`,
+    '',
+    `ANOMALIES (${anomalies.length})`,
+  ];
+
+  if (anomalies.length === 0) {
+    lines.push('  None');
+  } else {
+    for (const a of anomalies) lines.push(`  - ${a}`);
+  }
+
+  lines.push('', '--- Automated report from COSA ---');
+  return lines.join('\n');
+}
+
 async function runShiftReportTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
@@ -1084,12 +1129,17 @@ async function runShiftReportTask() {
     return;
   }
 
-  const trigger                    = buildShiftReportTrigger();
-  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
+  // Render the report deterministically from the tool output — no Claude session.
+  // The shift report is pure metrics; a template covers every case.
+  let data;
+  try {
+    data = await shiftReportTool.handler({});
+  } catch (err) {
+    log.error(`[shift-report] tool threw: ${err.message}`);
+    data = null;
+  }
 
-  // Use the orchestrator's final response as the email body.
-  // COSA is instructed to format the full plain-text report as its response.
-  const body   = response || '(No shift report data available.)';
+  const body   = data ? formatShiftReportBody(data) : '(No shift report data available.)';
   const sentAt = new Date().toISOString();
 
   await emailGateway.sendEmail({
@@ -1099,7 +1149,7 @@ async function runShiftReportTask() {
   });
 
   createAlert({
-    session_id: sessionId,
+    session_id: crypto.randomUUID(), // no Claude session for shift_report
     severity:   'info',
     category:   SHIFT_REPORT_CATEGORY,
     title:      subject,
