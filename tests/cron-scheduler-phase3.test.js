@@ -69,6 +69,30 @@ jest.mock('../src/tools/session-search', () => ({
   handler: (...a) => mockSessionSearchHandler(...a),
 }));
 
+const mockBackupRunHandler = jest.fn();
+jest.mock('../src/tools/backup-run', () => ({
+  name:    'backup_run',
+  handler: (...a) => mockBackupRunHandler(...a),
+}));
+
+const mockProcessMonitorHandler = jest.fn();
+jest.mock('../src/tools/process-monitor', () => ({
+  name:    'process_monitor',
+  handler: (...a) => mockProcessMonitorHandler(...a),
+}));
+
+const mockNetworkScanHandler = jest.fn();
+jest.mock('../src/tools/network-scan', () => ({
+  name:    'network_scan',
+  handler: (...a) => mockNetworkScanHandler(...a),
+}));
+
+const mockAccessLogScanHandler = jest.fn();
+jest.mock('../src/tools/access-log-scan', () => ({
+  name:    'access_log_scan',
+  handler: (...a) => mockAccessLogScanHandler(...a),
+}));
+
 // ---------------------------------------------------------------------------
 // Module under test
 // ---------------------------------------------------------------------------
@@ -126,6 +150,10 @@ beforeEach(() => {
   mockGitAuditHandler.mockResolvedValue({ severity: 'none' });
   mockBackupVerifyHandler.mockResolvedValue({ verified: true, backup_path: '/tmp/cosa-backups/latest.jsonl' });
   mockSessionSearchHandler.mockReturnValue({ results: [], total_found: 0 });
+  mockBackupRunHandler.mockResolvedValue({ success: true, row_count: 100, backup_path: '/tmp/cosa-backups/latest.jsonl' });
+  mockProcessMonitorHandler.mockResolvedValue({ severity: 'none' });
+  mockNetworkScanHandler.mockResolvedValue({ unknownDevices: [] });
+  mockAccessLogScanHandler.mockResolvedValue({ anomalies: [] });
 });
 
 afterEach(() => {
@@ -224,7 +252,7 @@ describe('AC2 – process_monitor every 6 hours', () => {
   });
 
   test('creates alert when process_monitor severity is medium', async () => {
-    mockGetLastToolOutput.mockReturnValue({ severity: 'medium' });
+    mockProcessMonitorHandler.mockResolvedValue({ severity: 'medium' });
     await runProcessMonitorTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
       category: 'process_monitor',
@@ -233,7 +261,7 @@ describe('AC2 – process_monitor every 6 hours', () => {
   });
 
   test('does NOT create alert when severity is low', async () => {
-    mockGetLastToolOutput.mockReturnValue({ severity: 'low' });
+    mockProcessMonitorHandler.mockResolvedValue({ severity: 'low' });
     await runProcessMonitorTask();
     expect(mockCreateAlert).not.toHaveBeenCalled();
   });
@@ -256,8 +284,8 @@ describe('AC3 – network_scan every 6 hours', () => {
   });
 
   test('creates alert when unknown_devices list is non-empty', async () => {
-    mockGetLastToolOutput.mockReturnValue({
-      unknown_devices: [{ ip: '192.168.1.99', mac: 'aa:bb:cc:dd:ee:ff' }],
+    mockNetworkScanHandler.mockResolvedValue({
+      unknownDevices: [{ ip: '192.168.1.99', mac: 'aa:bb:cc:dd:ee:ff' }],
     });
     await runNetworkScanTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
@@ -267,7 +295,7 @@ describe('AC3 – network_scan every 6 hours', () => {
   });
 
   test('does NOT create alert when no unknown devices', async () => {
-    mockGetLastToolOutput.mockReturnValue({ unknown_devices: [] });
+    mockNetworkScanHandler.mockResolvedValue({ unknownDevices: [] });
     await runNetworkScanTask();
     expect(mockCreateAlert).not.toHaveBeenCalled();
   });
@@ -289,7 +317,7 @@ describe('AC4 – access_log_scan every 6 hours', () => {
   });
 
   test('creates alert when anomalies are detected', async () => {
-    mockGetLastToolOutput.mockReturnValue({
+    mockAccessLogScanHandler.mockResolvedValue({
       anomalies: [{ type: 'brute_force', count: 50 }],
       severity: 'high',
     });
@@ -300,7 +328,7 @@ describe('AC4 – access_log_scan every 6 hours', () => {
   });
 
   test('does NOT create alert when anomalies list is empty', async () => {
-    mockGetLastToolOutput.mockReturnValue({ anomalies: [] });
+    mockAccessLogScanHandler.mockResolvedValue({ anomalies: [] });
     await runAccessLogScanTask();
     expect(mockCreateAlert).not.toHaveBeenCalled();
   });

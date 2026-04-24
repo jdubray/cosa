@@ -16,6 +16,10 @@ const credentialAuditTool    = require('./tools/credential-audit');
 const ipsAlertTool           = require('./tools/ips-alert');
 const backupVerifyTool       = require('./tools/backup-verify');
 const gitAuditTool           = require('./tools/git-audit');
+const backupRunTool          = require('./tools/backup-run');
+const processMonitorTool     = require('./tools/process-monitor');
+const networkScanTool        = require('./tools/network-scan');
+const accessLogScanTool      = require('./tools/access-log-scan');
 
 const log = createLogger('cron-scheduler');
 
@@ -881,10 +885,13 @@ async function runBackupTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
 
-  const trigger                    = buildBackupTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
-
-  const backupResult = getLastToolOutput(sessionId, 'backup_run') ?? {};
+  let backupResult;
+  try {
+    backupResult = await backupRunTool.handler({});
+  } catch (err) {
+    log.error(`[backup] tool threw: ${err.message}`);
+    backupResult = { success: false, error: err.message };
+  }
 
   if (backupResult.success) {
     log.info(`Backup complete: ${backupResult.row_count} rows → ${backupResult.backup_path}`);
@@ -921,7 +928,7 @@ async function runBackupTask() {
   });
 
   createAlert({
-    session_id: sessionId,
+    session_id: crypto.randomUUID(), // no Claude session for backup
     severity:   'critical',
     category:   BACKUP_CATEGORY,
     title,
@@ -1202,23 +1209,34 @@ async function runGitAuditTask() {
  * @returns {Promise<void>}
  */
 async function runProcessMonitorTask() {
-  const trigger                    = buildProcessMonitorTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
-
-  const monitorResult = getLastToolOutput(sessionId, 'process_monitor') ?? {};
-  const severity      = monitorResult.severity ?? 'none';
-
-  if (['medium', 'high', 'critical'].includes(severity)) {
-    createAlert({
-      session_id: sessionId,
-      severity,
-      category:   PROCESS_MONITOR_CATEGORY,
-      title:      `Process monitor: ${severity} finding`,
-      body:       JSON.stringify(monitorResult),
-      sent_at:    new Date().toISOString(),
-      email_to:   null,
-    });
+  let monitorResult;
+  try {
+    monitorResult = await processMonitorTool.handler({});
+  } catch (err) {
+    log.error(`[process-monitor] tool threw: ${err.message}`);
+    monitorResult = { severity: 'none', error: err.message };
   }
+
+  const severity = monitorResult.severity ?? 'none';
+
+  if (!['medium', 'high', 'critical'].includes(severity)) {
+    log.info(`Process monitor complete: severity=${severity}`);
+    return;
+  }
+
+  // Anomaly — run Claude session so ips_alert is triggered with narrative.
+  const trigger                   = buildProcessMonitorTrigger();
+  const { session_id: sessionId } = await runSessionWithTimeout(trigger);
+
+  createAlert({
+    session_id: sessionId,
+    severity,
+    category:   PROCESS_MONITOR_CATEGORY,
+    title:      `Process monitor: ${severity} finding`,
+    body:       JSON.stringify(monitorResult),
+    sent_at:    new Date().toISOString(),
+    email_to:   null,
+  });
 
   log.info(`Process monitor complete: severity=${severity}`);
 }
@@ -1229,23 +1247,33 @@ async function runProcessMonitorTask() {
  * @returns {Promise<void>}
  */
 async function runNetworkScanTask() {
-  const trigger                    = buildNetworkScanTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
-
-  const scanResult    = getLastToolOutput(sessionId, 'network_scan') ?? {};
-  const unknownCount  = (scanResult.unknownDevices ?? []).length;
-
-  if (unknownCount > 0) {
-    createAlert({
-      session_id: sessionId,
-      severity:   'high',
-      category:   NETWORK_SCAN_CATEGORY,
-      title:      `Network scan: ${unknownCount} unknown device(s) detected`,
-      body:       JSON.stringify(scanResult),
-      sent_at:    new Date().toISOString(),
-      email_to:   null,
-    });
+  let scanResult;
+  try {
+    scanResult = await networkScanTool.handler({});
+  } catch (err) {
+    log.error(`[network-scan] tool threw: ${err.message}`);
+    scanResult = { unknownDevices: [], error: err.message };
   }
+
+  const unknownCount = (scanResult.unknownDevices ?? []).length;
+
+  if (unknownCount === 0) {
+    log.info(`Network scan complete: 0 unknown device(s)`);
+    return;
+  }
+
+  const trigger                   = buildNetworkScanTrigger();
+  const { session_id: sessionId } = await runSessionWithTimeout(trigger);
+
+  createAlert({
+    session_id: sessionId,
+    severity:   'high',
+    category:   NETWORK_SCAN_CATEGORY,
+    title:      `Network scan: ${unknownCount} unknown device(s) detected`,
+    body:       JSON.stringify(scanResult),
+    sent_at:    new Date().toISOString(),
+    email_to:   null,
+  });
 
   log.info(`Network scan complete: ${unknownCount} unknown device(s)`);
 }
@@ -1256,23 +1284,33 @@ async function runNetworkScanTask() {
  * @returns {Promise<void>}
  */
 async function runAccessLogScanTask() {
-  const trigger                    = buildAccessLogScanTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
+  let scanResult;
+  try {
+    scanResult = await accessLogScanTool.handler({});
+  } catch (err) {
+    log.error(`[access-log-scan] tool threw: ${err.message}`);
+    scanResult = { anomalies: [], error: err.message };
+  }
 
-  const scanResult  = getLastToolOutput(sessionId, 'access_log_scan') ?? {};
   const anomalyCount = (scanResult.anomalies ?? []).length;
 
-  if (anomalyCount > 0) {
-    createAlert({
-      session_id: sessionId,
-      severity:   scanResult.severity ?? 'warning',
-      category:   ACCESS_LOG_CATEGORY,
-      title:      `Access log scan: ${anomalyCount} anomaly(s) detected`,
-      body:       JSON.stringify(scanResult),
-      sent_at:    new Date().toISOString(),
-      email_to:   null,
-    });
+  if (anomalyCount === 0) {
+    log.info(`Access log scan complete: 0 anomaly(s)`);
+    return;
   }
+
+  const trigger                   = buildAccessLogScanTrigger();
+  const { session_id: sessionId } = await runSessionWithTimeout(trigger);
+
+  createAlert({
+    session_id: sessionId,
+    severity:   scanResult.severity ?? 'warning',
+    category:   ACCESS_LOG_CATEGORY,
+    title:      `Access log scan: ${anomalyCount} anomaly(s) detected`,
+    body:       JSON.stringify(scanResult),
+    sent_at:    new Date().toISOString(),
+    email_to:   null,
+  });
 
   log.info(`Access log scan complete: ${anomalyCount} anomaly(s)`);
 }
