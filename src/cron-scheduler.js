@@ -16,7 +16,6 @@ const credentialAuditTool    = require('./tools/credential-audit');
 const ipsAlertTool           = require('./tools/ips-alert');
 const backupVerifyTool       = require('./tools/backup-verify');
 const gitAuditTool           = require('./tools/git-audit');
-const sessionSearchTool      = require('./tools/session-search');
 
 const log = createLogger('cron-scheduler');
 
@@ -36,6 +35,9 @@ const ALERT_DEDUP_WINDOW_MS = 60 * 60 * 1000;
 
 /** Suppress a second shift report within this window (6 hours). */
 const SHIFT_REPORT_DEDUP_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/** Suppress a second archive-check alert within 23h (cron fires once a day). */
+const ARCHIVE_CHECK_DEDUP_WINDOW_MS = 23 * 60 * 60 * 1000;
 
 /** Suppress a second weekly digest if one was sent within the past 6 days. */
 const DIGEST_DEDUP_WINDOW_MS = 6 * 24 * 60 * 60 * 1000;
@@ -1005,47 +1007,39 @@ async function runArchiveCheckTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
 
-  const sinceIso = new Date(Date.now() - ALERT_DEDUP_WINDOW_MS).toISOString();
-  const recent   = findRecentAlert(ARCHIVE_CHECK_CATEGORY, 'warning', sinceIso);
+  const dedupSinceIso = new Date(Date.now() - ARCHIVE_CHECK_DEDUP_WINDOW_MS).toISOString();
+  const recent        = findRecentAlert(ARCHIVE_CHECK_CATEGORY, 'warning', dedupSinceIso);
 
   if (recent) {
     log.info(`Suppressed duplicate archive-check alert (last sent: ${recent.sent_at})`);
     return;
   }
 
-  // Pre-filter: search the session store directly for backup-anomaly mentions
-  // in the past 7 days.  Skip the Claude session entirely when there's nothing
-  // for it to narrate — the common case on a healthy appliance.
-  const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  let searchResult;
-  try {
-    searchResult = sessionSearchTool.handler({
-      query: 'backup AND (failure OR anomaly OR corrupt OR mismatch)',
-      limit: 20,
-    });
-  } catch (err) {
-    log.error(`[archive-check] session_search threw: ${err.message}`);
-    return;
-  }
+  // Gate on a current-state signal: only fire if the backup pipeline has
+  // produced a critical alert in the past 7 days.  This prevents archive_check
+  // from re-surfacing historical session-store mentions of backup failures
+  // that have since been fixed (e.g. the pre-7556e68 schema-mismatch bug).
+  const lookbackIso         = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const recentBackupFailure = findRecentAlert(BACKUP_CATEGORY, 'critical', lookbackIso);
 
-  const recentMatches = (searchResult?.results ?? []).filter(r => {
-    const ts = Date.parse(r.started_at ?? r.created_at ?? '');
-    return Number.isFinite(ts) && ts >= sevenDaysAgoMs;
-  });
-
-  if (recentMatches.length === 0) {
-    log.info('Archive check clean: no backup anomaly mentions in the past 7 days');
+  if (!recentBackupFailure) {
+    log.info('Archive check clean: no backup critical alerts in the past 7 days');
     return;
   }
 
   const trigger                    = buildArchiveCheckTrigger();
   const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
 
-  // If COSA's response contains an alert indicator, record it for dedup.
-  // COSA is instructed to report "ALERT:" when a recurring pattern is found.
+  // COSA is instructed to emit "ALERT:" when a recurring pattern is found.
   if (response && /ALERT:/i.test(response)) {
     const title  = 'Archive integrity anomaly detected';
     const sentAt = new Date().toISOString();
+
+    await emailGateway.sendEmail({
+      to:      operatorEmail,
+      subject: `[COSA Alert] ${title}`,
+      text:    response,
+    });
 
     createAlert({
       session_id: sessionId,
