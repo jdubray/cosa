@@ -64,6 +64,8 @@ const {
   claudeToolUse, claudeEndTurn,
 } = require('./harness');
 
+const sshBackendMock = require('../../src/ssh-backend');
+
 const SHIFT_REPORT_BODY = `Daily Shift Report
 ==================
 Health checks: 24 runs, all healthy.
@@ -132,6 +134,92 @@ describe('T-2.2 — Shift report email delivery', () => {
     expect(mockSentEmails[0].text).toContain('COSA — Shift Report');
     expect(mockSentEmails[0].text).toContain('ORDERS');
     expect(mockSentEmails[0].text).toContain('REVENUE');
+  });
+
+  it('formatShiftReportBody renders all four order buckets and the new revenue rows', () => {
+    const body = cronScheduler.formatShiftReportBody({
+      period_start: '2026-04-25T13:00:00.000Z',
+      period_end:   '2026-04-26T13:00:00.000Z',
+      orders:       { total: 3, paid: 1, cancelled: 1, refunded: 1, active: 0 },
+      revenue: {
+        payment_count:        2,
+        payments_total:       1826.67,
+        service_charge_total: 3.40,
+        total:                1830.07,
+        avg_order_value:      1830.07,
+        currency:             'USD',
+      },
+      payment_errors: 0,
+      staff_count:    2,
+      anomalies:      [],
+    });
+
+    expect(body).toMatch(/Total:\s+3/);
+    expect(body).toMatch(/Paid:\s+1/);
+    expect(body).toMatch(/Cancelled:\s+1/);
+    expect(body).toMatch(/Refunded:\s+1/);
+    expect(body).toMatch(/Active:\s+0/);
+    expect(body).toMatch(/Payments:\s+2/);
+    expect(body).toMatch(/Payments total:\s+\$1826\.67 USD/);
+    expect(body).toMatch(/Service charge:\s+\$3\.40 USD/);
+    expect(body).toMatch(/Grand total:\s+\$1830\.07 USD/);
+  });
+
+  it('shift_report tool returns the new revenue shape directly', async () => {
+    sshBackendMock.exec.mockImplementation((_cmd, sql) => {
+      if (sql.includes('FROM orders')) {
+        return Promise.resolve({
+          stdout: JSON.stringify([{
+            total_orders: 27, paid: 27, cancelled: 0, refunded: 0, active: 0,
+            service_charge_cents: 3340,
+          }]),
+          stderr: '', exitCode: 0,
+        });
+      }
+      if (sql.includes('FROM payments')) {
+        return Promise.resolve({
+          stdout: JSON.stringify([{ payment_count: 28, amount_cents: 182667 }]),
+          stderr: '', exitCode: 0,
+        });
+      }
+      if (sql.includes('FROM payment_errors')) {
+        return Promise.resolve({
+          stdout: JSON.stringify([{ error_count: 0 }]), stderr: '', exitCode: 0,
+        });
+      }
+      if (sql.includes('FROM timesheets')) {
+        return Promise.resolve({
+          stdout: JSON.stringify([{ staff_count: 0 }]), stderr: '', exitCode: 0,
+        });
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    });
+
+    const sr = require('../../src/tools/shift-report');
+    const out = await sr.handler({ lookback_hours: 24 });
+
+    expect(out.orders).toEqual({ total: 27, paid: 27, cancelled: 0, refunded: 0, active: 0 });
+    expect(out.revenue.payment_count).toBe(28);
+    expect(out.revenue.payments_total).toBe(1826.67);
+    expect(out.revenue.service_charge_total).toBe(33.40);
+    expect(out.revenue.total).toBe(1860.07);
+  });
+
+  it('orders SQL casts both sides through datetime() for format-safe comparison', async () => {
+    let capturedOrdersSql = '';
+    sshBackendMock.exec.mockImplementation((_cmd, sql) => {
+      if (sql.includes('FROM orders')) capturedOrdersSql = sql;
+      return Promise.resolve({ stdout: '[]', stderr: '', exitCode: 0 });
+    });
+
+    const sr = require('../../src/tools/shift-report');
+    await sr.handler({ lookback_hours: 24 });
+
+    expect(capturedOrdersSql).toMatch(/datetime\(created_at\)\s*>=\s*datetime\('/);
+    expect(capturedOrdersSql).toMatch(/datetime\(created_at\)\s*<\s*datetime\('/);
+    // Bound is space-format, NOT ISO with 'T...Z'.
+    expect(capturedOrdersSql).toMatch(/datetime\('\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'\)/);
+    expect(capturedOrdersSql).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d+Z/);
   });
 
   it('creates an alert row with category=shift_report', async () => {
