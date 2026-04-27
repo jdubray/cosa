@@ -204,6 +204,27 @@ tools:
       - pattern: base64_secret
         file: src/routes/merchants.ts
         reason: "base64 usage is part of AES-256-GCM encryption helpers, not a stored secret"
+
+      # Marketing engine (tools/marketing-engine/) — Hono service for hanuman-kirkland.com.
+      # All four findings are auth-code patterns: function parameters, login-form
+      # input, and CLI argv. Argon2id via Bun.password — no stored plaintext.
+      - pattern: password_assignment
+        file: tools/marketing-engine/src/services/auth.ts
+        reason: "hashPassword/verifyPassword take password as a function parameter; Argon2id via Bun.password — correct hashing pattern, no stored plaintext"
+      - pattern: password_assignment
+        file: tools/marketing-engine/src/routes/marketing.ts
+        reason: "admin login route reads password from request body and verifies against password_hash column; never stored plaintext"
+      - pattern: password_assignment
+        file: tools/marketing-engine/src/scripts/seed-admin.ts
+        reason: "admin seed CLI; password supplied via process.argv[3] at runtime, hashed before INSERT into admin_users"
+  tunnel_health_check:
+    enabled: true
+    url: "https://hanuman-kirkland.com/"
+    timeout_ms: 10000
+    # HTTP statuses considered healthy. Cloudflare 521/522/523 (origin down /
+    # connection timeout / unreachable) are 5xx and trigger an alert; so does
+    # any fetch rejection (DNS, TLS, network).
+    expected_status_max: 499
   access_log_scan:
     enabled: false
     log_path: "/var/log/nginx/access.log"
@@ -341,6 +362,7 @@ monitoring:
   known_ports:
     - 22    # sshd
     - 3000  # baanbaan API (localhost only)
+    - 3100  # marketing-engine.service — cloudflared ingress for hanuman-kirkland.com (currently *:3100, see docs/baanbaan_marketing_engine_loopback_bind_spec.md)
     - 20241 # cloudflared management interface (localhost only)
     - 631   # CUPS print spooler (localhost only)
 

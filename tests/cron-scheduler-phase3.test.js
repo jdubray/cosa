@@ -104,6 +104,7 @@ const {
   runProcessMonitorTask,
   runNetworkScanTask,
   runAccessLogScanTask,
+  runTunnelHealthCheckTask,
   runWeeklySecurityDigestTask,
   runCredentialAuditTask,
   runComplianceVerifyTask,
@@ -384,6 +385,96 @@ describe('AC4b – disabled tools are skipped', () => {
     const { message } = buildWeeklySecurityDigestTrigger();
     expect(message).toMatch(/session_search with query "access_log anomaly threat brute"/);
     expect(message).toMatch(/ACCESS LOG ANOMALIES — mark ✓/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC4c: tunnel_health_check — hourly cloudflared probe
+// ---------------------------------------------------------------------------
+
+describe('AC4c – tunnel_health_check hourly probe', () => {
+  const TUNNEL_CONFIG = {
+    appliance: {
+      ...BASE_CONFIG.appliance,
+      tools: {
+        tunnel_health_check: {
+          enabled: true,
+          url: 'https://hanuman-kirkland.com/',
+          timeout_ms: 10000,
+          expected_status_max: 499,
+        },
+      },
+    },
+  };
+
+  let originalFetch;
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    mockGetConfig.mockReturnValue(TUNNEL_CONFIG);
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  test('does NOT alert on healthy 2xx response', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ status: 200 });
+    await runTunnelHealthCheckTask();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  test('does NOT alert on 3xx redirect (manual redirect mode)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ status: 302 });
+    await runTunnelHealthCheckTask();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+  });
+
+  test('alerts critical on Cloudflare 521 origin-down', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ status: 521 });
+    await runTunnelHealthCheckTask();
+    expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'tunnel_health_check',
+      severity: 'critical',
+    }));
+    expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      subject: expect.stringContaining('Tunnel health alert'),
+    }));
+  });
+
+  test('alerts critical on fetch rejection (timeout/DNS)', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('timeout'));
+    await runTunnelHealthCheckTask();
+    expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'tunnel_health_check',
+      severity: 'critical',
+      title:    expect.stringContaining('unreachable'),
+    }));
+  });
+
+  test('dedupes — second failure within window does not double-alert', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ status: 522 });
+    mockFindRecentAlert.mockReturnValue({ id: 99, sent_at: new Date().toISOString() });
+    await runTunnelHealthCheckTask();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  test('start() registers tunnel_health_check at 0 * * * *', () => {
+    start();
+    const hourly = callsWithExpr('0 * * * *');
+    expect(hourly.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('start() skips tunnel_health_check when enabled=false', () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        ...BASE_CONFIG.appliance,
+        tools: { tunnel_health_check: { enabled: false } },
+      },
+    });
+    start();
+    const hourly = callsWithExpr('0 * * * *');
+    expect(hourly.length).toBe(0);
   });
 });
 

@@ -70,6 +70,9 @@ const WEBHOOK_HMAC_CATEGORY       = 'webhook_hmac_verify';
 const JWT_SECRET_CATEGORY         = 'jwt_secret_check';
 const PCI_ASSESSMENT_CATEGORY     = 'pci_assessment';
 const TOKEN_ROTATION_CATEGORY     = 'token_rotation_remind';
+const TUNNEL_HEALTH_CATEGORY      = 'tunnel_health_check';
+
+const TUNNEL_HEALTH_DEDUP_WINDOW_MS = 30 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1379,6 +1382,87 @@ async function runAccessLogScanTask() {
 }
 
 /**
+ * Probe the cloudflared tunnel by hitting the configured public URL and
+ * alerting on connection errors or 5xx responses.
+ *
+ * Cloudflare returns 521/522/523 when the origin (cloudflared on the
+ * appliance) is unreachable, so any 5xx is a genuine signal. Any fetch
+ * rejection (DNS, TLS, timeout, AbortSignal) is also treated as failure.
+ *
+ * @returns {Promise<void>}
+ */
+async function runTunnelHealthCheckTask() {
+  const { appliance } = getConfig();
+  const cfg = appliance.tools?.tunnel_health_check ?? {};
+
+  const url       = cfg.url;
+  const timeoutMs = cfg.timeout_ms ?? 10_000;
+  const maxOk     = cfg.expected_status_max ?? 499;
+
+  if (!url) {
+    log.warn('[tunnel-health-check] no url configured; skipping');
+    return;
+  }
+
+  let status;
+  let error;
+  const t0 = Date.now();
+  try {
+    const res = await fetch(url, {
+      signal:   AbortSignal.timeout(timeoutMs),
+      redirect: 'manual',
+    });
+    status = res.status;
+  } catch (err) {
+    error = err.message;
+  }
+  const elapsedMs = Date.now() - t0;
+
+  const ok = !error && typeof status === 'number' && status <= maxOk;
+  if (ok) {
+    log.info(`Tunnel health OK: ${url} → ${status} in ${elapsedMs} ms`);
+    return;
+  }
+
+  // Dedup — sustained outages should not email hourly.
+  const sinceIso = new Date(Date.now() - TUNNEL_HEALTH_DEDUP_WINDOW_MS).toISOString();
+  const recent   = findRecentAlert(TUNNEL_HEALTH_CATEGORY, 'critical', sinceIso);
+  if (recent) {
+    log.warn(`Tunnel still failing (${error ?? `HTTP ${status}`}); alert suppressed by dedup`);
+    return;
+  }
+
+  const summary = error
+    ? `Cloudflared tunnel unreachable: ${error}`
+    : `Cloudflared tunnel returned HTTP ${status}`;
+
+  const operatorEmail = appliance.operator.email;
+  const subject       = `[COSA] Tunnel health alert — ${url}`;
+  const body =
+    `${summary}\n\n` +
+    `URL:        ${url}\n` +
+    `Status:     ${status ?? 'n/a'}\n` +
+    `Elapsed:    ${elapsedMs} ms\n` +
+    `Timeout:    ${timeoutMs} ms\n` +
+    (error ? `Error:      ${error}\n` : '') +
+    `Checked at: ${new Date().toISOString()}\n`;
+
+  await emailGateway.sendEmail({ to: operatorEmail, subject, text: body });
+
+  createAlert({
+    session_id: crypto.randomUUID(),
+    severity:   'critical',
+    category:   TUNNEL_HEALTH_CATEGORY,
+    title:      summary,
+    body,
+    sent_at:    new Date().toISOString(),
+    email_to:   operatorEmail,
+  });
+
+  log.error(`[tunnel-health-check] ${summary}`);
+}
+
+/**
  * Generate and send the weekly security digest email on Monday at 2:00 AM.
  *
  * Deduplication: no second digest if one was sent within the past 6 days.
@@ -1753,6 +1837,9 @@ function start() {
   schedule('network_scan',    '0 */8 * * *', runNetworkScanTask);
   schedule('access_log_scan', '0 */8 * * *', runAccessLogScanTask);
 
+  // Hourly — public ingress reachability via cloudflared tunnel
+  schedule('tunnel_health_check', '0 * * * *', runTunnelHealthCheckTask);
+
   // Phase 3 — weekly Monday 2:00 AM
   schedule('security_digest',    '0 2 * * 1', runWeeklySecurityDigestTask);
   schedule('credential_audit',   '0 2 * * 1', runCredentialAuditTask);
@@ -1794,6 +1881,7 @@ module.exports = {
   runProcessMonitorTask,
   runNetworkScanTask,
   runAccessLogScanTask,
+  runTunnelHealthCheckTask,
   runWeeklySecurityDigestTask,
   runCredentialAuditTask,
   runComplianceVerifyTask,
