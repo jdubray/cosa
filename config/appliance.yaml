@@ -219,7 +219,11 @@ tools:
         reason: "admin seed CLI; password supplied via process.argv[3] at runtime, hashed before INSERT into admin_users"
   tunnel_health_check:
     enabled: true
-    url: "https://hanuman-kirkland.com/"
+    # NOTE: apex `hanuman-kirkland.com` has no A record at Cloudflare DNS
+    # (only www. and qr. are wired up in the public DNS zone, even though
+    # cloudflared.config.yml lists the apex as an ingress hostname).
+    # Probe the resolvable www. host until/unless apex DNS is added.
+    url: "https://www.hanuman-kirkland.com/"
     timeout_ms: 10000
     # HTTP statuses considered healthy. Cloudflare 521/522/523 (origin down /
     # connection timeout / unreachable) are 5xx and trigger an alert; so does
