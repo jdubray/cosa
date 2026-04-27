@@ -253,6 +253,8 @@ Current time: ${new Date().toISOString()}`,
 /** @returns {{ type: string, source: string, message: string }} */
 function buildWeeklySecurityDigestTrigger() {
   const weekOf = _getMondayDateString();
+  const { appliance } = getConfig();
+  const accessLogEnabled = appliance.tools?.access_log_scan?.enabled !== false;
 
   const nextScanDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const nextPciDate  = (() => {
@@ -262,6 +264,14 @@ function buildWeeklySecurityDigestTrigger() {
     return d.toISOString().slice(0, 10);
   })();
 
+  const accessLogStep = accessLogEnabled
+    ? '4. Run session_search with query "access_log anomaly threat brute" for the past 7 days.'
+    : '4. Skip — access log scanning is disabled for this appliance (no public web frontend; SSH is key-only). Do not run session_search for access_log.';
+
+  const accessLogSection = accessLogEnabled
+    ? '- Section: ACCESS LOG ANOMALIES — mark ✓ if none, or ⚠ with count and top threat categories'
+    : '- Section: ACCESS LOG ANOMALIES — render exactly: "N/A — appliance is LAN-only with key-only SSH; no web frontend"';
+
   return {
     type:    'cron',
     source:  'security-digest',
@@ -269,7 +279,7 @@ function buildWeeklySecurityDigestTrigger() {
 1. Run session_search with query "git_audit severity medium high critical" for the past 7 days.
 2. Run session_search with query "process_monitor unexpected missing" for the past 7 days.
 3. Run session_search with query "network_scan unknown device" for the past 7 days.
-4. Run session_search with query "access_log anomaly threat brute" for the past 7 days.
+${accessLogStep}
 5. Run compliance_verify to get the current compliance posture.
 6. Run credential_audit to check for exposed credentials in the repository.
 7. Run jwt_secret_check to get the current JWT entropy level and last-rotated date.
@@ -281,7 +291,7 @@ Then write the complete digest as your response with this exact structure:
 - Section: GIT AUDIT — mark ✓ if no findings, or ⚠ with findings count and highest severity
 - Section: PROCESS MONITOR — mark ✓ if all expected processes running, or ⚠ with unexpected/missing process names
 - Section: NETWORK — mark ✓ if all devices known, or ⚠ with unknown device count and MAC addresses
-- Section: ACCESS LOG ANOMALIES — mark ✓ if none, or ⚠ with count and top threat categories
+${accessLogSection}
 - Section: COMPLIANCE — SAQ-A overall status (from compliance_verify); include JWT entropy level, last-rotated date, and next rotation date (from jwt_secret_check)
 - Section: CREDENTIALS — mark ✓ if no findings, or ⚠ with credential_audit summary; note .gitignore coverage
 - Line: SECURITY INCIDENTS THIS WEEK: N
@@ -1704,6 +1714,13 @@ function start() {
   const cronConfig    = appliance.cron ?? {};
 
   const schedule = (key, defaultExpr, fn) => {
+    // Honor `tools.<key>.enabled === false` from appliance.yaml so flag-off
+    // tools don't get a noisy empty cron tick. Missing/undefined stays on by
+    // default — only an explicit `false` skips registration.
+    if (appliance.tools?.[key]?.enabled === false) {
+      log.info(`Cron skipped (disabled in appliance.yaml): ${key}`);
+      return;
+    }
     const expr = cronConfig[key] ?? defaultExpr;
     const task = cron.schedule(expr, () => {
       fn().catch(err => log.error(`${key} task error: ${err.message}`));

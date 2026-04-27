@@ -335,6 +335,59 @@ describe('AC4 – access_log_scan every 6 hours', () => {
 });
 
 // ---------------------------------------------------------------------------
+// AC4b: tools.<key>.enabled=false skips cron registration AND digest step
+// ---------------------------------------------------------------------------
+
+describe('AC4b – disabled tools are skipped', () => {
+  test('start() skips access_log_scan cron when enabled=false', () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        ...BASE_CONFIG.appliance,
+        tools: { access_log_scan: { enabled: false } },
+      },
+    });
+
+    start();
+
+    const accessLogCalls = mockCronSchedule.mock.calls.filter(([expr, fn]) => {
+      // Ensure none of the registered crons are the access-log task by name.
+      // We can't introspect fn directly; instead verify _no_ 8-hourly call
+      // count exceeds the three other phase-3 tasks (git/process/network).
+      return expr === '0 */8 * * *';
+    });
+    expect(accessLogCalls.length).toBe(3);
+  });
+
+  test('start() registers access_log_scan when flag is missing', () => {
+    // BASE_CONFIG has no tools section — default-on behavior preserved.
+    start();
+    const eightHourly = callsWithExpr('0 */8 * * *');
+    expect(eightHourly.length).toBe(4);
+  });
+
+  test('digest prompt omits access_log session_search when flag is false', () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        ...BASE_CONFIG.appliance,
+        tools: { access_log_scan: { enabled: false } },
+      },
+    });
+
+    const { message } = buildWeeklySecurityDigestTrigger();
+
+    expect(message).not.toMatch(/session_search with query "access_log/);
+    expect(message).toMatch(/N\/A — appliance is LAN-only with key-only SSH/);
+    expect(message).toMatch(/Skip — access log scanning is disabled/);
+  });
+
+  test('digest prompt keeps access_log session_search when flag is missing', () => {
+    const { message } = buildWeeklySecurityDigestTrigger();
+    expect(message).toMatch(/session_search with query "access_log anomaly threat brute"/);
+    expect(message).toMatch(/ACCESS LOG ANOMALIES — mark ✓/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC5: Weekly security digest — Monday 2:00 AM
 // ---------------------------------------------------------------------------
 
