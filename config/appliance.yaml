@@ -358,6 +358,8 @@ monitoring:
     - fusermount
     # Cloudflare tunnel
     - cloudflared
+    # Music file server (LAN-only sync endpoint for in-cafe Android app on :8080)
+    - gunicorn
   # Ports that are legitimately open on this appliance (numeric).
   # Note: Chromium CDP (remote-debugging-port=0) uses an ephemeral loopback port
   # each run — it is NOT listed here because the port number changes every time.
@@ -367,6 +369,7 @@ monitoring:
     - 22    # sshd
     - 3000  # baanbaan API (localhost only)
     - 3100  # marketing-engine.service — cloudflared ingress for hanuman-kirkland.com (currently *:3100, see docs/baanbaan_marketing_engine_loopback_bind_spec.md)
+    - 8080  # music file server — LAN-only sync endpoint for the in-cafe Android background app reading from music/
     - 20241 # cloudflared management interface (localhost only)
     - 631   # CUPS print spooler (localhost only)
 
