@@ -37,3 +37,6 @@ coverage/
 .puffin/*.db
 .puffin/*.db-shm
 .puffin/*.db-wal
+
+# Local scratch / drafts (one-off scripts, draft posts, throwaway notes)
+dev/tmp/
