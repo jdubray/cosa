@@ -282,9 +282,14 @@ tools:
     # is replaced in place; all other IPs in the list are preserved.
     watched_keys:
       - ALLOWED_MERCHANT_IPS
-    # Restart the BaanBaan service after updating .env so the change takes effect.
+    # Restart these services after updating .env so the change takes effect.
+    # marketing-engine reads v2/.env via `bun --env-file ../../.env` (its
+    # package.json start script), so it also needs a restart to pick up the
+    # new ALLOWED_MERCHANT_IPS.
     restart_service_on_change: true
-    service_name: "baanbaan"
+    service_names:
+      - baanbaan
+      - marketing-engine
 
 network:
   # MAC addresses of devices that are authorized on the local network.

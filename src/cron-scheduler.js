@@ -591,10 +591,10 @@ async function _updateEnvKey(envFilePath, key, oldIp, newIp) {
 /**
  * Build the plain-text alert email body for a public-IP change event.
  *
- * @param {{ applianceName: string, oldIp: string|null, newIp: string, wasDown: boolean, updatedKeys: string[], restartedService: boolean, errors: string[] }} params
+ * @param {{ applianceName: string, oldIp: string|null, newIp: string, wasDown: boolean, updatedKeys: string[], restartedServices: string[], errors: string[] }} params
  * @returns {string}
  */
-function buildIpChangeAlertBody({ applianceName, oldIp, newIp, wasDown, updatedKeys, restartedService, errors }) {
+function buildIpChangeAlertBody({ applianceName, oldIp, newIp, wasDown, updatedKeys, restartedServices, errors }) {
   const eventDescription = wasDown
     ? 'Internet connectivity was restored after an outage.'
     : 'The public IP address changed unexpectedly.';
@@ -615,7 +615,11 @@ function buildIpChangeAlertBody({ applianceName, oldIp, newIp, wasDown, updatedK
     lines.push('No .env keys were updated (none matched the watched_keys list).');
   }
 
-  lines.push(`Service restart: ${restartedService ? 'yes' : 'no (disabled or skipped)'}`);
+  if (restartedServices.length === 0) {
+    lines.push('Services restarted: none (disabled or skipped)');
+  } else {
+    lines.push(`Services restarted: ${restartedServices.join(', ')}`);
+  }
 
   if (errors.length > 0) {
     lines.push('', 'Errors:');
@@ -650,7 +654,7 @@ async function runInternetIpWatchTask() {
   const envFilePath      = watchConfig.env_file_path ?? null;
   const watchedKeys      = watchConfig.watched_keys ?? [];
   const restartOnChange  = watchConfig.restart_service_on_change !== false;
-  const serviceName      = watchConfig.service_name ?? 'baanbaan';
+  const serviceNames     = watchConfig.service_names ?? ['baanbaan'];
 
   // ── 1. Check current public IP ────────────────────────────────────────────
   let checkResult;
@@ -729,21 +733,23 @@ async function runInternetIpWatchTask() {
     }
   }
 
-  // ── 5. Restart service if any key was updated ─────────────────────────────
-  let restartedService = false;
+  // ── 5. Restart services if any key was updated ────────────────────────────
+  const restartedServices = [];
   if (updatedKeys.length > 0 && restartOnChange && sshBackend.isConnected()) {
-    try {
-      const restartResult = await sshBackend.exec(`sudo systemctl restart ${serviceName}`);
-      if (restartResult.exitCode === 0) {
-        restartedService = true;
-        log.info(`[internet-ip-watch] Service ${serviceName} restarted`);
-      } else {
-        errors.push(`systemctl restart ${serviceName} failed (exit ${restartResult.exitCode})`);
-        log.error(`[internet-ip-watch] Service restart failed: ${restartResult.stderr.trim()}`);
+    for (const name of serviceNames) {
+      try {
+        const restartResult = await sshBackend.exec(`sudo systemctl restart ${name}`);
+        if (restartResult.exitCode === 0) {
+          restartedServices.push(name);
+          log.info(`[internet-ip-watch] Service ${name} restarted`);
+        } else {
+          errors.push(`systemctl restart ${name} failed (exit ${restartResult.exitCode})`);
+          log.error(`[internet-ip-watch] Service ${name} restart failed: ${restartResult.stderr.trim()}`);
+        }
+      } catch (err) {
+        errors.push(`Service restart ${name}: ${err.message}`);
+        log.error(`[internet-ip-watch] Service ${name} restart threw: ${err.message}`);
       }
-    } catch (err) {
-      errors.push(`Service restart: ${err.message}`);
-      log.error(`[internet-ip-watch] Service restart threw: ${err.message}`);
     }
   }
 
@@ -766,7 +772,7 @@ async function runInternetIpWatchTask() {
     newIp,
     wasDown,
     updatedKeys,
-    restartedService,
+    restartedServices,
     errors,
   });
   const sentAt  = new Date().toISOString();
