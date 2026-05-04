@@ -93,6 +93,12 @@ jest.mock('../src/tools/access-log-scan', () => ({
   handler: (...a) => mockAccessLogScanHandler(...a),
 }));
 
+const mockRtmHandler = jest.fn();
+jest.mock('../src/tools/resource-threshold-monitor', () => ({
+  name:    'resource_threshold_monitor',
+  handler: (...a) => mockRtmHandler(...a),
+}));
+
 // ---------------------------------------------------------------------------
 // Module under test
 // ---------------------------------------------------------------------------
@@ -112,6 +118,7 @@ const {
   runJwtSecretCheckTask,
   runPciAssessmentTask,
   runTokenRotationRemindTask,
+  runResourceThresholdTask,
   buildGitAuditTrigger,
   buildProcessMonitorTrigger,
   buildNetworkScanTrigger,
@@ -149,6 +156,10 @@ beforeEach(() => {
   mockCredentialAuditHandler.mockResolvedValue({ findings: [], suppressedFindings: [], gitignoreCoverage: { coversEnv: true, coversSecrets: true } });
   mockIpsAlertHandler.mockResolvedValue({ sent: true, alertRef: 'IPS-TEST-001' });
   mockGitAuditHandler.mockResolvedValue({ severity: 'none' });
+  mockRtmHandler.mockResolvedValue({
+    findings: [], sampled_processes: 12, samples_taken: 5,
+    checked_at: new Date().toISOString(),
+  });
   mockBackupVerifyHandler.mockResolvedValue({ verified: true, backup_path: '/tmp/cosa-backups/latest.jsonl' });
   mockSessionSearchHandler.mockReturnValue({ results: [], total_found: 0 });
   mockBackupRunHandler.mockResolvedValue({ success: true, row_count: 100, backup_path: '/tmp/cosa-backups/latest.jsonl' });
@@ -914,5 +925,136 @@ describe('cron schedule registration', () => {
     expect(typeof runJwtSecretCheckTask).toBe('function');
     expect(typeof runPciAssessmentTask).toBe('function');
     expect(typeof runTokenRotationRemindTask).toBe('function');
+    expect(typeof runResourceThresholdTask).toBe('function');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RTM-AC7: resource_threshold_monitor schedule registration
+// ---------------------------------------------------------------------------
+
+describe('RTM-AC7 – resource_threshold_monitor schedule registration', () => {
+  test('registers resource_threshold_monitor with */5 8-21 * * * expression when enabled', () => {
+    start();
+    const fiveMin = callsWithExpr('*/5 8-21 * * *');
+    expect(fiveMin.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('skips resource_threshold_monitor when enabled: false', () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        ...BASE_CONFIG.appliance,
+        tools: { resource_threshold_monitor: { enabled: false } },
+      },
+    });
+    start();
+    const fiveMin = callsWithExpr('*/5 8-21 * * *');
+    expect(fiveMin.length).toBe(0);
+  });
+
+  test('runResourceThresholdTask returns immediately when enabled: false', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        ...BASE_CONFIG.appliance,
+        tools: { resource_threshold_monitor: { enabled: false } },
+      },
+    });
+    await runResourceThresholdTask();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+  });
+
+  test('runResourceThresholdTask does not email when findings array is empty', async () => {
+    mockRtmHandler.mockResolvedValue({
+      findings: [], sampled_processes: 10, samples_taken: 5,
+      checked_at: new Date().toISOString(),
+    });
+    await runResourceThresholdTask();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  test('runResourceThresholdTask sends email when findings are present', async () => {
+    mockRtmHandler.mockResolvedValue({
+      findings: [{ kind: 'sustained_cpu', pid: 1234, severity: 'high',
+        samples: [99], threshold: 50, command: 'bun run src/server.ts' }],
+      sampled_processes: 1, samples_taken: 5,
+      checked_at: new Date().toISOString(),
+    });
+    await runResourceThresholdTask();
+    expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      to: 'ops@restaurant.com',
+    }));
+    expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'resource_threshold_monitor',
+      severity: 'high',
+    }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RTM-AC8: resource_threshold_monitor dedup within window
+// ---------------------------------------------------------------------------
+
+describe('RTM-AC8 – resource_threshold_monitor dedup', () => {
+  const RTM_CONFIG = {
+    appliance: {
+      ...BASE_CONFIG.appliance,
+      tools: { resource_threshold_monitor: { enabled: true, dedup_window_minutes: 30 } },
+    },
+  };
+
+  const FINDINGS_HIGH = [{
+    kind: 'sustained_cpu', pid: 68198, severity: 'high',
+    samples: [99.9], threshold: 50, command: 'bun seed-admin.ts',
+  }];
+
+  beforeEach(() => {
+    mockGetConfig.mockReturnValue(RTM_CONFIG);
+    mockRtmHandler.mockResolvedValue({
+      findings: FINDINGS_HIGH, sampled_processes: 1, samples_taken: 5,
+      checked_at: new Date().toISOString(),
+    });
+  });
+
+  test('sends email on first firing when no recent alert exists', async () => {
+    mockFindRecentAlert.mockReturnValue(undefined);
+    await runResourceThresholdTask();
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    expect(mockCreateAlert).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not email on second firing within dedup_window_minutes', async () => {
+    mockFindRecentAlert.mockReturnValue(undefined);
+    await runResourceThresholdTask();
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+
+    mockSendEmail.mockClear();
+    mockCreateAlert.mockClear();
+
+    mockFindRecentAlert.mockReturnValue({ id: 1, sent_at: new Date().toISOString() });
+    await runResourceThresholdTask();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+  });
+
+  test('maxSeverity used for dedup lookup — critical beats high', async () => {
+    mockRtmHandler.mockResolvedValue({
+      findings: [
+        { kind: 'spike',        pid: 1, severity: 'high',     cpu: 95, threshold: 80, command: 'bun' },
+        { kind: 'aggregate_cpu', severity: 'critical', samples: [90], threshold: 85 },
+      ],
+      sampled_processes: 1, samples_taken: 5, checked_at: new Date().toISOString(),
+    });
+    mockFindRecentAlert.mockReturnValue(undefined);
+    await runResourceThresholdTask();
+    expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
+      severity: 'critical',
+    }));
+  });
+
+  test('swallows tool handler errors instead of throwing', async () => {
+    mockRtmHandler.mockRejectedValue(new Error('SSH timeout'));
+    await expect(runResourceThresholdTask()).resolves.toBeUndefined();
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 });

@@ -290,6 +290,54 @@ tools:
     service_names:
       - baanbaan
       - marketing-engine
+  resource_threshold_monitor:
+    enabled: true
+    # Aggregate-CPU ceiling. Alert when K-of-N samples report (us+sy+ni) > pct.
+    aggregate_cpu:
+      pct: 85
+      samples_required: 4
+      severity: high
+    # System-memory floor. Alert when K-of-N samples report MemAvailable below mib_floor.
+    system_memory:
+      mib_floor: 500          # 4 GiB Pi — 500 MiB available is "tight"
+      samples_required: 4
+      severity: high
+    # Default per-process thresholds (apply to any command not matched below).
+    defaults:
+      cpu_pct_spike: 99       # single sample over this → spike alert
+      cpu_pct_sustained: 80   # K-of-N over this → sustained alert
+      samples_required: 4     # K (out of 5)
+      rss_mb: 1024
+    # Per-pattern overrides. Patterns are substring matches against the full COMMAND
+    # column. Later entries override earlier ones (most-specific should be last).
+    # Any field omitted falls back to defaults.
+    patterns:
+      - match: "bun run src/server.ts"
+        cpu_pct_spike: 99
+        cpu_pct_sustained: 70
+        rss_mb: 600
+        singleton: true       # exactly one expected; older duplicates → orphan finding
+        severity: high
+      - match: "bun"
+        cpu_pct_spike: 99
+        cpu_pct_sustained: 70   # service should idle low; sustained 70%+ is suspicious
+        rss_mb: 600             # observed steady-state ~150–300 MB
+      - match: "bun seed-admin.ts"
+        cpu_pct_spike: 99
+        cpu_pct_sustained: 50
+        max_age_seconds: 30     # CLI; should hash + INSERT + exit. >30 s = runaway.
+        rss_mb: 200
+        severity: high
+      - match: "chromium"
+        cpu_pct_spike: 99
+        cpu_pct_sustained: 90   # PDF render bursts are legitimate
+        rss_mb: 800
+      - match: "gunicorn"
+        cpu_pct_spike: 99
+        cpu_pct_sustained: 60
+        rss_mb: 300
+    # Dedup: don't re-alert the same (category, severity) inside this window.
+    dedup_window_minutes: 30
 
   # Automated apt patching.  One run per day per host, 13 hours apart, never
   # concurrent.  Schedule lives in src/cron-scheduler.js: BaanBaan at 01:00

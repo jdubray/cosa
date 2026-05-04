@@ -283,3 +283,184 @@ Single commit on `main`:
 `package.json` / `package-lock.json` ride the next tag bump per the tag-first policy.
 
 After deploy, manually invoke once to confirm baseline `findings: []` against the current process mix (so the initial thresholds aren't too tight). Adjust pattern thresholds if any legitimate steady-state process trips on first run.
+
+---
+
+## 12. Memory extension (added 2026-05-01)
+
+### 12.1 Context
+
+On 2026-05-01 ~14:12 PDT the operator reported the BaanBaan appliance "system memory" climbing from 1.9 GiB to 3.4 GiB over several days and asked whether the music-server gunicorn was leaking. Investigation:
+
+| Source | Finding |
+|---|---|
+| `free -h` / `/proc/meminfo` | MemTotal 4.0 GiB, **MemAvailable 3.2 GiB**, used 800 MiB, buff/cache 2.9 GiB, swap 0/2 GiB used. |
+| Music server (`gunicorn server:app`) | 2 workers, ~33 MB RSS each, 3d 19h uptime, **stable**. Innocent. |
+| The "growth" observed by operator | Linux page cache filling up as MP3 file pages are cached. Reclaimable. Not a leak. |
+| **Real anomaly** | PID 139956 `bun run src/server.ts`, PPID=1, age 1d 22h, RSS 86 MB, **not** holding `:3000` — orphaned by a 2026-04-29 restart. Systemd-managed bun is PID 166741 (started 2026-05-01 10:01:49 PDT). |
+
+Two lessons from the investigation drove this extension:
+
+1. **The right system-memory metric is `MemAvailable`, not `used`.** "Used" includes page cache, which is reclaimable; tracking it produces alarm noise that mirrors normal disk I/O, not actual pressure. The orphan was found by per-process RSS inspection — not by any "RAM is high" signal — because the box has 3.2 GiB of headroom even with the orphan present.
+2. **Section 5.2's `p.latestRssMb > profile.rss_mb` check is too eager.** A single high sample on a busy process (e.g. chromium during a render) would fire instantly. RSS deserves the same K-of-N sustained-elevated treatment that CPU gets.
+
+This section augments §3, §4, §5, §6, §7, §8, §9, §10 — it does not replace them. Implementers should fold the additions into the original sections at implementation time; the split here is for review only.
+
+### 12.2 Design additions
+
+1. **System-level memory pressure (parallel to §2 principle 5).** A `system_memory` aggregate alert fires when `MemAvailable` is below a configured floor for K-of-N samples within one invocation. Independent of any per-process check, just like aggregate CPU. The threshold is a floor (alert when below), not a ceiling.
+2. **Sustained-high RSS replaces instantaneous RSS.** RSS is sampled per process across the 5 `top` iterations; a `rss_over` finding fires only when ≥`samples_required` of those samples exceed `rss_mb`. Catches genuine bloat (orphan bun's 86 MB across 5 samples → all 5 over its threshold) and ignores transient spikes.
+3. **Singleton-process orphan detection.** A process matching a pattern marked `singleton: true` is expected to exist exactly once. When the tool sees ≥2 matching PIDs, the youngest (by `etimes`) is treated as the active service and the older one(s) emit an `orphan` finding. Catches the exact failure mode found on 2026-05-01 — a service restart left a previous bun adopted by init, holding ~86 MB indefinitely.
+
+### 12.3 Sampling additions (extends §3)
+
+Add a single `cat /proc/meminfo` per `top` iteration. Cheap (~few KB read), already runs every 2 s alongside `top`. Parse `MemAvailable:` (kB → MiB). Five samples per invocation, same K-of-N evaluation as CPU.
+
+`/proc/meminfo` is universally present on Linux; if it is missing or unreadable, the tool logs and skips the system-memory check (does not abort the whole invocation — per-process and aggregate-CPU checks are still useful).
+
+For orphan detection no extra command is needed: §3 already runs `ps -o pid,etimes,command --no-headers -p <pids>` after sampling. That output already gives age per PID; combined with the per-pattern roll-up the tool already does, no new SSH call is required.
+
+### 12.4 Config additions (extends §4)
+
+```yaml
+resource_threshold_monitor:
+  # ... existing fields ...
+
+  # System-level memory floor. Alert when K-of-N samples report
+  # MemAvailable below mib (i.e., MemAvailable is the *floor* to stay above).
+  system_memory:
+    mib_floor: 500              # 4 GiB total → 500 MiB available is "tight"
+    samples_required: 4         # of 5
+    severity: high
+
+  defaults:
+    # ... existing fields ...
+    rss_samples_required: 4     # K-of-N for sustained-high RSS (defaults to samples_required if omitted)
+
+  patterns:
+    - match: "bun run src/server.ts"
+      cpu_pct_spike: 99
+      cpu_pct_sustained: 70
+      rss_mb: 600
+      singleton: true           # exactly one is expected; older duplicates → orphan finding
+      severity: high
+    - match: "bun seed-admin.ts"
+      # ... unchanged ...
+    # ... other patterns unchanged ...
+```
+
+Notes:
+
+- `mib_floor` is a *lower-bound*: alert fires when MemAvailable goes below it. Pick 500 MiB initially (~12% of 4 GiB) — comfortable headroom on the observed steady-state of 3.2 GiB available.
+- `singleton: true` only makes sense on patterns that uniquely identify a long-running service (`bun run src/server.ts`, `cloudflared`). Do **not** set it on shared binaries like the unqualified `bun` pattern (which would also match `bun seed-admin.ts`).
+- The §4 `rss_mb` semantics change from instantaneous to K-of-N. The migration is purely an implementation detail; the existing pattern values do not need to change.
+
+### 12.5 Handler additions (extends §5.2)
+
+After §5.2 step 4 (per-process evaluation), but using sustained semantics for RSS:
+
+```js
+// Replaces the existing single-sample RSS check.
+if (countOver(p.rssSamplesMb, profile.rss_mb) >= (profile.rss_samples_required ?? profile.samples_required)) {
+  findings.push({
+    kind: 'rss_over_sustained',
+    pid, command: p.command,
+    rss_samples_mb: p.rssSamplesMb,
+    threshold: profile.rss_mb,
+    severity: profile.severity ?? 'medium',
+  });
+}
+```
+
+After §5.2 step 5 (aggregate CPU), add:
+
+```js
+// System memory floor.
+const memAvailSamples = samples.map((s) => s.memAvailableMib);
+if (countUnder(memAvailSamples, cfg.system_memory.mib_floor) >= cfg.system_memory.samples_required) {
+  findings.push({
+    kind: 'system_memory_low',
+    samples_mib: memAvailSamples,
+    floor_mib: cfg.system_memory.mib_floor,
+    severity: cfg.system_memory.severity ?? 'high',
+  });
+}
+
+// Singleton orphan detection.
+const byPattern = groupPidsByMatchedPattern(perPid, cfg, ageByPid);
+for (const [matchKey, group] of byPattern) {
+  const pat = cfg.patterns.find((p) => p.match === matchKey);
+  if (!pat?.singleton) continue;
+  if (group.length < 2) continue;
+  // Newest (smallest etimes) is the active one; everything else is orphaned.
+  const sorted = group.slice().sort((a, b) => a.ageSec - b.ageSec);
+  const [active, ...orphans] = sorted;
+  for (const o of orphans) {
+    findings.push({
+      kind: 'singleton_orphan',
+      pid: o.pid,
+      command: o.command,
+      pattern: matchKey,
+      age_seconds: o.ageSec,
+      active_pid: active.pid,
+      active_age_seconds: active.ageSec,
+      rss_mb: o.latestRssMb,
+      severity: pat.severity ?? 'high',
+    });
+  }
+}
+```
+
+`countUnder` is the floor-alerting twin of `countOver`; trivial helper.
+
+### 12.6 Alert format additions (extends §7)
+
+Two new finding kinds in the alert email:
+
+```
+─── FINDINGS ────────────────────────────────────────────
+  • PID 139956 [bun run src/server.ts]  singleton_orphan
+      pattern="bun run src/server.ts"  age=164100s  rss=86 MB
+      active PID=166741  active_age=15010s
+      → likely orphaned by 2026-04-29 baanbaan.service restart; safe to kill
+  • SYSTEM  system_memory_low
+      MemAvailable samples (MiB): [480, 412, 395, 388, 372]  floor=500
+      → investigate top RSS contributors above
+```
+
+Operator response options gain one entry: "Approve kill of orphan PID(s) listed above" — rides the existing operator-approval flow.
+
+### 12.7 Acceptance criteria (extends §8)
+
+10. `parseMemInfo` extracts `MemAvailable` (kB) from `/proc/meminfo` and converts to MiB.
+11. `handler` against a fixture where MemAvailable samples are `[480, 412, 395, 388, 372]` and `mib_floor: 500, samples_required: 4` returns one `system_memory_low` finding.
+12. `handler` against a fixture where MemAvailable samples are `[1800, 1750, 1620, 1900, 1810]` and `mib_floor: 500` returns no `system_memory_low` finding.
+13. RSS K-of-N: a fixture where one PID has RSS samples `[800, 810, 805, 820, 815]` MB against `rss_mb: 600` returns one `rss_over_sustained` finding.
+14. RSS K-of-N: a fixture where one PID has RSS samples `[800, 100, 100, 100, 100]` MB against `rss_mb: 600` returns no `rss_over_sustained` finding (single spike, sustained semantics).
+15. Singleton orphan: a fixture with two PIDs both matching `bun run src/server.ts` (singleton) — `etimes=15010` and `etimes=164100` — returns one `singleton_orphan` finding pointing at the older PID; the active PID is reported as `active_pid`.
+16. Singleton orphan: same fixture with `singleton: false` (or omitted) returns zero `singleton_orphan` findings.
+17. Singleton orphan: a fixture with exactly one PID matching a `singleton: true` pattern returns zero `singleton_orphan` findings.
+18. `/proc/meminfo` read failure: tool logs a warning, omits the `system_memory_low` check, and still produces the rest of the report (per-process and aggregate-CPU findings unaffected).
+
+### 12.8 Tonight's investigation — would this have caught it?
+
+The orphan: yes — `bun run src/server.ts` with `singleton: true`, two matching PIDs (15 010 s vs 164 100 s), older one tagged `singleton_orphan` with severity high. Operator paged within 5 min of the next cron tick after the orphan formed, instead of 1 day 22 hours later by a manual investigation.
+
+The "memory growth" the operator saw: no — and **correctly so**. MemAvailable was 3.2 GiB throughout; the page-cache growth was healthy. `system_memory_low` would not have fired, which is the right behavior. The signal of interest was the orphan, not the page cache.
+
+### 12.9 Non-goals removed from §10
+
+The following items move out of "deferred" because §12 covers them:
+
+- ~~Memory swap-in/out rate. RSS only for now. If we see swap thrash incidents we can add `vmstat` parsing later.~~ — Replaced by `system_memory_low` on `MemAvailable`. Swap-rate parsing remains deferred (not needed; MemAvailable already collapses cache pressure into one number).
+
+The other §10 non-goals remain in force.
+
+### 12.10 Rollout impact (extends §11)
+
+No additional commit; folded into the same single commit at implementation time. The §11 file list expands with:
+
+- `tests/tools/resource-threshold-monitor.test.js` covers AC10–AC18.
+- `config/appliance.yaml` gains the `system_memory` block and the `singleton: true` flag on the `bun run src/server.ts` pattern.
+
+`/proc/meminfo` is read on every invocation; one extra ~few-KB read per 5 min is negligible.
