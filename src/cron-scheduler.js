@@ -21,6 +21,7 @@ const processMonitorTool     = require('./tools/process-monitor');
 const networkScanTool        = require('./tools/network-scan');
 const accessLogScanTool      = require('./tools/access-log-scan');
 const shiftReportTool        = require('./tools/shift-report');
+const autoPatchTool          = require('./tools/auto-patch');
 
 const log = createLogger('cron-scheduler');
 
@@ -71,6 +72,8 @@ const JWT_SECRET_CATEGORY         = 'jwt_secret_check';
 const PCI_ASSESSMENT_CATEGORY     = 'pci_assessment';
 const TOKEN_ROTATION_CATEGORY     = 'token_rotation_remind';
 const TUNNEL_HEALTH_CATEGORY      = 'tunnel_health_check';
+const AUTO_PATCH_COSA_CATEGORY    = 'auto_patch_cosa';
+const AUTO_PATCH_BAANBAAN_CATEGORY = 'auto_patch_baanbaan';
 
 const TUNNEL_HEALTH_DEDUP_WINDOW_MS = 30 * 60 * 1000;
 
@@ -1787,6 +1790,145 @@ async function runTokenRotationRemindTask() {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-patch tasks
+// ---------------------------------------------------------------------------
+
+/**
+ * Render the alert body for an auto-patch run.
+ *
+ * @param {{
+ *   target: 'cosa'|'baanbaan',
+ *   host: string,
+ *   result: { ok: boolean, packagesUpgraded: number, rebootRequired: boolean,
+ *             rebootScheduled: boolean, durationMs: number, logTail: string,
+ *             error: string|null },
+ * }} params
+ * @returns {string}
+ */
+function buildAutoPatchAlertBody({ target, host, result }) {
+  const lines = [
+    `auto_patch run on ${host} (target=${target}):`,
+    '',
+    `Status:               ${result.ok ? 'success' : 'FAILURE'}`,
+    `Packages upgraded:    ${result.packagesUpgraded}`,
+    `Reboot required:      ${result.rebootRequired ? 'yes' : 'no'}`,
+    `Reboot scheduled:     ${result.rebootScheduled ? 'yes (delayed shutdown)' : 'no'}`,
+    `Duration:             ${(result.durationMs / 1000).toFixed(1)}s`,
+  ];
+  if (result.error) {
+    lines.push('', `Error: ${result.error}`);
+  }
+  if (result.logTail) {
+    lines.push('', '--- apt log tail ---', result.logTail.trimEnd());
+  }
+  lines.push('', '--- Automated alert from COSA ---');
+  return lines.join('\n');
+}
+
+/**
+ * Shared body for both COSA and BaanBaan auto-patch tasks.
+ *
+ * Always emails the operator: a success summary, or — per the operator's
+ * "any failure must be notified immediately" requirement — a failure alert
+ * with no dedup window. Configuration knobs come from
+ * appliance.tools.<configKey>.
+ *
+ * @param {{
+ *   target: 'cosa'|'baanbaan',
+ *   configKey: string,
+ *   category: string,
+ *   defaultRebootIfRequired: boolean,
+ *   defaultRebootDelayMinutes: number,
+ * }} params
+ * @returns {Promise<void>}
+ */
+async function _runAutoPatch({ target, configKey, category, defaultRebootIfRequired, defaultRebootDelayMinutes }) {
+  const { appliance } = getConfig();
+  const cfg           = appliance.tools?.[configKey] ?? {};
+
+  if (cfg.enabled === false) return;
+
+  const operatorEmail      = appliance.operator.email;
+  const applianceName      = appliance.name ?? 'Appliance';
+  const host               = target === 'cosa' ? 'cosa-host' : applianceName;
+  const rebootIfRequired   = cfg.reboot_if_required !== false && defaultRebootIfRequired;
+  const rebootDelayMinutes = cfg.reboot_delay_minutes ?? defaultRebootDelayMinutes;
+
+  log.info(`[${configKey}] starting auto_patch on ${target}`);
+
+  let result;
+  try {
+    result = await autoPatchTool.handler({ target, rebootIfRequired, rebootDelayMinutes });
+  } catch (err) {
+    result = {
+      ok:               false,
+      target,
+      packagesUpgraded: 0,
+      rebootRequired:   false,
+      rebootScheduled:  false,
+      durationMs:       0,
+      logTail:          '',
+      error:            `auto_patch threw: ${err.message}`,
+    };
+  }
+
+  const severity = result.ok ? 'info' : 'critical';
+  const titleVerb = result.ok
+    ? (result.rebootScheduled ? 'patched + reboot scheduled' : 'patched')
+    : 'patch FAILED';
+  const title = `${applianceName} — ${target} ${titleVerb} (${result.packagesUpgraded} pkg)`;
+  const body  = buildAutoPatchAlertBody({ target, host, result });
+
+  await emailGateway.sendEmail({
+    to:      operatorEmail,
+    subject: `[COSA Alert] ${title}`,
+    text:    body,
+  });
+
+  createAlert({
+    session_id: crypto.randomUUID(),
+    severity,
+    category,
+    title,
+    body,
+    sent_at:    new Date().toISOString(),
+    email_to:   operatorEmail,
+  });
+
+  log.info(`[${configKey}] alert sent: ${title}`);
+}
+
+/**
+ * Run a full apt-get update + upgrade on the COSA host (local exec).
+ * Schedules a delayed reboot if /var/run/reboot-required exists.
+ * @returns {Promise<void>}
+ */
+async function runAutoPatchCosaTask() {
+  return _runAutoPatch({
+    target:                    'cosa',
+    configKey:                 'auto_patch_cosa',
+    category:                  AUTO_PATCH_COSA_CATEGORY,
+    defaultRebootIfRequired:   true,
+    defaultRebootDelayMinutes: 1,
+  });
+}
+
+/**
+ * Run a full apt-get update + upgrade on the BaanBaan appliance (via SSH).
+ * Schedules a delayed reboot if /var/run/reboot-required exists.
+ * @returns {Promise<void>}
+ */
+async function runAutoPatchBaanbaanTask() {
+  return _runAutoPatch({
+    target:                    'baanbaan',
+    configKey:                 'auto_patch_baanbaan',
+    category:                  AUTO_PATCH_BAANBAAN_CATEGORY,
+    defaultRebootIfRequired:   true,
+    defaultRebootDelayMinutes: 1,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
@@ -1856,6 +1998,12 @@ function start() {
   // Phase 3 — monthly 1st 2:00 AM
   schedule('pci_assessment',        '0 2 1 * *', runPciAssessmentTask);
   schedule('token_rotation_remind', '0 2 1 * *', runTokenRotationRemindTask);
+
+  // Auto-patch — runs once daily at fixed times, 13 hours apart so they
+  // never run concurrently. BaanBaan at 01:00 (cafe is closed); COSA at
+  // 14:00 (server can absorb a brief reboot mid-afternoon).
+  schedule('auto_patch_baanbaan', '0 1 * * *',  runAutoPatchBaanbaanTask);
+  schedule('auto_patch_cosa',     '0 14 * * *', runAutoPatchCosaTask);
 }
 
 /**
@@ -1895,6 +2043,9 @@ module.exports = {
   runJwtSecretCheckTask,
   runPciAssessmentTask,
   runTokenRotationRemindTask,
+  runAutoPatchCosaTask,
+  runAutoPatchBaanbaanTask,
+  buildAutoPatchAlertBody,
   // Trigger builders exported for testing.
   buildHealthCheckTrigger,
   buildBackupTrigger,
