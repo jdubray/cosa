@@ -385,6 +385,8 @@ network:
       name: "Cafe device @ 192.168.1.122 (suspected delivery tablet or Clover POS)"
     - mac: "b6:d4:f1:76:fc:29"
       name: "Cafe device on wlan0 (suspected DoorDash tablet)"
+    - mac: "46:ec:79:bb:d5:1f"
+      name: "Cafe wlan0 device @ 192.168.1.151 (randomized MAC, first seen 2026-05-02; likely existing device rotating its address)"
 
 monitoring:
   # Processes expected to be running at all times on this appliance.
