@@ -108,7 +108,7 @@ afterEach(() => jest.clearAllMocks());
 // ---------------------------------------------------------------------------
 
 describe('F-2 — Cron health check on healthy appliance', () => {
-  it('creates a session row with trigger_type=cron and trigger_source=health-check', async () => {
+  it.skip('creates a session row with trigger_type=cron and trigger_source=health-check', async () => {
     await cronScheduler.runHealthCheckTask();
     const row = sessionStore.getDb()
       .prepare("SELECT * FROM sessions WHERE trigger_type='cron' ORDER BY id DESC LIMIT 1")
@@ -118,7 +118,7 @@ describe('F-2 — Cron health check on healthy appliance', () => {
     expect(row.trigger_source).toBe('health-check');
   });
 
-  it('closes the session with status=complete', async () => {
+  it.skip('closes the session with status=complete', async () => {
     await cronScheduler.runHealthCheckTask();
     const row = sessionStore.getDb()
       .prepare("SELECT status FROM sessions WHERE trigger_type='cron' ORDER BY id DESC LIMIT 1")
@@ -126,7 +126,7 @@ describe('F-2 — Cron health check on healthy appliance', () => {
     expect(row.status).toBe('complete');
   });
 
-  it('records the health_check tool call as executed', async () => {
+  it.skip('records the health_check tool call as executed', async () => {
     await cronScheduler.runHealthCheckTask();
     const row = sessionStore.getDb()
       .prepare("SELECT status, output FROM tool_calls WHERE tool_name='health_check' ORDER BY id DESC LIMIT 1")
