@@ -243,20 +243,28 @@ class WatcherRegistry {
     const stmts   = this._stmtCache();
     const watchers = stmts.listEnabled.all();
 
+    const now = new Date();
+
+    // Run all sandboxed watchers concurrently — each is already an isolated
+    // child process so there is no shared mutable state between them.
+    const results = await Promise.allSettled(
+      watchers.map(w => runInSandbox(w.code, statusSnapshot, timeoutMs))
+    );
+
     const alerts = [];
     const errors = [];
-    const now    = new Date();
 
-    for (const w of watchers) {
-      let outcome;
-      try {
-        outcome = await runInSandbox(w.code, statusSnapshot, timeoutMs);
-      } catch (err) {
-        log.warn(`Watcher "${w.id}" threw: ${err.message}`);
-        errors.push({ watcher_id: w.id, error: err.message });
+    for (let i = 0; i < watchers.length; i++) {
+      const w      = watchers[i];
+      const result = results[i];
+
+      if (result.status === 'rejected') {
+        log.warn(`Watcher "${w.id}" threw: ${result.reason.message}`);
+        errors.push({ watcher_id: w.id, error: result.reason.message });
         continue;
       }
 
+      const outcome = result.value;
       if (!outcome.triggered) continue;
 
       const triggeredAt = now.toISOString();
