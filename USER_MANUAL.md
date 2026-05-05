@@ -347,6 +347,55 @@ will confirm it's back online.
 
 ---
 
+## What Runs Automatically Overnight
+
+A few maintenance tasks run on their own without bothering you. You don't need to do anything — they're listed here just so you know what to expect.
+
+### Security and software updates
+
+Your Baanbaan device and the COSA device install operating-system security updates automatically:
+
+- **Baanbaan: every night at 1:00 AM**, after closing time
+- **COSA: every afternoon at 2:00 PM**
+
+Most nights this finishes silently in a few minutes and you'll never notice. **If a major update needs a restart**, the device will reboot on its own about a minute after the update finishes. Your Baanbaan POS comes back up in roughly 30 seconds — well before opening the next morning.
+
+**You'll only get an email if something goes wrong** with an update (network down, package conflict, etc.). The email looks like this:
+
+```
+Subject: [COSA] auto_patch run on Appliance: FAILURE
+
+Status:               FAILURE
+Packages upgraded:    0
+Reboot required:      no
+
+Error: <description of what failed>
+```
+
+If you see this, no immediate action is needed — the system keeps running on its current packages until COSA's next attempt the following night.
+
+### Resource health checks
+
+Every 5 minutes during business hours (8 AM – 9 PM), COSA checks that no single program on Baanbaan is using too much CPU or memory, and that the device as a whole still has memory headroom. If something exceeds the safe threshold and stays there for several minutes, you'll get an email like:
+
+```
+Subject: [COSA] Resource threshold exceeded
+
+The Baanbaan device is using more memory than expected.
+
+Process: bun (POS application)
+Memory: 1,250 MB (threshold: 1,000 MB)
+Sustained for: 15 minutes
+```
+
+This is usually a soft warning — orders keep going through — but it's a heads-up that a restart may be needed if the trend continues.
+
+### Public-IP changes
+
+Your internet provider sometimes rotates your public IP address. When that happens, COSA notices within a couple of minutes, updates the affected configuration files on Baanbaan, and restarts the relevant services so order routing keeps working. You won't get an email for routine IP changes — only if the recovery itself fails.
+
+---
+
 ## What COSA Will Never Do Without Your Permission
 
 - Restart your system

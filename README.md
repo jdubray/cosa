@@ -101,6 +101,12 @@ COSA has no inbound ports. It makes outbound connections only: SSH to the applia
 - Appliance restart with graceful shutdown and operator approval
 - Pause/resume appliance operations
 
+### Automated System Maintenance
+- **Nightly OS patching (`auto_patch`)** — runs `apt-get update` + full `upgrade` on both the COSA host and the appliance, scheduled 12+ hours apart (defaults: appliance at 1am, COSA at 2pm) so they never run concurrently. Detects `/var/run/reboot-required` and schedules a delayed reboot when needed. Failures alert immediately by email; the OS-vendor `apt-daily.timer` and `apt-daily-upgrade.timer` are masked to prevent dpkg-lock contention.
+- **Resource threshold monitor (`resource_threshold_monitor`)** — polls per-process CPU/memory and system-wide memory every 5 minutes during business hours; alerts when a process or the box exceeds configurable thresholds, with severity-based deduplication (configurable cooldown, default 30 minutes) so a sustained spike does not flood the inbox.
+- **Public IP change detection (`internet_ip_watch`)** — every 2 minutes; on change, rewrites the appliance `.env` files (BaanBaan POS and marketing-engine) and restarts the affected services so allowlisted-IP routing keeps working when the upstream gateway rotates.
+- **Tunnel health check** — hourly probe of the public Cloudflare tunnel hostname; alerts on regression.
+
 ### Full Audit Trail
 - Every session, turn, tool call, approval, and alert is persisted to `data/session.db`
 - Full-text search across all conversation history via SQLite FTS5
@@ -287,33 +293,38 @@ cosa/
 │   │   ├── email-gateway.js        # IMAP polling + SMTP sending
 │   │   └── cron-scheduler.js       # Scheduled tasks
 │   └── tools/
-│       ├── health-check.js         # health_check
-│       ├── db-query.js             # db_query
-│       ├── db-integrity.js         # db_integrity
-│       ├── backup-run.js           # backup_run
-│       ├── backup-verify.js        # backup_verify
-│       ├── shift-report.js         # shift_report
-│       ├── restart-appliance.js    # restart_appliance
-│       ├── pause-appliance.js      # pause_appliance
-│       ├── session-search.js       # session_search
-│       ├── network-scan.js         # network_scan
-│       ├── cloudflare-kill.js      # cloudflare_kill
-│       ├── ips-alert.js            # ips_alert
-│       ├── pci-assessment.js       # pci_assessment
-│       ├── compliance-verify.js    # compliance_verify
-│       ├── credential-audit.js     # credential_audit
-│       ├── access-log-scan.js      # access_log_scan
-│       ├── webhook-hmac-verify.js  # webhook_hmac_verify
-│       ├── jwt-secret-check.js     # jwt_secret_check
-│       ├── token-rotation-remind.js # token_rotation_remind
-│       ├── process-monitor.js      # process_monitor
-│       ├── settings-write.js       # settings_write
-│       ├── appliance-status-poll.js # appliance_status_poll
-│       ├── appliance-api-call.js   # appliance_api_call
-│       ├── watcher-register.js     # watcher_register
-│       ├── watcher-list.js         # watcher_list
-│       ├── watcher-remove.js       # watcher_remove
-│       └── watcher-set-enabled.js  # watcher_set_enabled
+│       ├── health-check.js              # health_check
+│       ├── db-query.js                  # db_query
+│       ├── db-integrity.js              # db_integrity
+│       ├── archive-search.js            # archive_search
+│       ├── backup-run.js                # backup_run
+│       ├── backup-verify.js             # backup_verify
+│       ├── shift-report.js              # shift_report
+│       ├── restart-appliance.js         # restart_appliance
+│       ├── pause-appliance.js           # pause_appliance
+│       ├── session-search.js            # session_search
+│       ├── network-scan.js              # network_scan
+│       ├── cloudflare-kill.js           # cloudflare_kill
+│       ├── ips-alert.js                 # ips_alert
+│       ├── pci-assessment.js            # pci_assessment
+│       ├── compliance-verify.js         # compliance_verify
+│       ├── credential-audit.js          # credential_audit
+│       ├── access-log-scan.js           # access_log_scan
+│       ├── webhook-hmac-verify.js       # webhook_hmac_verify
+│       ├── jwt-secret-check.js          # jwt_secret_check
+│       ├── token-rotation-remind.js     # token_rotation_remind
+│       ├── process-monitor.js           # process_monitor
+│       ├── git-audit.js                 # git_audit
+│       ├── internet-ip-check.js         # internet_ip_check
+│       ├── resource-threshold-monitor.js # resource_threshold_monitor
+│       ├── auto-patch.js                # auto_patch (cosa + baanbaan apt upgrade)
+│       ├── settings-write.js            # settings_write
+│       ├── appliance-status-poll.js     # appliance_status_poll
+│       ├── appliance-api-call.js        # appliance_api_call
+│       ├── watcher-register.js          # watcher_register
+│       ├── watcher-list.js              # watcher_list
+│       ├── watcher-remove.js            # watcher_remove
+│       └── watcher-set-enabled.js       # watcher_set_enabled
 ├── config/
 │   ├── appliance.yaml              # Appliance adapter configuration
 │   ├── cosa.config.js              # Config loader (env + yaml)
