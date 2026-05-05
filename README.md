@@ -436,4 +436,4 @@ The status endpoint should return a JSON object with the appliance's live state.
 
 ## License
 
-UNLICENSED — proprietary.
+MIT — see [LICENSE](LICENSE).
