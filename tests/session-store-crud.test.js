@@ -94,7 +94,13 @@ afterEach(() => {
   process.cwd = originalCwd;
   restoreEnv();
   _resetConfig();
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  // Windows: better-sqlite3 can keep WAL/shm locks briefly after close.
+  // Best-effort cleanup; OS reclaims tmpdir.
+  try {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  } catch (err) {
+    if (err.code !== 'EBUSY' && err.code !== 'EPERM') throw err;
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -263,7 +263,11 @@ describe('Phase 3 E2E — Simulated Intrusion (Staging)', () => {
   });
 
   afterAll(() => {
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    } catch (err) {
+      if (err.code !== 'EBUSY' && err.code !== 'EPERM') throw err;
+    }
   });
 
   beforeEach(() => {

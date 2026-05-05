@@ -51,7 +51,11 @@ function setupTmpConfig(yamlContent) {
     tmpDir,
     cleanup() {
       process.cwd = originalCwd;
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch (err) {
+        if (err.code !== 'EBUSY' && err.code !== 'EPERM') throw err;
+      }
     },
   };
 }
@@ -253,7 +257,11 @@ describe('getConfig() — missing appliance.yaml file', () => {
       expect(() => getConfig()).toThrow(/appliance\.yaml/);
     } finally {
       process.cwd = originalCwd;
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch (err) {
+        if (err.code !== 'EBUSY' && err.code !== 'EPERM') throw err;
+      }
       restoreEnv();
     }
   });

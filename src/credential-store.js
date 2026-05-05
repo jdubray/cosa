@@ -278,4 +278,16 @@ function validateOnStartup() {
   log.info('Credential store: startup validation passed.');
 }
 
-module.exports = { get, set, list, listNames, getMetadata, init, validateOnStartup };
+/**
+ * Close the database connection. For use in tests and graceful shutdown only.
+ * On Windows, leaving a SQLite handle open makes the DB file unable to be
+ * deleted (EBUSY). Tests that create temp dirs must call this before unlink.
+ */
+function closeDb() {
+  if (_db !== null) {
+    _db.close();
+    _db = null;
+  }
+}
+
+module.exports = { get, set, list, listNames, getMetadata, init, validateOnStartup, closeDb };

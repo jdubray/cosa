@@ -27,6 +27,12 @@ let credentialStore;
 
 /** Force the module to re-initialise on each test. */
 function reloadModule() {
+  // Close the previous instance's DB handle before resetModules orphans it.
+  // Without this the previous _db keeps a file lock, and Windows blocks the
+  // afterEach rmSync with EBUSY.
+  if (credentialStore && typeof credentialStore.closeDb === 'function') {
+    try { credentialStore.closeDb(); } catch (_) { /* not yet initialised */ }
+  }
   jest.resetModules();
   // Patch homedir to point to our temp directory.
   jest.spyOn(os, 'homedir').mockReturnValue(tmpHome);
@@ -40,11 +46,24 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Close the DB handle before deleting the temp dir. Without this, Windows
+  // refuses to unlink the .db file (EBUSY) because better-sqlite3 still owns
+  // it. Linux releases the handle on unlink, which is why this test passed
+  // there for so long despite the missing close.
+  try { credentialStore.closeDb(); } catch (_) { /* not initialized */ }
   // Reset singletons between tests.
   jest.resetModules();
   jest.restoreAllMocks();
   delete process.env.COSA_CREDENTIAL_KEY;
-  fs.rmSync(tmpHome, { recursive: true, force: true });
+  // Best-effort temp-dir cleanup. better-sqlite3's WAL/shm files can linger
+  // briefly on Windows after close (EBUSY). The OS cleans tmpdir anyway and
+  // each test uses its own mkdtempSync, so test isolation is preserved even
+  // if a previous run's directory survives a tick longer.
+  try {
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  } catch (err) {
+    if (err.code !== 'EBUSY' && err.code !== 'EPERM') throw err;
+  }
 });
 
 // ---------------------------------------------------------------------------
