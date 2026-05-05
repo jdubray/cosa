@@ -424,7 +424,10 @@ network:
     - mac: "10:52:1c:f6:11:86"
       name: "ESP_F61186 — smart bulb/plug (192.168.1.240)"
 
-    # Phones / tablets (transient — names from router DHCP list)
+    # Phones / tablets — staff and owner devices on the trusted LAN.
+    # The cafe runs a separate guest WiFi for customers, so anything that
+    # appears on 192.168.1.0/24 is expected to be authorized. Names below
+    # come from the gateway DHCP client list.
     - mac: "4e:43:13:1d:ec:25"
       name: "Galaxy-Tab-A7-Lite (randomized MAC, 192.168.1.117)"
     - mac: "66:c8:41:18:7d:cd"
