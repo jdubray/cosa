@@ -283,7 +283,7 @@ async function postSessionHook({ sessionId, trigger, toolCalls, finalText, statu
     log.error(`Memory update failed for session ${sessionId}: ${err.message}`);
   }
 
-  // ── AC6–8: Skill creation via SkillCreationFSM ──────────────────────────
+  // ── AC6–8: Skill creation / tracking via SkillCreationFSM ──────────────
   // Each attempt gets its own FSM instance — no shared state between sessions.
   const fsm = createSkillCreationFSM();
 
@@ -291,20 +291,37 @@ async function postSessionHook({ sessionId, trigger, toolCalls, finalText, statu
     // idle → evaluating
     fsm.send('post_session_hook');
 
-    if (!shouldCreateSkill(trigger.type, toolCalls.length, status)) {
+    const { appliance, env } = getConfig();
+    const minCalls = appliance.tools?.post_session_hook?.min_tool_calls_for_skill
+      ?? DEFAULT_MIN_TOOL_CALLS_FOR_SKILL;
+
+    // Email sessions and low-tool-call-count sessions are skipped entirely.
+    if (trigger.type === 'email' || toolCalls.length < minCalls) {
       fsm.send('not_novel'); // evaluating → idle
       return;
     }
 
     // evaluating → searching
     fsm.send('novel_detected');
-    const { env }     = getConfig();
     const searchQuery = _buildSkillSearchQuery(toolCalls);
     const existing    = searchQuery ? skillStore.searchSkills(searchQuery, 1) : [];
 
     if (existing.length > 0) {
-      log.info(`Skill already exists for pattern '${searchQuery}' — skipping creation`);
-      fsm.send('match_found'); // searching → idle (existing skill; flag for improvement)
+      log.info(`Skill already exists for pattern '${searchQuery}' — tracking use`);
+      // Track the invocation so success-rate degradation can be detected.
+      // Runs for both successful and failed sessions so the rate is accurate.
+      try {
+        skillStore.recordSkillUse(existing[0].id, sessionId, status === 'complete');
+      } catch (err) {
+        log.warn(`recordSkillUse failed for skill ${existing[0].id}: ${err.message}`);
+      }
+      fsm.send('match_found'); // searching → idle
+      return;
+    }
+
+    // No existing skill. Only generate new skills from successfully completed sessions.
+    if (status !== 'complete') {
+      fsm.send('not_novel'); // searching → idle (FSM state reuse; no new skill)
       return;
     }
 

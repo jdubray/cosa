@@ -20,24 +20,28 @@ let _db = null;
 
 /**
  * DDL statements executed in order during migration.
- * Each entry is idempotent (uses IF NOT EXISTS).
+ * Each entry is idempotent (uses IF NOT EXISTS or is handled by runMigrations).
  * @type {string[]}
  */
 const MIGRATIONS = [
   // ── Core skills table ──────────────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS skills (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    name         TEXT    NOT NULL UNIQUE,
-    title        TEXT    NOT NULL,
-    description  TEXT    NOT NULL,
-    domain       TEXT    NOT NULL,
-    content      TEXT    NOT NULL,
-    version      INTEGER NOT NULL DEFAULT 1,
-    use_count    INTEGER NOT NULL DEFAULT 0,
-    last_used_at TEXT,
-    created_at   TEXT    NOT NULL,
-    updated_at   TEXT    NOT NULL
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL UNIQUE,
+    title         TEXT    NOT NULL,
+    description   TEXT    NOT NULL,
+    domain        TEXT    NOT NULL,
+    content       TEXT    NOT NULL,
+    version       INTEGER NOT NULL DEFAULT 1,
+    use_count     INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    last_used_at  TEXT,
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
   )`,
+
+  // ── Additive migration for databases created before success_count was added ─
+  `ALTER TABLE skills ADD COLUMN success_count INTEGER NOT NULL DEFAULT 0`,
 
   `CREATE INDEX IF NOT EXISTS idx_skills_domain    ON skills(domain)`,
   `CREATE INDEX IF NOT EXISTS idx_skills_use_count ON skills(use_count)`,
@@ -117,7 +121,17 @@ function runMigrations() {
   const db = getDb();
   const migrate = db.transaction(() => {
     for (const sql of MIGRATIONS) {
-      db.exec(sql);
+      try {
+        db.exec(sql);
+      } catch (err) {
+        // ALTER TABLE ADD COLUMN is not idempotent in SQLite — ignore the error
+        // when the column already exists (upgrade path from older schema).
+        if (sql.trimStart().toUpperCase().startsWith('ALTER TABLE') &&
+            err.message.includes('duplicate column name')) {
+          continue;
+        }
+        throw err;
+      }
     }
   });
   migrate();
@@ -229,19 +243,30 @@ function updateSkill(name, updates) {
 // ---------------------------------------------------------------------------
 
 /**
- * Record an invocation of a skill and increment its use_count.
+ * Record an invocation of a skill and update use/success counters.
  *
- * @param {number} skillId - The `id` of the skill row.
+ * @param {number}      skillId   - The `id` of the skill row.
  * @param {string|null} sessionId - The session that invoked the skill, or null.
+ * @param {boolean}     success   - Whether the session completed successfully.
  * @returns {number} The inserted skill_uses row id.
  */
-function recordSkillUse(skillId, sessionId) {
+function recordSkillUse(skillId, sessionId, success = false) {
   const ts = now();
   const db = getDb();
 
-  db.prepare(
-    `UPDATE skills SET use_count = use_count + 1, last_used_at = ? WHERE id = ?`
-  ).run(ts, skillId);
+  if (success) {
+    db.prepare(
+      `UPDATE skills
+       SET use_count     = use_count     + 1,
+           success_count = success_count + 1,
+           last_used_at  = ?
+       WHERE id = ?`
+    ).run(ts, skillId);
+  } else {
+    db.prepare(
+      `UPDATE skills SET use_count = use_count + 1, last_used_at = ? WHERE id = ?`
+    ).run(ts, skillId);
+  }
 
   const info = db
     .prepare(
@@ -250,6 +275,41 @@ function recordSkillUse(skillId, sessionId) {
     .run(skillId, sessionId ?? null, ts);
 
   return info.lastInsertRowid;
+}
+
+/**
+ * Return skills whose success rate has fallen below `minSuccessRate` after at
+ * least `minUseCount` invocations.  Ordered by ascending success rate (worst
+ * first), then descending use_count.
+ *
+ * @param {number} [minUseCount=5]     - Minimum invocations before a skill can be flagged.
+ * @param {number} [minSuccessRate=0.6] - Success rate floor (exclusive); skills below this are returned.
+ * @returns {Array<{
+ *   id:            number,
+ *   name:          string,
+ *   title:         string,
+ *   domain:        string,
+ *   use_count:     number,
+ *   success_count: number,
+ *   success_rate:  number,
+ * }>}
+ */
+function flagDegradedSkills(minUseCount = 5, minSuccessRate = 0.6) {
+  return getDb()
+    .prepare(
+      `SELECT id,
+              name,
+              title,
+              domain,
+              use_count,
+              success_count,
+              CAST(success_count AS REAL) / use_count AS success_rate
+       FROM   skills
+       WHERE  use_count >= ?
+         AND  CAST(success_count AS REAL) / use_count < ?
+       ORDER  BY success_rate ASC, use_count DESC`
+    )
+    .all(minUseCount, minSuccessRate);
 }
 
 // ---------------------------------------------------------------------------
@@ -564,6 +624,7 @@ module.exports = {
   updateSkill,
   // Skill uses
   recordSkillUse,
+  flagDegradedSkills,
   // Search
   searchSkills,
 };
