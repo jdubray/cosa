@@ -90,24 +90,44 @@ describe('auto_patch — appliance path (SSH)', () => {
     expect(mockSshExec).not.toHaveBeenCalled();
   });
 
-  test('happy path — no reboot needed', async () => {
+  test('happy path — no reboot needed (flag absent + initramfs older than boot)', async () => {
     mockSshExec
       .mockReturnValueOnce(sshOk('Reading package lists... Done\n'))
       .mockReturnValueOnce(sshOk('Setting up libfoo (1.0)\nSetting up libbar (2.0)\n'))
-      .mockReturnValueOnce(sshFail(1));
+      .mockReturnValueOnce(sshFail(1))   // flag check: not present
+      .mockReturnValueOnce(sshFail(1));  // initramfs check: nothing newer than boot
 
     const result = await handler({ target: 'appliance' });
 
-    expect(mockSshExec).toHaveBeenCalledTimes(3);
+    expect(mockSshExec).toHaveBeenCalledTimes(4);
     expect(mockSshExec.mock.calls[0][0]).toMatch(/^sudo apt-get update/);
     expect(mockSshExec.mock.calls[1][0]).toMatch(/^sudo DEBIAN_FRONTEND=noninteractive apt-get/);
     expect(mockSshExec.mock.calls[2][0]).toBe('test -f /var/run/reboot-required');
+    expect(mockSshExec.mock.calls[3][0]).toMatch(/initramfs/);
 
     expect(result.ok).toBe(true);
     expect(result.packagesUpgraded).toBe(2);
     expect(result.rebootRequired).toBe(false);
     expect(result.rebootScheduled).toBe(false);
     expect(result.error).toBeNull();
+  });
+
+  test('Pi OS path — flag absent but initramfs newer than boot triggers reboot', async () => {
+    mockSshExec
+      .mockReturnValueOnce(sshOk(''))
+      .mockReturnValueOnce(sshOk('Setting up linux-image-rpi-2712\n'))
+      .mockReturnValueOnce(sshFail(1))               // flag absent (no update-notifier-common)
+      .mockReturnValueOnce(sshOk(''))                // initramfs newer than boot → exit 0
+      .mockReturnValueOnce(sshOk('Shutdown scheduled'));
+
+    const result = await handler({ target: 'appliance' });
+
+    expect(mockSshExec).toHaveBeenCalledTimes(5);
+    expect(mockSshExec.mock.calls[3][0]).toMatch(/initramfs/);
+    expect(mockSshExec.mock.calls[4][0]).toBe('sudo shutdown -r +1');
+    expect(result.ok).toBe(true);
+    expect(result.rebootRequired).toBe(true);
+    expect(result.rebootScheduled).toBe(true);
   });
 
   test('reboot path — flag exists and reboot is scheduled', async () => {
@@ -196,7 +216,8 @@ describe('auto_patch — appliance path (SSH)', () => {
     mockSshExec
       .mockReturnValueOnce(sshOk(''))
       .mockReturnValueOnce(sshOk(''))
-      .mockReturnValueOnce(sshFail(1));
+      .mockReturnValueOnce(sshFail(1))   // flag absent
+      .mockReturnValueOnce(sshFail(1));  // initramfs nothing newer
 
     await handler({ target: 'appliance' });
 
@@ -206,19 +227,37 @@ describe('auto_patch — appliance path (SSH)', () => {
 });
 
 describe('auto_patch — cosa path (local)', () => {
-  test('happy path — no reboot needed', async () => {
+  test('happy path — no reboot needed (flag absent + initramfs older than boot)', async () => {
     mockLocalOk('Reading package lists... Done\n');
     mockLocalOk('Setting up libfoo (1.0)\nSetting up libbar (2.0)\nSetting up libbaz (3.0)\n');
-    mockLocalFail(1);
+    mockLocalFail(1);   // flag check: not present
+    mockLocalFail(1);   // initramfs check: nothing newer than boot
 
     const result = await handler({ target: 'cosa' });
 
-    expect(mockChildExec).toHaveBeenCalledTimes(3);
+    expect(mockChildExec).toHaveBeenCalledTimes(4);
     expect(mockChildExec.mock.calls[0][0]).toMatch(/^sudo apt-get update/);
     expect(mockChildExec.mock.calls[2][0]).toBe('test -f /var/run/reboot-required');
+    expect(mockChildExec.mock.calls[3][0]).toMatch(/initramfs/);
     expect(result.ok).toBe(true);
     expect(result.packagesUpgraded).toBe(3);
     expect(result.rebootRequired).toBe(false);
+  });
+
+  test('Pi OS path — initramfs newer than boot triggers reboot on cosa', async () => {
+    mockLocalOk('');
+    mockLocalOk('Setting up linux-image-rpi-2712\n');
+    mockLocalFail(1);   // flag absent
+    mockLocalOk('');    // initramfs newer → exit 0 = reboot needed
+    mockLocalOk('Shutdown scheduled');
+
+    const result = await handler({ target: 'cosa' });
+
+    expect(mockChildExec).toHaveBeenCalledTimes(5);
+    expect(mockChildExec.mock.calls[3][0]).toMatch(/initramfs/);
+    expect(mockChildExec.mock.calls[4][0]).toBe('sudo shutdown -r +1');
+    expect(result.rebootRequired).toBe(true);
+    expect(result.rebootScheduled).toBe(true);
   });
 
   test('apt-get update failure on cosa — captures stderr', async () => {
@@ -235,7 +274,8 @@ describe('auto_patch — cosa path (local)', () => {
     mockSshIsConnected.mockReturnValue(false);
     mockLocalOk('');
     mockLocalOk('');
-    mockLocalFail(1);
+    mockLocalFail(1);   // flag absent
+    mockLocalFail(1);   // initramfs nothing newer
 
     const result = await handler({ target: 'cosa' });
 

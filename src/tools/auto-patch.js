@@ -123,6 +123,44 @@ async function _execTarget(target, command) {
   }
 }
 
+/**
+ * Decide whether the target host needs a reboot after apt upgrade.
+ *
+ * Two complementary signals are checked:
+ *
+ *   1. The standard Debian/Ubuntu marker `/var/run/reboot-required`. This is
+ *      created by `update-notifier-common`'s apt hook on releases that ship
+ *      it. Authoritative when present.
+ *
+ *   2. Initramfs-newer-than-boot. Raspberry Pi OS does NOT ship
+ *      `update-notifier-common`, so the marker is never written even after
+ *      a kernel upgrade. As a fallback we check whether any boot initramfs
+ *      file has an mtime newer than the running kernel's boot time. If apt
+ *      regenerated initramfs (for a new kernel, glibc, etc.) since we
+ *      booted, a reboot is needed.
+ *
+ * Either signal triggering is sufficient. Returns true if either says yes.
+ *
+ * @param {'cosa'|'appliance'} target
+ * @returns {Promise<boolean>}
+ */
+async function _checkRebootRequired(target) {
+  const flagRes = await _execTarget(target, `test -f ${REBOOT_FLAG_PATH}`);
+  if (flagRes.exitCode === 0) return true;
+
+  // Pi OS fallback: any of these initramfs files newer than boot time?
+  // - /boot/firmware/initramfs8           Pi 4 and earlier on Pi OS Bookworm+
+  // - /boot/firmware/initramfs_2712       Pi 5 on Pi OS Bookworm+
+  // - /boot/initrd.img-*                  Generic Debian/Ubuntu fallback
+  const cmd =
+    'b=$(date -d "$(uptime -s)" +%s) && ' +
+    'for f in /boot/firmware/initramfs8 /boot/firmware/initramfs_2712 /boot/initrd.img-*; do ' +
+      '[ -f "$f" ] && [ "$(stat -c %Y "$f")" -gt "$b" ] && exit 0; ' +
+    'done; exit 1';
+  const initramfsRes = await _execTarget(target, cmd);
+  return initramfsRes.exitCode === 0;
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -193,9 +231,8 @@ async function handler({ target, rebootIfRequired = true, rebootDelayMinutes = 1
     };
   }
 
-  // 3. Reboot flag
-  const flagRes = await _execTarget(target, `test -f ${REBOOT_FLAG_PATH}`);
-  const rebootRequired = flagRes.exitCode === 0;
+  // 3. Reboot detection — see _checkRebootRequired for the two-pronged check.
+  const rebootRequired = await _checkRebootRequired(target);
 
   // 4. Schedule reboot if needed.  Use a delay so the cron task can finish
   //    sending its notification email before the host goes down.
