@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('crypto');
 const fs     = require('fs');
 const path   = require('path');
 const cron = require('node-cron');
@@ -789,7 +788,7 @@ async function runInternetIpWatchTask() {
   });
 
   createAlert({
-    session_id: crypto.randomUUID(),
+    session_id: null,
     severity:   errors.length > 0 ? 'warning' : 'info',
     category:   INTERNET_IP_WATCH_CATEGORY,
     title,
@@ -850,7 +849,7 @@ async function runHealthCheckTask() {
       });
 
       createAlert({
-        session_id: crypto.randomUUID(),
+        session_id: null,
         severity:   'resolved',
         category:   HEALTH_CHECK_CATEGORY,
         title,
@@ -889,7 +888,7 @@ async function runHealthCheckTask() {
   });
 
   createAlert({
-    session_id: crypto.randomUUID(), // no Claude session for health checks
+    session_id: null, // no Claude session for health checks
     severity,
     category:   HEALTH_CHECK_CATEGORY,
     title,
@@ -953,7 +952,7 @@ async function runBackupTask() {
   });
 
   createAlert({
-    session_id: crypto.randomUUID(), // no Claude session for backup
+    session_id: null, // no Claude session for backup
     severity:   'critical',
     category:   BACKUP_CATEGORY,
     title,
@@ -1016,7 +1015,7 @@ async function runBackupVerifyTask() {
   });
 
   createAlert({
-    session_id: crypto.randomUUID(), // no Claude session for backup_verify
+    session_id: null, // no Claude session for backup_verify
     severity:   'critical',
     category:   BACKUP_CATEGORY,
     title,
@@ -1176,7 +1175,7 @@ async function runShiftReportTask() {
   });
 
   createAlert({
-    session_id: crypto.randomUUID(), // no Claude session for shift_report
+    session_id: null, // no Claude session for shift_report
     severity:   'info',
     category:   SHIFT_REPORT_CATEGORY,
     title:      subject,
@@ -1461,7 +1460,7 @@ async function runTunnelHealthCheckTask() {
   await emailGateway.sendEmail({ to: operatorEmail, subject, text: body });
 
   createAlert({
-    session_id: crypto.randomUUID(),
+    session_id: null,
     severity:   'critical',
     category:   TUNNEL_HEALTH_CATEGORY,
     title:      summary,
@@ -1927,7 +1926,7 @@ async function runResourceThresholdTask() {
   });
 
   createAlert({
-    session_id: crypto.randomUUID(),
+    session_id: null,
     severity:   maxSeverity,
     category:   RESOURCE_THRESHOLD_CATEGORY,
     title,
@@ -2036,7 +2035,7 @@ async function _runAutoPatch({ target, configKey, category, defaultRebootIfRequi
   });
 
   createAlert({
-    session_id: crypto.randomUUID(),
+    session_id: null,
     severity,
     category,
     title,
