@@ -128,12 +128,20 @@ jest.mock('fs', () => ({
 }));
 
 // ── logger ───────────────────────────────────────────────────────────────────
+// Lifted to module scope so tests can assert against log.warn / log.error etc.
+// ssh-backend uses the structured logger (see src/logger.js), not console.* —
+// any test that wants to check a log line must spy on these mocks.
+const mockLogDebug = jest.fn();
+const mockLogInfo  = jest.fn();
+const mockLogWarn  = jest.fn();
+const mockLogError = jest.fn();
+
 jest.mock('../src/logger', () => ({
   createLogger: () => ({
-    debug: jest.fn(),
-    info:  jest.fn(),
-    warn:  jest.fn(),
-    error: jest.fn(),
+    debug: mockLogDebug,
+    info:  mockLogInfo,
+    warn:  mockLogWarn,
+    error: mockLogError,
   }),
 }));
 
@@ -157,6 +165,10 @@ beforeEach(() => {
   mockSsh.lastConnectOptions = null;
   mockSsh.mockHostKey        = null;
   mockLastStream             = null;
+  mockLogDebug.mockClear();
+  mockLogInfo.mockClear();
+  mockLogWarn.mockClear();
+  mockLogError.mockClear();
   mockGetConfig.mockReturnValue({ appliance: { ssh: { ...BASE_SSH_CONFIG } } });
   disconnect();
 });
@@ -266,7 +278,12 @@ describe('exec() — command timeout', () => {
     await jest.runAllTimersAsync();
     await initP;
 
+    // Attach a rejection handler synchronously, before advancing timers —
+    // otherwise the timeout fires unhandled (Jest treats that as a failure)
+    // and only later does `expect(execP).rejects` add its handler.
     const execP = exec('sleep 9999');
+    execP.catch(() => {});
+
     jest.advanceTimersByTime(200); // past the 80ms mock timeout
     await jest.runAllTimersAsync();
 
@@ -281,7 +298,9 @@ describe('exec() — command timeout', () => {
     await jest.runAllTimersAsync();
     await initP;
 
-    exec('sleep 9999');
+    const execP = exec('sleep 9999');
+    execP.catch(() => {}); // see comment in previous test
+
     jest.advanceTimersByTime(200);
     await jest.runAllTimersAsync();
 
@@ -326,12 +345,11 @@ describe('AC7 — startup failure handling', () => {
     await expect(init()).resolves.toBeUndefined();
   });
 
-  it('logs console.warn when the initial connection fails', async () => {
+  it('logs a warning when the initial connection fails', async () => {
     mockSsh.connectResult = 'error';
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await init();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/SSH.*failed/i));
-    warnSpy.mockRestore();
+    // ssh-backend uses the structured logger (log.warn), not console.warn.
+    expect(mockLogWarn).toHaveBeenCalledWith(expect.stringMatching(/SSH.*fail/i));
   });
 
   it('leaves isConnected() false after a failed init()', async () => {
@@ -392,14 +410,10 @@ describe('AC3 — reconnect on drop', () => {
     jest.useFakeTimers();
     mockSsh.connectResult = 'error'; // make reconnects fail so we can observe timing
 
-    // Suppress expected warnings
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
-
-    // Trigger reconnect chain
-    const initP = init();
-    await jest.runAllTimersAsync(); // fires initial error → scheduleReconnect (1000ms)
-    await initP;
-
+    // Install the setTimeout spy BEFORE init() so the very first
+    // scheduleReconnect (called from init's catch block) is captured too.
+    // Otherwise the first delay is invisible and only recursive scheduling
+    // is observed.
     const delays = [];
     const origSetTimeout = global.setTimeout;
     jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay) => {
@@ -407,14 +421,22 @@ describe('AC3 — reconnect on drop', () => {
       return origSetTimeout(fn, delay);
     });
 
-    // Run two backoff cycles
+    // Trigger reconnect chain
+    const initP = init();
+    await jest.runAllTimersAsync(); // fires initial error → scheduleReconnect (1000ms)
+    await initP;
+
+    // Run two more backoff cycles
     jest.advanceTimersByTime(1100); // attempt 1 (1000ms)
     await jest.runAllTimersAsync();
     jest.advanceTimersByTime(2200); // attempt 2 (2000ms)
     await jest.runAllTimersAsync();
 
-    expect(delays.length).toBeGreaterThanOrEqual(2);
-    expect(delays[1]).toBeGreaterThan(delays[0]);
+    // Filter to the backoff delays we care about (1000, 2000, ...). Other
+    // setTimeout calls (e.g. ssh2 internals) may also be in `delays`.
+    const backoffs = delays.filter((d) => [1000, 2000, 4000, 8000, 16000, 30000].includes(d));
+    expect(backoffs.length).toBeGreaterThanOrEqual(2);
+    expect(backoffs[1]).toBeGreaterThan(backoffs[0]);
 
     jest.restoreAllMocks();
   });
