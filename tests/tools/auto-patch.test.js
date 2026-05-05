@@ -79,11 +79,11 @@ describe('auto_patch — input validation', () => {
   });
 });
 
-describe('auto_patch — baanbaan path (SSH)', () => {
+describe('auto_patch — appliance path (SSH)', () => {
   test('returns ok=false when SSH not connected, without invoking commands', async () => {
     mockSshIsConnected.mockReturnValue(false);
 
-    const result = await handler({ target: 'baanbaan' });
+    const result = await handler({ target: 'appliance' });
 
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/SSH backend not connected/);
@@ -96,7 +96,7 @@ describe('auto_patch — baanbaan path (SSH)', () => {
       .mockReturnValueOnce(sshOk('Setting up libfoo (1.0)\nSetting up libbar (2.0)\n'))
       .mockReturnValueOnce(sshFail(1));
 
-    const result = await handler({ target: 'baanbaan' });
+    const result = await handler({ target: 'appliance' });
 
     expect(mockSshExec).toHaveBeenCalledTimes(3);
     expect(mockSshExec.mock.calls[0][0]).toMatch(/^sudo apt-get update/);
@@ -118,7 +118,7 @@ describe('auto_patch — baanbaan path (SSH)', () => {
       .mockReturnValueOnce(sshOk('Shutdown scheduled'));
 
     const result = await handler({
-      target:             'baanbaan',
+      target:             'appliance',
       rebootIfRequired:   true,
       rebootDelayMinutes: 2,
     });
@@ -136,7 +136,7 @@ describe('auto_patch — baanbaan path (SSH)', () => {
       .mockReturnValueOnce(sshOk(''))
       .mockReturnValueOnce(sshOk(''));
 
-    const result = await handler({ target: 'baanbaan', rebootIfRequired: false });
+    const result = await handler({ target: 'appliance', rebootIfRequired: false });
 
     expect(mockSshExec).toHaveBeenCalledTimes(3);
     expect(result.ok).toBe(true);
@@ -147,7 +147,7 @@ describe('auto_patch — baanbaan path (SSH)', () => {
   test('apt-get update failure — does not run upgrade or reboot', async () => {
     mockSshExec.mockReturnValueOnce(sshFail(100, 'Could not get lock /var/lib/apt/lists/lock'));
 
-    const result = await handler({ target: 'baanbaan' });
+    const result = await handler({ target: 'appliance' });
 
     expect(mockSshExec).toHaveBeenCalledTimes(1);
     expect(result.ok).toBe(false);
@@ -160,7 +160,7 @@ describe('auto_patch — baanbaan path (SSH)', () => {
       .mockReturnValueOnce(sshOk(''))
       .mockReturnValueOnce(sshFail(100, 'dpkg: error processing package foo'));
 
-    const result = await handler({ target: 'baanbaan' });
+    const result = await handler({ target: 'appliance' });
 
     expect(mockSshExec).toHaveBeenCalledTimes(2);
     expect(result.ok).toBe(false);
@@ -175,7 +175,7 @@ describe('auto_patch — baanbaan path (SSH)', () => {
       .mockReturnValueOnce(sshOk(''))
       .mockReturnValueOnce(sshFail(1, 'shutdown: command not found'));
 
-    const result = await handler({ target: 'baanbaan' });
+    const result = await handler({ target: 'appliance' });
 
     expect(result.ok).toBe(false);
     expect(result.rebootScheduled).toBe(false);
@@ -185,7 +185,7 @@ describe('auto_patch — baanbaan path (SSH)', () => {
   test('SSH exec rejects (e.g. timeout) — converted to exitCode=1, no throw', async () => {
     mockSshExec.mockRejectedValueOnce(new Error('Command timed out after 1800000ms'));
 
-    const result = await handler({ target: 'baanbaan' });
+    const result = await handler({ target: 'appliance' });
 
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/apt-get update failed/);
@@ -198,7 +198,7 @@ describe('auto_patch — baanbaan path (SSH)', () => {
       .mockReturnValueOnce(sshOk(''))
       .mockReturnValueOnce(sshFail(1));
 
-    await handler({ target: 'baanbaan' });
+    await handler({ target: 'appliance' });
 
     const aptUpdateCall = mockSshExec.mock.calls[0];
     expect(aptUpdateCall[2]).toBe(30 * 60 * 1000);

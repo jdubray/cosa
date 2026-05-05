@@ -73,8 +73,8 @@ const JWT_SECRET_CATEGORY         = 'jwt_secret_check';
 const PCI_ASSESSMENT_CATEGORY     = 'pci_assessment';
 const TOKEN_ROTATION_CATEGORY     = 'token_rotation_remind';
 const TUNNEL_HEALTH_CATEGORY      = 'tunnel_health_check';
-const AUTO_PATCH_COSA_CATEGORY    = 'auto_patch_cosa';
-const AUTO_PATCH_BAANBAAN_CATEGORY = 'auto_patch_baanbaan';
+const AUTO_PATCH_COSA_CATEGORY      = 'auto_patch_cosa';
+const AUTO_PATCH_APPLIANCE_CATEGORY = 'auto_patch_appliance';
 const RESOURCE_THRESHOLD_CATEGORY = 'resource_threshold_monitor';
 
 const TUNNEL_HEALTH_DEDUP_WINDOW_MS = 30 * 60 * 1000;
@@ -1947,7 +1947,7 @@ async function runResourceThresholdTask() {
  * Render the alert body for an auto-patch run.
  *
  * @param {{
- *   target: 'cosa'|'baanbaan',
+ *   target: 'cosa'|'appliance',
  *   host: string,
  *   result: { ok: boolean, packagesUpgraded: number, rebootRequired: boolean,
  *             rebootScheduled: boolean, durationMs: number, logTail: string,
@@ -1976,7 +1976,7 @@ function buildAutoPatchAlertBody({ target, host, result }) {
 }
 
 /**
- * Shared body for both COSA and BaanBaan auto-patch tasks.
+ * Shared body for both COSA-host and appliance auto-patch tasks.
  *
  * Always emails the operator: a success summary, or — per the operator's
  * "any failure must be notified immediately" requirement — a failure alert
@@ -1984,7 +1984,7 @@ function buildAutoPatchAlertBody({ target, host, result }) {
  * appliance.tools.<configKey>.
  *
  * @param {{
- *   target: 'cosa'|'baanbaan',
+ *   target: 'cosa'|'appliance',
  *   configKey: string,
  *   category: string,
  *   defaultRebootIfRequired: boolean,
@@ -2064,15 +2064,15 @@ async function runAutoPatchCosaTask() {
 }
 
 /**
- * Run a full apt-get update + upgrade on the BaanBaan appliance (via SSH).
+ * Run a full apt-get update + upgrade on the managed appliance (via SSH).
  * Schedules a delayed reboot if /var/run/reboot-required exists.
  * @returns {Promise<void>}
  */
-async function runAutoPatchBaanbaanTask() {
+async function runAutoPatchApplianceTask() {
   return _runAutoPatch({
-    target:                    'baanbaan',
-    configKey:                 'auto_patch_baanbaan',
-    category:                  AUTO_PATCH_BAANBAAN_CATEGORY,
+    target:                    'appliance',
+    configKey:                 'auto_patch_appliance',
+    category:                  AUTO_PATCH_APPLIANCE_CATEGORY,
     defaultRebootIfRequired:   true,
     defaultRebootDelayMinutes: 1,
   });
@@ -2153,10 +2153,10 @@ function start() {
   schedule('resource_threshold_monitor', '*/5 8-21 * * *', runResourceThresholdTask);
 
   // Auto-patch — runs once daily at fixed times, 13 hours apart so they
-  // never run concurrently. BaanBaan at 01:00 (cafe is closed); COSA at
-  // 14:00 (server can absorb a brief reboot mid-afternoon).
-  schedule('auto_patch_baanbaan', '0 1 * * *',  runAutoPatchBaanbaanTask);
-  schedule('auto_patch_cosa',     '0 14 * * *', runAutoPatchCosaTask);
+  // never run concurrently. Appliance at 01:00 (low-traffic window); COSA
+  // host at 14:00 (server can absorb a brief reboot mid-afternoon).
+  schedule('auto_patch_appliance', '0 1 * * *',  runAutoPatchApplianceTask);
+  schedule('auto_patch_cosa',      '0 14 * * *', runAutoPatchCosaTask);
 }
 
 /**
@@ -2198,7 +2198,7 @@ module.exports = {
   runTokenRotationRemindTask,
   runResourceThresholdTask,
   runAutoPatchCosaTask,
-  runAutoPatchBaanbaanTask,
+  runAutoPatchApplianceTask,
   buildAutoPatchAlertBody,
   // Trigger builders exported for testing.
   buildHealthCheckTrigger,

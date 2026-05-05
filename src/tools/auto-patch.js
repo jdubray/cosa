@@ -29,7 +29,7 @@ const EXEC_MAX_BUFFER = 16 * 1024 * 1024;
 
 const LOG_TAIL_BYTES = 4096;
 
-const VALID_TARGETS = ['cosa', 'baanbaan'];
+const VALID_TARGETS = ['cosa', 'appliance'];
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -49,7 +49,7 @@ const INPUT_SCHEMA = {
 const SCHEMA = {
   description:
     'Run apt-get update and a full apt-get upgrade on either the COSA host (target=cosa) ' +
-    'or the BaanBaan appliance (target=baanbaan, via SSH). Detects ' +
+    'or the managed appliance (target=appliance, via SSH). Detects ' +
     `${REBOOT_FLAG_PATH} and optionally schedules a delayed reboot. Returns ok, ` +
     'packagesUpgraded, rebootRequired, rebootScheduled, durationMs, logTail, and error.',
   inputSchema: INPUT_SCHEMA,
@@ -89,15 +89,15 @@ function _countUpgraded(stdout) {
 /**
  * Run a shell command on the chosen target.
  *
- * cosa     → local exec via child_process.
- * baanbaan → remote exec via ssh-backend.
+ * cosa      → local exec via child_process.
+ * appliance → remote exec via ssh-backend.
  *
  * Always resolves with a uniform shape; never throws on a non-zero exit, a
  * connection drop, or a timeout. Callers can branch on exitCode without
  * try/catch around every call.
  *
- * @param {'cosa'|'baanbaan'} target
- * @param {string}            command
+ * @param {'cosa'|'appliance'} target
+ * @param {string}             command
  * @returns {Promise<{ exitCode: number, stdout: string, stderr: string }>}
  */
 async function _execTarget(target, command) {
@@ -128,7 +128,7 @@ async function _execTarget(target, command) {
 // ---------------------------------------------------------------------------
 
 /**
- * @param {{ target: 'cosa'|'baanbaan', rebootIfRequired?: boolean, rebootDelayMinutes?: number }} input
+ * @param {{ target: 'cosa'|'appliance', rebootIfRequired?: boolean, rebootDelayMinutes?: number }} input
  * @returns {Promise<{
  *   ok: boolean,
  *   target: string,
@@ -144,7 +144,7 @@ async function handler({ target, rebootIfRequired = true, rebootDelayMinutes = 1
   if (!VALID_TARGETS.includes(target)) {
     throw new Error(`auto_patch: invalid target '${target}' (expected one of ${VALID_TARGETS.join(', ')})`);
   }
-  if (target === 'baanbaan' && !sshBackend.isConnected()) {
+  if (target === 'appliance' && !sshBackend.isConnected()) {
     return {
       ok:               false,
       target,

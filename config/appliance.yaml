@@ -340,15 +340,15 @@ tools:
     dedup_window_minutes: 30
 
   # Automated apt patching.  One run per day per host, 13 hours apart, never
-  # concurrent.  Schedule lives in src/cron-scheduler.js: BaanBaan at 01:00
-  # local (cafe is closed), COSA at 14:00 local.
+  # concurrent.  Schedule lives in src/cron-scheduler.js: appliance at 01:00
+  # local (low-traffic window), COSA at 14:00 local.
   #
   # Requires passwordless sudo for `apt-get` and `shutdown` on each host:
   #   <user> ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /sbin/shutdown
   # On hosts where unattended-upgrades is also enabled, expect occasional
   # apt-lock failures — mask apt-daily.timer / apt-daily-upgrade.timer to
   # make this scheduler the single source of patching.
-  auto_patch_baanbaan:
+  auto_patch_appliance:
     enabled: true
     reboot_if_required: true
     reboot_delay_minutes: 1
