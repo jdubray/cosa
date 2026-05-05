@@ -181,6 +181,28 @@ describe('auto_patch — baanbaan path (SSH)', () => {
     expect(result.rebootScheduled).toBe(false);
     expect(result.error).toMatch(/Reboot scheduling failed/);
   });
+
+  test('SSH exec rejects (e.g. timeout) — converted to exitCode=1, no throw', async () => {
+    mockSshExec.mockRejectedValueOnce(new Error('Command timed out after 1800000ms'));
+
+    const result = await handler({ target: 'baanbaan' });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/apt-get update failed/);
+    expect(result.logTail).toMatch(/timed out after 1800000ms/);
+  });
+
+  test('passes APT_TIMEOUT_MS as third arg to sshBackend.exec', async () => {
+    mockSshExec
+      .mockReturnValueOnce(sshOk(''))
+      .mockReturnValueOnce(sshOk(''))
+      .mockReturnValueOnce(sshFail(1));
+
+    await handler({ target: 'baanbaan' });
+
+    const aptUpdateCall = mockSshExec.mock.calls[0];
+    expect(aptUpdateCall[2]).toBe(30 * 60 * 1000);
+  });
 });
 
 describe('auto_patch — cosa path (local)', () => {

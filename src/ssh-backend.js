@@ -177,16 +177,20 @@ function scheduleReconnect() {
  * @param {string | null} [stdinData=null] - Optional data written to the
  *   remote process's stdin before EOF.  Use this instead of embedding
  *   dynamic content in the command string to avoid shell injection.
+ * @param {number | null} [timeoutMs=null] - Per-call timeout override in ms.
+ *   When omitted, falls back to `appliance.ssh.command_timeout_ms` (30s
+ *   default). Long-running tools (e.g. auto-patch's apt-get) should pass an
+ *   explicit value; routine tools should omit it.
  * @returns {Promise<{stdout: string, stderr: string, exitCode: number}>}
  * @throws {Error} if the SSH connection is not established.
  */
-function exec(command, stdinData = null) {
+function exec(command, stdinData = null, timeoutMs = null) {
   if (!_connected || !_client) {
     return Promise.reject(new Error('SSH not connected — command cannot be executed'));
   }
 
   const { appliance } = getConfig();
-  const timeoutMs = appliance.ssh.command_timeout_ms ?? 30000;
+  const effectiveTimeoutMs = timeoutMs ?? appliance.ssh.command_timeout_ms ?? 30000;
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -213,8 +217,8 @@ function exec(command, stdinData = null) {
 
       timer = setTimeout(() => {
         stream.destroy();
-        settle(null, new Error(`Command timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
+        settle(null, new Error(`Command timed out after ${effectiveTimeoutMs}ms`));
+      }, effectiveTimeoutMs);
 
       stream.on('close', (exitCode) => {
         settle({ stdout, stderr, exitCode: exitCode ?? 1 });

@@ -92,8 +92,9 @@ function _countUpgraded(stdout) {
  * cosa     → local exec via child_process.
  * baanbaan → remote exec via ssh-backend.
  *
- * Always resolves with a uniform shape; never throws on a non-zero exit so
- * callers can branch on exitCode without try/catch around every call.
+ * Always resolves with a uniform shape; never throws on a non-zero exit, a
+ * connection drop, or a timeout. Callers can branch on exitCode without
+ * try/catch around every call.
  *
  * @param {'cosa'|'baanbaan'} target
  * @param {string}            command
@@ -115,7 +116,11 @@ async function _execTarget(target, command) {
       };
     }
   }
-  return sshBackend.exec(command);
+  try {
+    return await sshBackend.exec(command, null, APT_TIMEOUT_MS);
+  } catch (err) {
+    return { exitCode: 1, stdout: '', stderr: err.message ?? String(err) };
+  }
 }
 
 // ---------------------------------------------------------------------------
