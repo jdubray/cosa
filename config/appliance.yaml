@@ -155,6 +155,7 @@ tools:
     sensitive_files:
       - "/home/baanbaan/baan-baan-merchant/v2/.env"
       - "/home/baanbaan/baan-baan-merchant/v2/data/merchant.db"
+      - "/home/baanbaan/baan-baan-merchant/v2/tools/invoice-ocr/.env"
   pci_assessment:
     enabled: true
   settings_write:
@@ -336,6 +337,12 @@ tools:
         cpu_pct_spike: 99
         cpu_pct_sustained: 60
         rss_mb: 300
+      - match: "uvicorn"
+        # baanbaan-ocr (FastAPI) — idles low, but Mistral OCR calls can briefly
+        # peg one core while the worker is decoding a response.
+        cpu_pct_spike: 99
+        cpu_pct_sustained: 80
+        rss_mb: 600
     # Dedup: don't re-alert the same (category, severity) inside this window.
     dedup_window_minutes: 30
 
@@ -480,6 +487,8 @@ monitoring:
     - cloudflared
     # Music file server (LAN-only sync endpoint for in-cafe Android app on :8080)
     - gunicorn
+    # Invoice OCR service (baanbaan-ocr.service, 127.0.0.1:8765)
+    - uvicorn
   # Ports that are legitimately open on this appliance (numeric).
   # Note: Chromium CDP (remote-debugging-port=0) uses an ephemeral loopback port
   # each run — it is NOT listed here because the port number changes every time.
@@ -490,6 +499,7 @@ monitoring:
     - 3000  # baanbaan API (localhost only)
     - 3100  # marketing-engine.service — cloudflared ingress for hanuman-kirkland.com (currently *:3100, see docs/baanbaan_marketing_engine_loopback_bind_spec.md)
     - 8080  # music file server — LAN-only sync endpoint for the in-cafe Android background app reading from music/
+    - 8765  # baanbaan-ocr.service — invoice OCR (uvicorn, bound to 127.0.0.1 only, internal use)
     - 20241 # cloudflared management interface (localhost only)
     - 631   # CUPS print spooler (localhost only)
 
