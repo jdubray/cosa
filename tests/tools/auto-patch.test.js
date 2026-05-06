@@ -77,6 +77,40 @@ describe('auto_patch — input validation', () => {
   test('throws when target is missing', async () => {
     await expect(handler({})).rejects.toThrow(/invalid target/i);
   });
+
+  test('throws on invalid upgradeMode', async () => {
+    await expect(handler({ target: 'appliance', upgradeMode: 'wild-upgrade' }))
+      .rejects.toThrow(/invalid upgradeMode/i);
+  });
+});
+
+describe('auto_patch — upgradeMode wiring', () => {
+  test("default mode is 'upgrade' (conservative)", async () => {
+    mockSshExec
+      .mockReturnValueOnce(sshOk(''))
+      .mockReturnValueOnce(sshOk(''))
+      .mockReturnValueOnce(sshFail(1))
+      .mockReturnValueOnce(sshFail(1));
+
+    await handler({ target: 'appliance' });
+
+    const upgradeCmd = mockSshExec.mock.calls[1][0];
+    expect(upgradeCmd).toMatch(/ upgrade$/);   // ends in plain 'upgrade'
+    expect(upgradeCmd).not.toMatch(/full-upgrade/);
+  });
+
+  test("'full-upgrade' mode is propagated into the apt command", async () => {
+    mockSshExec
+      .mockReturnValueOnce(sshOk(''))
+      .mockReturnValueOnce(sshOk(''))
+      .mockReturnValueOnce(sshFail(1))
+      .mockReturnValueOnce(sshFail(1));
+
+    await handler({ target: 'appliance', upgradeMode: 'full-upgrade' });
+
+    const upgradeCmd = mockSshExec.mock.calls[1][0];
+    expect(upgradeCmd).toMatch(/ full-upgrade$/);
+  });
 });
 
 describe('auto_patch — appliance path (SSH)', () => {

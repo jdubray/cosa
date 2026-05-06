@@ -2013,12 +2013,16 @@ async function _runAutoPatch({ target, configKey, category, defaultRebootIfRequi
   const host               = target === 'cosa' ? 'cosa-host' : applianceName;
   const rebootIfRequired   = cfg.reboot_if_required !== false && defaultRebootIfRequired;
   const rebootDelayMinutes = cfg.reboot_delay_minutes ?? defaultRebootDelayMinutes;
+  // Default 'upgrade' — conservative, never installs new packages or removes
+  // existing ones. Set to 'full-upgrade' in appliance.yaml when you want apt
+  // to resolve dependency changes (e.g. kernel meta-package transitions).
+  const upgradeMode        = cfg.upgrade_mode ?? 'upgrade';
 
-  log.info(`[${configKey}] starting auto_patch on ${target}`);
+  log.info(`[${configKey}] starting auto_patch on ${target} (upgradeMode=${upgradeMode})`);
 
   let result;
   try {
-    result = await autoPatchTool.handler({ target, rebootIfRequired, rebootDelayMinutes });
+    result = await autoPatchTool.handler({ target, upgradeMode, rebootIfRequired, rebootDelayMinutes });
   } catch (err) {
     result = {
       ok:               false,

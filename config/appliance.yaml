@@ -357,10 +357,21 @@ tools:
   # make this scheduler the single source of patching.
   auto_patch_appliance:
     enabled: true
+    # 'upgrade' (default) is conservative — never installs new packages or
+    # removes any. Holds back updates whose new version pulls in a renamed
+    # dependency (e.g. kernel meta-package transitions). Kept at the safe
+    # default for the BaanBaan appliance: held-back kernel updates can be
+    # applied manually with `apt-get full-upgrade` during a planned window.
+    upgrade_mode: upgrade
     reboot_if_required: true
     reboot_delay_minutes: 1
   auto_patch_cosa:
     enabled: true
+    # 'full-upgrade' resolves dependency changes — catches the kernel
+    # meta-package updates that 'upgrade' holds back. Acceptable on the COSA
+    # host because nothing custom is installed here that apt would want to
+    # remove; risk of surprise removal is low.
+    upgrade_mode: full-upgrade
     reboot_if_required: true
     reboot_delay_minutes: 1
 

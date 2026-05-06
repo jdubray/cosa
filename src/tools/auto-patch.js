@@ -16,12 +16,29 @@ const RISK_LEVEL = 'destructive';
 const APT_LOCK_TIMEOUT_SEC = 300;
 const APT_UPDATE_CMD =
   `sudo apt-get update -o DPkg::Lock::Timeout=${APT_LOCK_TIMEOUT_SEC}`;
-const APT_UPGRADE_CMD =
-  'sudo DEBIAN_FRONTEND=noninteractive apt-get -y ' +
-  `-o DPkg::Lock::Timeout=${APT_LOCK_TIMEOUT_SEC} ` +
-  '-o Dpkg::Options::="--force-confdef" ' +
-  '-o Dpkg::Options::="--force-confold" ' +
-  'upgrade';
+
+/**
+ * Build the apt-get upgrade command for the chosen mode.
+ *   - 'upgrade'      → conservative; never installs new packages or removes
+ *                      any. Safe for production. Holds back updates whose new
+ *                      version pulls in a renamed dependency.
+ *   - 'full-upgrade' → resolves dependency changes; will install new
+ *                      transitional packages and may remove obsolete ones.
+ *                      Catches kernel meta-package updates that 'upgrade'
+ *                      keeps back. Slightly more invasive.
+ *
+ * @param {'upgrade'|'full-upgrade'} mode
+ * @returns {string}
+ */
+function _buildUpgradeCmd(mode) {
+  return (
+    'sudo DEBIAN_FRONTEND=noninteractive apt-get -y ' +
+    `-o DPkg::Lock::Timeout=${APT_LOCK_TIMEOUT_SEC} ` +
+    '-o Dpkg::Options::="--force-confdef" ' +
+    '-o Dpkg::Options::="--force-confold" ' +
+    mode
+  );
+}
 const REBOOT_FLAG_PATH = '/var/run/reboot-required';
 
 const APT_TIMEOUT_MS  = 30 * 60 * 1000;
@@ -29,7 +46,9 @@ const EXEC_MAX_BUFFER = 16 * 1024 * 1024;
 
 const LOG_TAIL_BYTES = 4096;
 
-const VALID_TARGETS = ['cosa', 'appliance'];
+const VALID_TARGETS       = ['cosa', 'appliance'];
+const VALID_UPGRADE_MODES = ['upgrade', 'full-upgrade'];
+const DEFAULT_UPGRADE_MODE = 'upgrade';
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -38,7 +57,8 @@ const VALID_TARGETS = ['cosa', 'appliance'];
 const INPUT_SCHEMA = {
   type: 'object',
   properties: {
-    target:             { type: 'string', enum: VALID_TARGETS },
+    target:             { type: 'string',  enum: VALID_TARGETS },
+    upgradeMode:        { type: 'string',  enum: VALID_UPGRADE_MODES },
     rebootIfRequired:   { type: 'boolean' },
     rebootDelayMinutes: { type: 'integer', minimum: 1, maximum: 60 },
   },
@@ -48,8 +68,10 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Run apt-get update and a full apt-get upgrade on either the COSA host (target=cosa) ' +
-    'or the managed appliance (target=appliance, via SSH). Detects ' +
+    'Run apt-get update and an apt-get upgrade on either the COSA host (target=cosa) ' +
+    'or the managed appliance (target=appliance, via SSH). The upgrade phase is either ' +
+    `'upgrade' (conservative; default) or 'full-upgrade' (resolves dependency changes; ` +
+    `catches kernel meta-package updates that 'upgrade' holds back). Detects ` +
     `${REBOOT_FLAG_PATH} and optionally schedules a delayed reboot. Returns ok, ` +
     'packagesUpgraded, rebootRequired, rebootScheduled, durationMs, logTail, and error.',
   inputSchema: INPUT_SCHEMA,
@@ -178,9 +200,19 @@ async function _checkRebootRequired(target) {
  *   error: string|null
  * }>}
  */
-async function handler({ target, rebootIfRequired = true, rebootDelayMinutes = 1 } = {}) {
+async function handler({
+  target,
+  upgradeMode        = DEFAULT_UPGRADE_MODE,
+  rebootIfRequired   = true,
+  rebootDelayMinutes = 1,
+} = {}) {
   if (!VALID_TARGETS.includes(target)) {
     throw new Error(`auto_patch: invalid target '${target}' (expected one of ${VALID_TARGETS.join(', ')})`);
+  }
+  if (!VALID_UPGRADE_MODES.includes(upgradeMode)) {
+    throw new Error(
+      `auto_patch: invalid upgradeMode '${upgradeMode}' (expected one of ${VALID_UPGRADE_MODES.join(', ')})`
+    );
   }
   if (target === 'appliance' && !sshBackend.isConnected()) {
     return {
@@ -195,8 +227,9 @@ async function handler({ target, rebootIfRequired = true, rebootDelayMinutes = 1
     };
   }
 
-  const startedAt = Date.now();
-  let combined   = '';
+  const startedAt     = Date.now();
+  const aptUpgradeCmd = _buildUpgradeCmd(upgradeMode);
+  let combined        = '';
 
   // 1. apt-get update
   const updateRes = await _execTarget(target, APT_UPDATE_CMD);
@@ -214,9 +247,9 @@ async function handler({ target, rebootIfRequired = true, rebootDelayMinutes = 1
     };
   }
 
-  // 2. apt-get upgrade
-  const upgradeRes = await _execTarget(target, APT_UPGRADE_CMD);
-  combined += `$ ${APT_UPGRADE_CMD}\n${upgradeRes.stdout}\n${upgradeRes.stderr}\n`;
+  // 2. apt-get upgrade / full-upgrade (per upgradeMode)
+  const upgradeRes = await _execTarget(target, aptUpgradeCmd);
+  combined += `$ ${aptUpgradeCmd}\n${upgradeRes.stdout}\n${upgradeRes.stderr}\n`;
   const packagesUpgraded = _countUpgraded(upgradeRes.stdout);
   if (upgradeRes.exitCode !== 0) {
     return {
