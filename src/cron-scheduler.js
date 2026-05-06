@@ -708,6 +708,17 @@ async function runInternetIpWatchTask() {
     return;
   }
 
+  // ── 3c. Internet was down but came back with the same IP → no action ──────
+  // T-Mobile cellular gateway briefly unreachable (e.g. during our scheduled
+  // appliance reboot at 1am) and now back. The .env values are still correct;
+  // re-running the env-update + service-restart sequence and emailing the
+  // operator would just be noise. Silently clear the wasDown flag and return.
+  if (wasDown && !ipChanged && !isFirstRun) {
+    _writeIpState({ ...state, lastKnownIp: newIp, internetWasDown: false, lastCheckedAt: checkResult.checkedAt });
+    log.info(`[internet-ip-watch] Internet recovered, public IP unchanged: ${newIp}`);
+    return;
+  }
+
   const changeReason = wasDown ? 'internet recovery' : 'IP change';
   log.info(`[internet-ip-watch] ${changeReason}: ${state.lastKnownIp ?? '(none)'} → ${newIp}`);
 
