@@ -160,9 +160,12 @@ function _dkimPasses(parsed, domain) {
 function buildImapClient() {
   const { env } = getConfig();
   return new ImapFlow({
-    host:   env.email.imapHost,
-    port:   env.email.imapPort,
-    secure: true,
+    host:             env.email.imapHost,
+    port:             env.email.imapPort,
+    secure:           true,
+    connectionTimeout: 30_000,
+    greetingTimeout:   15_000,
+    socketTimeout:     30_000,
     auth: {
       user: env.email.username,
       pass: env.email.appPassword,
@@ -182,10 +185,15 @@ function getSmtpTransport() {
   if (_smtpTransport) return _smtpTransport;
   const { env } = getConfig();
   _smtpTransport = nodemailer.createTransport({
-    host:   env.email.smtpHost,
-    port:   env.email.smtpPort,
-    secure: false, // STARTTLS on port 587
-    pool:   true,  // reuse connection — avoid re-AUTH on every email
+    host:              env.email.smtpHost,
+    port:              env.email.smtpPort,
+    secure:            false,  // STARTTLS on port 587
+    requireTLS:        true,   // abort if server does not offer STARTTLS
+    tls:               { rejectUnauthorized: true },
+    pool:              true,   // reuse connection — avoid re-AUTH on every email
+    connectionTimeout: 30_000,
+    greetingTimeout:   15_000,
+    socketTimeout:     30_000,
     auth: {
       user: env.email.username,
       pass: env.email.appPassword,
@@ -281,6 +289,15 @@ async function _processSuppressReply(msg, text) {
 async function sendEmail({ to, subject, text, inReplyTo, references }) {
   const { env, appliance } = getConfig();
 
+  // ── Recipient allowlist ───────────────────────────────────────────────────
+  // All outbound emails must go to the configured operator address.
+  // This prevents accidental or injected sends to unintended recipients.
+  const operatorEmail = appliance.operator?.email;
+  if (operatorEmail && to.toLowerCase() !== operatorEmail.toLowerCase()) {
+    log.warn(`[email-gateway] Blocked outbound email to non-operator address <${to}> — dropping: "${subject}"`);
+    return;
+  }
+
   // ── Daily send-quota gate ─────────────────────────────────────────────────
   // Hard cap to stay well within Gmail's 500/day limit.
   // Default: 50/day.  Override with operator.daily_send_limit in appliance.yaml.
@@ -320,7 +337,14 @@ async function sendEmail({ to, subject, text, inReplyTo, references }) {
   if (inReplyTo)  mailOptions.inReplyTo  = inReplyTo;
   if (references) mailOptions.references = references;
 
-  await transport.sendMail(mailOptions);
+  try {
+    await transport.sendMail(mailOptions);
+  } catch (err) {
+    // Reset the cached transport so the next call recreates a fresh connection
+    // rather than retrying on a potentially broken pooled socket.
+    _smtpTransport = null;
+    throw err;
+  }
 
   _quota.sent++;
   _saveQuota(_quota);
@@ -359,92 +383,102 @@ async function _runPoll() {
     const seqs = await client.search({ seen: false, since: since2d });
 
     for (const seq of seqs) {
-      const fetched = await client.fetchOne(String(seq), {
-        envelope:     true,
-        source:       true,
-        internalDate: true,
-      });
-
-      // Skip emails that arrived before this process started — they are stale
-      // messages from a previous COSA session that were not yet marked seen.
-      if (fetched.internalDate && fetched.internalDate < BOOT_TIME) {
-        await client.messageFlagsAdd(String(seq), ['\\Seen']);
-        log.info(`Skipped pre-boot email (arrived ${fetched.internalDate.toISOString()})`);
-        continue;
-      }
-
-      // Mark seen immediately — before dispatching — so that long-running
-      // sessions (e.g. waiting for operator approval) don't cause the next
-      // poll cycle to pick up the same message and spawn a duplicate session.
-      await client.messageFlagsAdd(String(seq), ['\\Seen']);
-
-      // Parse full source to access both headers (DKIM) and body text.
-      const parsed  = await simpleParser(fetched.source ?? Buffer.alloc(0));
-      const fromAddr = (
-        parsed.from?.value?.[0]?.address ??
-        fetched.envelope?.from?.[0]?.address ?? ''
-      ).toLowerCase();
-
-      // Layer 1 — From-address allowlist (trivially spoofable but fast first gate)
-      if (fromAddr !== operatorEmail) {
-        log.warn(`Ignored message from non-operator: <${fromAddr}>`);
-        continue;
-      }
-
-      // Layer 2 — DKIM check (Gmail only by default).
-      // Gmail injects Authentication-Results before IMAP delivery; a spoofed
-      // message routed through any other server will fail or lack this header.
-      // Non-Gmail providers don't inject this header, so the check is opt-out
-      // via appliance.security.dkim_check: false in appliance.yaml.
-      const dkimCheckEnabled = appliance.security?.dkim_check !== false;
-      const operatorDomain   = operatorEmail.split('@')[1] ?? '';
-      if (dkimCheckEnabled && operatorDomain && !_dkimPasses(parsed, operatorDomain)) {
-        log.warn(`Ignored message: DKIM check failed for <${fromAddr}> (possible spoofed email)`);
-        continue;
-      }
-
-      // Extract readable content from text/JSON attachments and append it to
-      // the body so COSA can see file contents without requiring orchestrator
-      // changes.  Binary attachments (images, PDFs, etc.) are ignored.
-      // Cap each attachment at 128 KB to guard against oversized payloads.
-      const MAX_ATTACHMENT_BYTES = 128 * 1024;
-      const attachmentTexts = (parsed.attachments ?? [])
-        .filter(a => {
-          const ct = (a.contentType ?? '').toLowerCase();
-          return ct.startsWith('text/') || ct === 'application/json';
-        })
-        .map(a => {
-          const label   = a.filename ? `[Attachment: ${a.filename}]` : '[Attachment]';
-          const raw     = a.content ?? Buffer.alloc(0);
-          const content = raw.slice(0, MAX_ATTACHMENT_BYTES).toString('utf8').trim();
-          const truncNote = raw.length > MAX_ATTACHMENT_BYTES
-            ? `\n[truncated — original size ${raw.length} bytes]`
-            : '';
-          return `${label}\n${content}${truncNote}`;
+      try {
+        const fetched = await client.fetchOne(String(seq), {
+          envelope:     true,
+          source:       true,
+          internalDate: true,
         });
 
-      const body = [parsed.text?.trim() ?? '', ...attachmentTexts]
-        .filter(Boolean)
-        .join('\n\n');
-
-      const msg = {
-        from:      fromAddr,
-        subject:   fetched.envelope?.subject  ?? '',
-        body,
-        messageId: fetched.envelope?.messageId ?? null,
-      };
-      log.info(
-        `Email received — subject: "${msg.subject}", body length: ${body.length}` +
-        (attachmentTexts.length ? `, attachments: ${attachmentTexts.length}` : '')
-      );
-      _dispatchMessage(msg).catch(err => {
-        log.error(`Session dispatch error: ${err.message}`);
-        try {
-          saveDeadLetter(msg, err.message);
-        } catch (dlErr) {
-          log.error(`Dead-letter write failed: ${dlErr.message}`);
+        // Skip emails that arrived before this process started — they are stale
+        // messages from a previous COSA session that were not yet marked seen.
+        if (fetched.internalDate && fetched.internalDate < BOOT_TIME) {
+          await client.messageFlagsAdd(String(seq), ['\\Seen']);
+          log.info(`Skipped pre-boot email (arrived ${fetched.internalDate.toISOString()})`);
+          continue;
         }
-      });
+
+        // Mark seen immediately — before dispatching — so that long-running
+        // sessions (e.g. waiting for operator approval) don't cause the next
+        // poll cycle to pick up the same message and spawn a duplicate session.
+        await client.messageFlagsAdd(String(seq), ['\\Seen']);
+
+        // Parse full source to access both headers (DKIM) and body text.
+        const parsed  = await simpleParser(fetched.source ?? Buffer.alloc(0));
+        const fromAddr = (
+          parsed.from?.value?.[0]?.address ??
+          fetched.envelope?.from?.[0]?.address ?? ''
+        ).toLowerCase();
+
+        // Layer 1 — From-address allowlist (trivially spoofable but fast first gate)
+        if (fromAddr !== operatorEmail) {
+          log.warn(`Ignored message from non-operator: <${fromAddr}>`);
+          continue;
+        }
+
+        // Layer 2 — DKIM check (Gmail only by default).
+        // Gmail injects Authentication-Results before IMAP delivery; a spoofed
+        // message routed through any other server will fail or lack this header.
+        // Non-Gmail providers don't inject this header, so the check is opt-out
+        // via appliance.security.dkim_check: false in appliance.yaml.
+        const dkimCheckEnabled = appliance.security?.dkim_check !== false;
+        const operatorDomain   = operatorEmail.split('@')[1] ?? '';
+        if (dkimCheckEnabled && operatorDomain && !_dkimPasses(parsed, operatorDomain)) {
+          log.warn(`Ignored message: DKIM check failed for <${fromAddr}> (possible spoofed email)`);
+          continue;
+        }
+
+        // Extract readable content from text/JSON attachments and append it to
+        // the body so COSA can see file contents without requiring orchestrator
+        // changes.  Binary attachments (images, PDFs, etc.) are ignored.
+        // Cap each attachment at 128 KB to guard against oversized payloads.
+        const MAX_ATTACHMENT_BYTES = 128 * 1024;
+        const attachmentTexts = (parsed.attachments ?? [])
+          .filter(a => {
+            const ct = (a.contentType ?? '').toLowerCase();
+            return ct.startsWith('text/') || ct === 'application/json';
+          })
+          .map(a => {
+            const label   = a.filename ? `[Attachment: ${a.filename}]` : '[Attachment]';
+            const raw     = a.content ?? Buffer.alloc(0);
+            const content = raw.slice(0, MAX_ATTACHMENT_BYTES).toString('utf8').trim();
+            const truncNote = raw.length > MAX_ATTACHMENT_BYTES
+              ? `\n[truncated — original size ${raw.length} bytes]`
+              : '';
+            return `${label}\n${content}${truncNote}`;
+          });
+
+        const body = [parsed.text?.trim() ?? '', ...attachmentTexts]
+          .filter(Boolean)
+          .join('\n\n');
+
+        const msg = {
+          from:      fromAddr,
+          subject:   fetched.envelope?.subject  ?? '',
+          body,
+          messageId: fetched.envelope?.messageId ?? null,
+        };
+        log.info(
+          `Email received — subject: "${msg.subject}", body length: ${body.length}` +
+          (attachmentTexts.length ? `, attachments: ${attachmentTexts.length}` : '')
+        );
+        _dispatchMessage(msg).catch(err => {
+          log.error(`Session dispatch error: ${err.message}`);
+          try {
+            saveDeadLetter(msg, err.message);
+          } catch (dlErr) {
+            log.error(`Dead-letter write failed: ${dlErr.message}`);
+          }
+        });
+      } catch (msgErr) {
+        // A single malformed or unparseable message must not abort the rest of
+        // the batch.  Log, attempt to mark seen so we don't retry next poll, and
+        // move on to the next message.
+        log.warn(`Failed to process message seq ${seq}: ${msgErr.message}`);
+        try {
+          await client.messageFlagsAdd(String(seq), ['\\Seen']);
+        } catch { /* best-effort */ }
+      }
     }
   } finally {
     if (lock) lock.release();

@@ -75,6 +75,25 @@ function generateToken() {
 }
 
 /**
+ * Redact keys whose names suggest sensitive values before JSON-serialising a
+ * tool input for display in an outbound email.  Only used as a last-resort
+ * fallback when action_summary is absent.
+ *
+ * @param {object|undefined} input
+ * @returns {string}
+ */
+const _SENSITIVE_KEY_RE = /password|secret|token|key|credential|auth|api[-_]?key/i;
+function _redactInput(input) {
+  if (!input || typeof input !== 'object') return String(input ?? '');
+  const redacted = Object.fromEntries(
+    Object.entries(input).map(([k, v]) =>
+      _SENSITIVE_KEY_RE.test(k) ? [k, '[REDACTED]'] : [k, v]
+    )
+  );
+  return JSON.stringify(redacted);
+}
+
+/**
  * Build the plain-text body for an approval request email.
  *
  * @param {string} token
@@ -83,7 +102,7 @@ function generateToken() {
  * @returns {string}
  */
 function buildRequestEmailText(token, toolCall, timeoutMinutes) {
-  const summary = toolCall.action_summary ?? JSON.stringify(toolCall.input);
+  const summary = toolCall.action_summary ?? _redactInput(toolCall.input);
   return [
     'COSA requires your approval before executing the following action:',
     '',
@@ -451,11 +470,15 @@ async function processInboundReply(msg) {
     updateApprovalStatus(approval.approval_id, 'denied', msg.from, note);
     log.info(`Approval denied: ${approval.approval_id} (${approval.tool_name}) by ${msg.from}`);
 
-    await emailGateway.sendEmail({
-      to:      appliance.operator.email,
-      subject: `[COSA] Denied: ${approval.tool_name}`,
-      text:    `Your denial for "${approval.tool_name}" has been logged.${note ? `\n\nNote: ${note}` : ''}`,
-    });
+    try {
+      await emailGateway.sendEmail({
+        to:      appliance.operator.email,
+        subject: `[COSA] Denied: ${approval.tool_name}`,
+        text:    `Your denial for "${approval.tool_name}" has been logged.${note ? `\n\nNote: ${note}` : ''}`,
+      });
+    } catch (emailErr) {
+      log.warn(`Failed to send denial confirmation email for ${approval.approval_id}: ${emailErr.message}`);
+    }
 
     return { action: 'denied', approvalId: approval.approval_id };
   }
@@ -474,11 +497,15 @@ async function processInboundReply(msg) {
   updateApprovalStatus(approval.approval_id, 'approved', msg.from, null);
   log.info(`Approval approved: ${approval.approval_id} (${approval.tool_name}) by ${msg.from}`);
 
-  await emailGateway.sendEmail({
-    to:      appliance.operator.email,
-    subject: `[COSA] Approved: ${approval.tool_name}`,
-    text:    `Your approval for "${approval.tool_name}" (token: ${token}) has been confirmed. The action will now execute.`,
-  });
+  try {
+    await emailGateway.sendEmail({
+      to:      appliance.operator.email,
+      subject: `[COSA] Approved: ${approval.tool_name}`,
+      text:    `Your approval for "${approval.tool_name}" (token: ${token}) has been confirmed. The action will now execute.`,
+    });
+  } catch (emailErr) {
+    log.warn(`Failed to send approval confirmation email for ${approval.approval_id}: ${emailErr.message}`);
+  }
 
   return { action: 'approved', approvalId: approval.approval_id };
 }
