@@ -74,7 +74,8 @@ const MONTHLY_DEDUP_WINDOW_MS = 25 * 24 * 60 * 60 * 1000;
 /** Category tags stored in the alerts table. */
 const INTERNET_IP_WATCH_CATEGORY  = 'internet_ip_watch';
 const HEALTH_CHECK_CATEGORY       = 'health_check';
-const BACKUP_CATEGORY             = 'backup';
+const BACKUP_RUN_CATEGORY         = 'backup-run';
+const BACKUP_VERIFY_CATEGORY      = 'backup-verify';
 const ARCHIVE_CHECK_CATEGORY      = 'archive_check';
 const SHIFT_REPORT_CATEGORY       = 'shift_report';
 const DIGEST_CATEGORY             = 'digest';
@@ -96,7 +97,8 @@ const AUTO_PATCH_COSA_CATEGORY      = 'auto_patch_cosa';
 const AUTO_PATCH_APPLIANCE_CATEGORY = 'auto_patch_appliance';
 const RESOURCE_THRESHOLD_CATEGORY = 'resource_threshold_monitor';
 
-const TUNNEL_HEALTH_DEDUP_WINDOW_MS = 30 * 60 * 1000;
+const TUNNEL_HEALTH_DEDUP_WINDOW_MS    = 65 * 60 * 1000;
+const INTERNET_IP_WATCH_DEDUP_WINDOW_MS = 5 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -809,6 +811,14 @@ async function runInternetIpWatchTask() {
   });
 
   // ── 7. Alert operator ─────────────────────────────────────────────────────
+  const ipAlertSinceIso = new Date(Date.now() - INTERNET_IP_WATCH_DEDUP_WINDOW_MS).toISOString();
+  const recentIpAlert   = findRecentAlert(INTERNET_IP_WATCH_CATEGORY, 'info', ipAlertSinceIso)
+                       ?? findRecentAlert(INTERNET_IP_WATCH_CATEGORY, 'warning', ipAlertSinceIso);
+  if (recentIpAlert) {
+    log.info(`[internet-ip-watch] Suppressed duplicate IP-change alert (last sent: ${recentIpAlert.sent_at})`);
+    return;
+  }
+
   const title = wasDown
     ? `${applianceName} — Internet restored, public IP updated to ${newIp}`
     : `${applianceName} — Public IP changed to ${newIp}`;
@@ -967,7 +977,7 @@ async function runBackupTask() {
 
   // Failure path
   const sinceIso = new Date(Date.now() - ALERT_DEDUP_WINDOW_MS).toISOString();
-  const recent   = findRecentAlert(BACKUP_CATEGORY, 'critical', sinceIso);
+  const recent   = findRecentAlert(BACKUP_RUN_CATEGORY, 'critical', sinceIso);
 
   if (recent) {
     log.info(`Suppressed duplicate backup failure alert (last sent: ${recent.sent_at})`);
@@ -997,7 +1007,7 @@ async function runBackupTask() {
   createAlert({
     session_id: null, // no Claude session for backup
     severity:   'critical',
-    category:   BACKUP_CATEGORY,
+    category:   BACKUP_RUN_CATEGORY,
     title,
     body,
     sent_at:    sentAt,
@@ -1029,7 +1039,7 @@ async function runBackupVerifyTask() {
   }
 
   const sinceIso = new Date(Date.now() - ALERT_DEDUP_WINDOW_MS).toISOString();
-  const recent   = findRecentAlert(BACKUP_CATEGORY, 'critical', sinceIso);
+  const recent   = findRecentAlert(BACKUP_VERIFY_CATEGORY, 'critical', sinceIso);
 
   if (recent) {
     log.info(`Suppressed duplicate backup-verify alert`);
@@ -1060,7 +1070,7 @@ async function runBackupVerifyTask() {
   createAlert({
     session_id: null, // no Claude session for backup_verify
     severity:   'critical',
-    category:   BACKUP_CATEGORY,
+    category:   BACKUP_VERIFY_CATEGORY,
     title,
     body,
     sent_at:    sentAt,
@@ -1094,7 +1104,7 @@ async function runArchiveCheckTask() {
   // from re-surfacing historical session-store mentions of backup failures
   // that have since been fixed (e.g. the pre-7556e68 schema-mismatch bug).
   const lookbackIso         = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const recentBackupFailure = findRecentAlert(BACKUP_CATEGORY, 'critical', lookbackIso);
+  const recentBackupFailure = findRecentAlert(BACKUP_RUN_CATEGORY, 'critical', lookbackIso);
 
   if (!recentBackupFailure) {
     log.info('Archive check clean: no backup critical alerts in the past 7 days');
