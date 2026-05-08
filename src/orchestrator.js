@@ -11,6 +11,7 @@ const {
   saveToolCall,
   recordBlockedToolCall,
   getSessionToolCalls,
+  updateApprovalToolCallId,
 }                             = require('./session-store');
 const { postSessionHook }     = require('./post-session-hook');
 const securityGate   = require('./security-gate');
@@ -98,6 +99,7 @@ function extractFinalText(contentBlocks) {
 async function processToolUse(sessionId, toolUse, triggerType) {
   const { name, id, input } = toolUse;
   let riskLevel             = toolRegistry.getRiskLevel(name);
+  let approvalId            = null;
   const toolCallRecord      = { tool_name: name, input };
 
   // Dynamic risk resolution: appliance_api_call stores 'dynamic' in the
@@ -161,7 +163,7 @@ async function processToolUse(sessionId, toolUse, triggerType) {
     if (!approvalResult.approved) {
       saveToolCall(
         sessionId,
-        { tool_name: name, input, risk_level: riskLevel },
+        { tool_name: name, input, risk_level: riskLevel, approval_id: approvalResult.approvalId ?? null },
         null,
         'denied'
       );
@@ -173,6 +175,8 @@ async function processToolUse(sessionId, toolUse, triggerType) {
         is_error:    true,
       };
     }
+
+    approvalId = approvalResult.approvalId ?? null;
   }
 
   // ── 3. Dispatch ─────────────────────────────────────────────────────────────
@@ -183,12 +187,17 @@ async function processToolUse(sessionId, toolUse, triggerType) {
     rawOutput = { error: err.message, code: err.code ?? 'TOOL_ERROR' };
   }
 
-  saveToolCall(
+  const toolCallId = saveToolCall(
     sessionId,
-    { tool_name: name, input, risk_level: riskLevel },
+    { tool_name: name, input, risk_level: riskLevel, approval_id: approvalId ?? null },
     rawOutput,
     'executed'
   );
+
+  // Back-fill the reverse link: approval row → tool_call row.
+  if (approvalId) {
+    updateApprovalToolCallId(approvalId, toolCallId);
+  }
 
   // ── 4. Sanitize output before it enters the conversation history ─────────────
   const sanitized = securityGate.sanitizeOutput(rawOutput);

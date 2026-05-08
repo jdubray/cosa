@@ -344,8 +344,9 @@ async function requestApproval(sessionId, toolCall, policy = 'once') {
     const intents = _buildApprovalMachine(approvalId, (state, model) => {
       _pending.delete(approvalId);
       resolve({
-        approved: state === 'approved',
-        note:     state === 'expired' ? 'expired' : (model.note ?? null),
+        approved:   state === 'approved',
+        note:       state === 'expired' ? 'expired' : (model.note ?? null),
+        approvalId,
       });
     });
 
@@ -381,7 +382,10 @@ async function processInboundReply(msg) {
   const token    = tokenMatch[0]; // already uppercased
   const approval = findApprovalByToken(token);
 
-  if (!approval || approval.status !== 'pending') {
+  // Treat clock-expired-but-not-yet-swept rows as non-pending: a reply arriving
+  // after the deadline is rejected even if the cron sweep hasn't fired yet.
+  const nowExpired = approval && new Date(approval.expires_at) <= new Date();
+  if (!approval || approval.status !== 'pending' || nowExpired) {
     // If the token exists in the DB but is no longer pending, let the operator
     // know their reply was received but could not be actioned.
     if (approval) {
@@ -432,7 +436,20 @@ async function processInboundReply(msg) {
     const noteMatch = original.match(/DENY\s+APPROVE-[0-9A-F]{8}\s*(.*)/i);
     const note      = noteMatch && noteMatch[1].trim() ? noteMatch[1].trim() : null;
 
+    // FSM first — ensures the transition is legal before committing to DB.
+    // If the intent throws (e.g. already terminal), force-resolve so the
+    // requestApproval Promise never hangs.
+    try {
+      await intents.deny({ note });
+    } catch (err) {
+      log.error(`FSM deny intent failed for approval ${approval.approval_id}: ${err.message}`);
+      _pending.delete(approval.approval_id);
+      intents._resolve({ approved: false, note: note ?? null, approvalId: approval.approval_id });
+    }
+
+    // DB after FSM — AND status='pending' guard makes this a no-op if already terminal.
     updateApprovalStatus(approval.approval_id, 'denied', msg.from, note);
+    log.info(`Approval denied: ${approval.approval_id} (${approval.tool_name}) by ${msg.from}`);
 
     await emailGateway.sendEmail({
       to:      appliance.operator.email,
@@ -440,36 +457,28 @@ async function processInboundReply(msg) {
       text:    `Your denial for "${approval.tool_name}" has been logged.${note ? `\n\nNote: ${note}` : ''}`,
     });
 
-    // Drive the FSM — triggers onTerminal → resolves the outer requestApproval Promise.
-    // If the intent throws (e.g. FSM guard violation), force-resolve so the Promise
-    // never hangs indefinitely with the session stuck in approval-limbo.
-    try {
-      await intents.deny({ note });
-    } catch (err) {
-      log.error(`FSM deny intent failed for approval ${approval.approval_id}: ${err.message}`);
-      _pending.delete(approval.approval_id);
-      intents._resolve({ approved: false, note: note ?? null });
-    }
-
     return { action: 'denied', approvalId: approval.approval_id };
   }
 
   // ── Approve ───────────────────────────────────────────────────────────────
+
+  // FSM first — same rationale as the deny path above.
+  try {
+    await intents.approve();
+  } catch (err) {
+    log.error(`FSM approve intent failed for approval ${approval.approval_id}: ${err.message}`);
+    _pending.delete(approval.approval_id);
+    intents._resolve({ approved: true, note: null, approvalId: approval.approval_id });
+  }
+
   updateApprovalStatus(approval.approval_id, 'approved', msg.from, null);
+  log.info(`Approval approved: ${approval.approval_id} (${approval.tool_name}) by ${msg.from}`);
 
   await emailGateway.sendEmail({
     to:      appliance.operator.email,
     subject: `[COSA] Approved: ${approval.tool_name}`,
     text:    `Your approval for "${approval.tool_name}" (token: ${token}) has been confirmed. The action will now execute.`,
   });
-
-  try {
-    await intents.approve();
-  } catch (err) {
-    log.error(`FSM approve intent failed for approval ${approval.approval_id}: ${err.message}`);
-    _pending.delete(approval.approval_id);
-    intents._resolve({ approved: true, note: null });
-  }
 
   return { action: 'approved', approvalId: approval.approval_id };
 }
@@ -485,29 +494,46 @@ async function _runExpiryCheck() {
   const { appliance } = getConfig();
   const expired = findExpiredApprovals();
 
-  for (const approval of expired) {
-    updateApprovalStatus(approval.approval_id, 'expired', 'system', null);
+  // Collect emails so all DB writes finish first.  If the process crashes
+  // mid-loop the DB is consistent (idempotent AND status='pending' guard);
+  // the worst outcome is that some expiry notification emails are not sent.
+  const emailsToSend = [];
 
+  for (const approval of expired) {
     const entry = _pending.get(approval.approval_id);
+
     if (!entry) {
-      // Orphaned approval — the session that created it is no longer running
-      // (e.g. process was restarted).  Mark it expired in the DB but skip the
-      // operator notification: the request is already dead, so emailing is noise.
+      // Orphaned approval — the session that created it is no longer running.
+      // Mark expired in DB; skip operator notification (the request is dead).
+      updateApprovalStatus(approval.approval_id, 'expired', 'system', null);
       continue;
     }
 
-    await emailGateway.sendEmail({
-      to:      appliance.operator.email,
-      subject: `[COSA] Expired: ${approval.tool_name}`,
-      text:    `The approval request for "${approval.tool_name}" (token: ${approval.token}) has expired without a response.`,
-    });
-
+    // FSM first — ensures the transition is legal before committing to DB.
     try {
       await entry.expire();
     } catch (err) {
       log.error(`FSM expire intent failed for approval ${approval.approval_id}: ${err.message}`);
       _pending.delete(approval.approval_id);
-      entry._resolve({ approved: false, note: 'expired' });
+      entry._resolve({ approved: false, note: 'expired', approvalId: approval.approval_id });
+    }
+
+    // DB after FSM — AND status='pending' guard makes this a no-op if already terminal.
+    updateApprovalStatus(approval.approval_id, 'expired', 'system', null);
+    log.info(`Approval expired: ${approval.approval_id} (${approval.tool_name})`);
+
+    emailsToSend.push({
+      to:      appliance.operator.email,
+      subject: `[COSA] Expired: ${approval.tool_name}`,
+      text:    `The approval request for "${approval.tool_name}" (token: ${approval.token}) has expired without a response.`,
+    });
+  }
+
+  for (const mail of emailsToSend) {
+    try {
+      await emailGateway.sendEmail(mail);
+    } catch (emailErr) {
+      log.warn(`Failed to send expiry notification: ${emailErr.message}`);
     }
   }
 }

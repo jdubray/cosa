@@ -503,13 +503,27 @@ function findApprovalByToken(token) {
  * @param {string|null} note - Optional operator note from the reply email.
  */
 function updateApprovalStatus(approvalId, status, resolvedBy, note) {
-  getDb()
+  const info = getDb()
     .prepare(
       `UPDATE approvals
        SET status = ?, resolved_at = ?, resolved_by = ?, operator_note = ?
-       WHERE approval_id = ?`
+       WHERE approval_id = ? AND status = 'pending'`
     )
     .run(status, now(), resolvedBy, note ?? null, approvalId);
+  return info.changes; // 1 if updated, 0 if already in terminal state
+}
+
+/**
+ * Back-fill the tool_call_id on an approval row after the tool_call record
+ * is created.  This establishes the reverse link from approval → tool call.
+ *
+ * @param {string} approvalId
+ * @param {number} toolCallId - The rowid returned by saveToolCall.
+ */
+function updateApprovalToolCallId(approvalId, toolCallId) {
+  getDb()
+    .prepare(`UPDATE approvals SET tool_call_id = ? WHERE approval_id = ?`)
+    .run(toolCallId, approvalId);
 }
 
 /**
@@ -778,6 +792,7 @@ module.exports = {
   createApproval,
   findApprovalByToken,
   updateApprovalStatus,
+  updateApprovalToolCallId,
   findExpiredApprovals,
   // Tool-call lookup
   getLastToolOutput,

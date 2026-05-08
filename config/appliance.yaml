@@ -78,7 +78,7 @@ process_supervisor:
 operator:
   email: "jdubray@gmail.com"
   name: "J"
-  approval_timeout_minutes: 30
+  approval_timeout_minutes: 60
   urgent_approval_timeout_minutes: 5
   # Quiet hours: no approval emails are sent before this local hour (24-h clock).
   # The restaurant is closed overnight; non-urgent cron actions can wait until morning.
