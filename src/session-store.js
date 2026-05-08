@@ -211,6 +211,7 @@ function runMigrations() {
  */
 function closeDb() {
   if (_db !== null) {
+    try { _db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* best-effort */ }
     _db.close();
     _db = null;
   }
@@ -709,6 +710,9 @@ function safeParse(s) {
  * }} data
  */
 function createSuppression({ fingerprint, finding_type = 'credential', reason = null, suppressed_by = null, expires_at = null }) {
+  if (!fingerprint || !fingerprint.trim()) {
+    throw new Error('createSuppression: fingerprint must be a non-empty string');
+  }
   getDb()
     .prepare(
       `INSERT INTO suppressed_findings

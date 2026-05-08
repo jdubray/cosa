@@ -1,7 +1,7 @@
 'use strict';
 
 const { getConfig }    = require('../config/cosa.config');
-const { runMigrations } = require('./session-store');
+const { runMigrations, closeDb: closeSessionDb } = require('./session-store');
 const skillStore       = require('./skill-store');
 const sshBackend       = require('./ssh-backend');
 const toolRegistry     = require('./tool-registry');
@@ -243,6 +243,30 @@ async function boot() {
 
   log.info('COSA ready.');
 }
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown
+// ---------------------------------------------------------------------------
+
+/**
+ * Stop all background services and flush/close every database before exit.
+ * Called on SIGINT, SIGTERM, and the process 'exit' event.
+ *
+ * @param {string} signal
+ */
+function _shutdown(signal) {
+  log.info(`Received ${signal} — shutting down gracefully`);
+  try { cronScheduler.stop(); }           catch { /* ignore */ }
+  try { emailGateway.stopPolling(); }     catch { /* ignore */ }
+  try { approvalEngine.stopExpiryCheck(); } catch { /* ignore */ }
+  try { skillStore.closeDb(); }           catch { /* ignore */ }
+  try { credentialStore.closeDb(); }      catch { /* ignore */ }
+  try { closeSessionDb(); }               catch { /* ignore */ }
+  process.exit(0);
+}
+
+process.on('SIGINT',  () => _shutdown('SIGINT'));
+process.on('SIGTERM', () => _shutdown('SIGTERM'));
 
 if (process.argv[2] === 'credentials') {
   runCredentialsCli();

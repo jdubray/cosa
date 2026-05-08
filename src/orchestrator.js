@@ -167,12 +167,17 @@ async function processToolUse(sessionId, toolUse, triggerType) {
     );
 
     if (!approvalResult.approved) {
-      saveToolCall(
-        sessionId,
-        { tool_name: name, input, risk_level: riskLevel, approval_id: approvalResult.approvalId ?? null },
-        null,
-        'denied'
-      );
+      try {
+        saveToolCall(
+          sessionId,
+          { tool_name: name, input, risk_level: riskLevel, approval_id: approvalResult.approvalId ?? null },
+          null,
+          'denied'
+        );
+      } catch (dbErr) {
+        // eslint-disable-next-line no-console
+        console.warn(`[orchestrator] Failed to save denied tool call audit row: ${dbErr.message}`);
+      }
       const note = approvalResult.note ? `: ${approvalResult.note}` : '';
       return {
         type:        'tool_result',
@@ -334,13 +339,18 @@ const claudeResponseAcceptor = model => proposal => {
 
   model.iterations++;
 
-  saveTurn(
-    model.sessionId,
-    'assistant',
-    JSON.stringify(response.content),
-    response.usage?.input_tokens  ?? null,
-    response.usage?.output_tokens ?? null
-  );
+  try {
+    saveTurn(
+      model.sessionId,
+      'assistant',
+      JSON.stringify(response.content),
+      response.usage?.input_tokens  ?? null,
+      response.usage?.output_tokens ?? null
+    );
+  } catch (dbErr) {
+    // eslint-disable-next-line no-console
+    console.warn(`[orchestrator] Failed to persist assistant turn: ${dbErr.message}`);
+  }
 
   model.messages.push({ role: 'assistant', content: response.content });
 
@@ -382,7 +392,12 @@ const toolResultAcceptor = model => proposal => {
   if (model.processingIndex === model.pendingToolCalls.length) {
     // All tools dispatched — push the tool-result turn and reset.
     model.messages.push({ role: 'user', content: model.toolResults });
-    saveTurn(model.sessionId, 'tool', JSON.stringify(model.toolResults), null, null);
+    try {
+      saveTurn(model.sessionId, 'tool', JSON.stringify(model.toolResults), null, null);
+    } catch (dbErr) {
+      // eslint-disable-next-line no-console
+      console.warn(`[orchestrator] Failed to persist tool turn: ${dbErr.message}`);
+    }
     model.pendingToolCalls = [];
     model.toolResults      = [];
     model.processingIndex  = 0;
@@ -463,14 +478,24 @@ async function runSession(trigger) {
   const { env } = getConfig();
   const sessionId = crypto.randomUUID();
 
-  createSession(sessionId, { type: trigger.type, source: trigger.source });
+  try {
+    createSession(sessionId, { type: trigger.type, source: trigger.source });
+  } catch (dbErr) {
+    throw new Error(`Failed to create session record: ${dbErr.message}`);
+  }
 
   const memory       = memoryManager.loadMemory();
   const skillIndex   = skillStore.listCompact();
   const systemPrompt = contextBuilder.build({ memory, skillIndex });
   const tools        = toolRegistry.getSchemas();
 
-  saveTurn(sessionId, 'user', trigger.message, null, null);
+  try {
+    saveTurn(sessionId, 'user', trigger.message, null, null);
+  } catch (dbErr) {
+    // Close the orphaned session row before propagating.
+    try { closeSession(sessionId, 'error: failed to persist user turn'); } catch { /* ignore */ }
+    throw new Error(`Failed to persist user turn: ${dbErr.message}`);
+  }
 
   return new Promise((resolve, reject) => {
     // ── Build per-session SAM instance ──────────────────────────────────────
