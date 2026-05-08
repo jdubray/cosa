@@ -61,6 +61,12 @@ const OPERATOR_MAX_TOKENS = 8192;
  */
 const CRON_MAX_TOKENS = 2048;
 
+/**
+ * Maximum byte length of a serialised tool output before it is truncated.
+ * Keeps individual tool results from ballooning the context window.
+ */
+const TOOL_OUTPUT_MAX_BYTES = 50 * 1024; // 50 KB
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -199,13 +205,19 @@ async function processToolUse(sessionId, toolUse, triggerType) {
     updateApprovalToolCallId(approvalId, toolCallId);
   }
 
-  // ── 4. Sanitize output before it enters the conversation history ─────────────
+  // ── 4. Sanitize and size-cap output before it enters the conversation history ──
   const sanitized = securityGate.sanitizeOutput(rawOutput);
+
+  // Guard against runaway tool output bloating the context window.
+  const content =
+    typeof sanitized === 'string' && sanitized.length > TOOL_OUTPUT_MAX_BYTES
+      ? sanitized.slice(0, TOOL_OUTPUT_MAX_BYTES) + '\n…[output truncated to 50 KB]'
+      : sanitized;
 
   return {
     type:        'tool_result',
     tool_use_id: id,
-    content:     sanitized,
+    content,
   };
 }
 
@@ -332,7 +344,19 @@ const claudeResponseAcceptor = model => proposal => {
 
   model.messages.push({ role: 'assistant', content: response.content });
 
-  if (response.stop_reason === 'end_turn' || response.stop_reason !== 'tool_use') {
+  if (response.stop_reason === 'end_turn') {
+    model.status    = 'complete';
+    model.finalText = extractFinalText(response.content);
+    return;
+  }
+
+  if (response.stop_reason !== 'tool_use') {
+    // Unexpected stop reasons: max_tokens, stop_sequence, pause_turn, refusal, etc.
+    // Log so they are observable, then treat the response as a terminal turn.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[orchestrator] Unexpected stop_reason "${response.stop_reason}" — treating session as complete`
+    );
     model.status    = 'complete';
     model.finalText = extractFinalText(response.content);
     return;
@@ -458,6 +482,13 @@ async function runSession(trigger) {
 
     const isCron = trigger.type === 'cron';
 
+    if (!isCron && trigger.type !== 'email') {
+      // New trigger types added without updating model routing will silently
+      // default to Sonnet.  Log so the gap is observable in production.
+      // eslint-disable-next-line no-console
+      console.warn(`[orchestrator] Unknown trigger type "${trigger.type}" — defaulting to Sonnet`);
+    }
+
     samApi.addInitialState({
       sessionId,
       systemPrompt,
@@ -518,6 +549,25 @@ async function runSession(trigger) {
         }).catch(() => { /* errors already logged inside hook */ });
 
         resolve({ session_id: sessionId, response: model.finalText });
+
+      } else if (model.status === 'error' && !sessionClosed) {
+        // The session-fsm reactor can set status='error' on an illegal FSM
+        // transition.  Without this branch the outer Promise never settles and
+        // closeSession is never called, leaking the session row and hanging the
+        // caller indefinitely.
+        sessionClosed = true;
+        const errMsg  = model.errorMessage ?? 'Session FSM error';
+        closeSession(sessionId, `error: ${errMsg.slice(0, 494)}`);
+
+        postSessionHook({
+          sessionId,
+          trigger,
+          toolCalls: [],
+          finalText: errMsg,
+          status:    'error',
+        }).catch(() => { /* errors already logged inside hook */ });
+
+        reject(new Error(errMsg));
       }
     });
 
