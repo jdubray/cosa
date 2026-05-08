@@ -39,6 +39,9 @@ function runInSandbox(code, snapshot, timeoutMs) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [WORKER_PATH], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      // Strip parent secrets (ANTHROPIC_API_KEY etc.) from the worker's
+      // environment — the sandbox only needs PATH to locate the Node binary.
+      env: { PATH: process.env.PATH },
     });
 
     let stdout  = '';

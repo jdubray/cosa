@@ -46,6 +46,12 @@ const SANITIZE_PATTERNS = [
   { label: 'token',             pattern: /token["'\s]*[:=]["'\s]*\S{16,}/gi },
   // secret=<value>  (generic credential key)
   { label: 'secret',            pattern: /secret\s*=\s*\S+/gi },
+  // Bearer authorization tokens (≥40 chars) — emitted in API error responses
+  { label: 'Bearer token',      pattern: /Bearer\s+[a-zA-Z0-9_\-.]{40,}/g },
+  // SSH / TLS / PGP private key blocks — accidental stderr from cat ~/.ssh/*
+  { label: 'Private key',       pattern: /-----BEGIN\s+[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END\s+[A-Z ]*PRIVATE KEY-----/g },
+  // JWT signing secrets in common key=value / property forms
+  { label: 'JWT secret',        pattern: /(?:JWT_SECRET|jwtSigningKey|signingKey|jwt[_-]?secret)\s*[:=]\s*\S+/gi },
 ];
 
 // ---------------------------------------------------------------------------
@@ -117,6 +123,8 @@ function runTirith(toolCall) {
     const opts = {
       timeout: 5000,   // 5-second hard ceiling — never block execution indefinitely
       maxBuffer: 64 * 1024,
+      // Strip parent secrets from Tirith's environment — it only needs PATH.
+      env: { PATH: process.env.PATH },
     };
 
     const child = execFile(TIRITH_BIN, ['--json'], opts, (err, stdout, stderr) => {
@@ -131,7 +139,9 @@ function runTirith(toolCall) {
         let reason = 'Tirith threat detected';
         try {
           const parsed = JSON.parse(stdout || '{}');
-          if (parsed.reason) reason = String(parsed.reason);
+          if (parsed !== null && typeof parsed === 'object' && typeof parsed.reason === 'string' && parsed.reason.length > 0) {
+            reason = parsed.reason;
+          }
         } catch (_) { /* ignore parse error, use default reason */ }
         resolve({ blocked: true, reason });
         return;
@@ -192,7 +202,14 @@ async function check(toolCall) {
   const subject = JSON.stringify(toolCall.input);
 
   for (const entry of dangerousCommands) {
-    const regex = new RegExp(entry.pattern, 'i');
+    let regex;
+    try {
+      regex = new RegExp(entry.pattern, 'i');
+    } catch (err) {
+      // Malformed pattern in config — skip and log; don't crash the tool call.
+      log.error(`[security-gate] Skipping malformed dangerous_commands pattern "${entry.pattern}": ${err.message}`);
+      continue;
+    }
     if (regex.test(subject)) {
       return { blocked: true, reason: entry.reason, pattern: entry.pattern };
     }

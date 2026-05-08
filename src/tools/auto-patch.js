@@ -11,7 +11,7 @@ const execLocal = promisify(childExec);
 // ---------------------------------------------------------------------------
 
 const NAME       = 'auto_patch';
-const RISK_LEVEL = 'destructive';
+const RISK_LEVEL = 'high';
 
 const APT_LOCK_TIMEOUT_SEC = 300;
 const APT_UPDATE_CMD =

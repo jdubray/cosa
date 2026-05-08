@@ -2,6 +2,26 @@
 
 const fs     = require('fs');
 const path   = require('path');
+
+// ---------------------------------------------------------------------------
+// Security constants
+// ---------------------------------------------------------------------------
+
+/** Allowed characters in a systemd service name (mirrors restart-appliance.js). */
+const SAFE_SERVICE_NAME = /^[a-zA-Z0-9_\-.@]+$/;
+
+/** Valid .env key: starts with letter or underscore, followed by alphanumeric/underscore. */
+const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Escape a string for use inside a shell single-quoted argument.
+ * The only character that can break a single-quote context is `'` itself,
+ * which is replaced by `'\''` (end quote, escaped single-quote, reopen quote).
+ */
+function shellSingleQuote(str) {
+  return str.replace(/'/g, "'\\''");
+}
+
 const cron = require('node-cron');
 const { getConfig }    = require('../config/cosa.config');
 const orchestrator     = require('./orchestrator');
@@ -545,14 +565,21 @@ function _isValidIpv4(ip) {
  * @returns {Promise<{ updated: boolean, error: string|null }>}
  */
 async function _updateEnvKey(envFilePath, key, oldIp, newIp) {
+  // Reject keys that could inject shell metacharacters into the remote commands.
+  if (!SAFE_ENV_KEY.test(key)) {
+    return { updated: false, error: `Unsafe .env key rejected: ${key}` };
+  }
+  // Escape single-quotes in the path so it is safe in single-quoted shell arguments.
+  const safePath = shellSingleQuote(envFilePath);
+
   // grep exits 0 when the key exists; 1 when absent.
-  const existsResult = await sshBackend.exec(`grep -q '^${key}=' '${envFilePath}'`);
+  const existsResult = await sshBackend.exec(`grep -q '^${key}=' '${safePath}'`);
   if (existsResult.exitCode !== 0) {
     return { updated: false, error: `Key ${key} not found in ${envFilePath}` };
   }
 
   // Read current value so we can handle comma-separated lists correctly.
-  const readResult = await sshBackend.exec(`grep '^${key}=' '${envFilePath}'`);
+  const readResult = await sshBackend.exec(`grep '^${key}=' '${safePath}'`);
   if (readResult.exitCode !== 0) {
     return { updated: false, error: `Failed to read ${key} from ${envFilePath}` };
   }
@@ -583,7 +610,7 @@ async function _updateEnvKey(envFilePath, key, oldIp, newIp) {
   // Escape characters that have special meaning as a sed | delimiter or
   // in the replacement side (& means "matched text" in sed).
   const escapedValue = newValue.replace(/[|\\&]/g, '\\$&');
-  const sedCmd       = `sed -i 's|^${key}=.*|${key}=${escapedValue}|' '${envFilePath}'`;
+  const sedCmd       = `sed -i 's|^${key}=.*|${key}=${escapedValue}|' '${safePath}'`;
   const sedResult    = await sshBackend.exec(sedCmd);
   if (sedResult.exitCode !== 0) {
     return { updated: false, error: `sed failed (exit ${sedResult.exitCode}): ${sedResult.stderr.trim()}` };
@@ -752,6 +779,11 @@ async function runInternetIpWatchTask() {
   const restartedServices = [];
   if (updatedKeys.length > 0 && restartOnChange && sshBackend.isConnected()) {
     for (const name of serviceNames) {
+      if (!SAFE_SERVICE_NAME.test(name)) {
+        errors.push(`Skipped unsafe service name: ${name}`);
+        log.error(`[internet-ip-watch] Rejected service name with shell metacharacters: ${name}`);
+        continue;
+      }
       try {
         const restartResult = await sshBackend.exec(`sudo systemctl restart ${name}`);
         if (restartResult.exitCode === 0) {
@@ -2041,25 +2073,33 @@ async function _runAutoPatch({ target, configKey, category, defaultRebootIfRequi
     ? (result.rebootScheduled ? 'patched + reboot scheduled' : 'patched')
     : 'patch FAILED';
   const title = `${applianceName} — ${target} ${titleVerb} (${result.packagesUpgraded} pkg)`;
-  const body  = buildAutoPatchAlertBody({ target, host, result });
 
-  await emailGateway.sendEmail({
-    to:      operatorEmail,
-    subject: `[COSA Alert] ${title}`,
-    text:    body,
-  });
+  // Only notify the operator when action is needed: a patch failure or a
+  // pending/scheduled reboot. Routine successful patches that require no
+  // reboot are silent — no email, no alert.
+  if (!result.ok || result.rebootRequired) {
+    const body = buildAutoPatchAlertBody({ target, host, result });
 
-  createAlert({
-    session_id: null,
-    severity,
-    category,
-    title,
-    body,
-    sent_at:    new Date().toISOString(),
-    email_to:   operatorEmail,
-  });
+    await emailGateway.sendEmail({
+      to:      operatorEmail,
+      subject: `[COSA Alert] ${title}`,
+      text:    body,
+    });
 
-  log.info(`[${configKey}] alert sent: ${title}`);
+    createAlert({
+      session_id: null,
+      severity,
+      category,
+      title,
+      body,
+      sent_at:    new Date().toISOString(),
+      email_to:   operatorEmail,
+    });
+
+    log.info(`[${configKey}] alert sent: ${title}`);
+  } else {
+    log.info(`[${configKey}] patches applied cleanly — no reboot required, no email sent`);
+  }
 }
 
 /**

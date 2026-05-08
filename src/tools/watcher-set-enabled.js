@@ -10,7 +10,7 @@ const log = createLogger('watcher-set-enabled');
 // ---------------------------------------------------------------------------
 
 const NAME       = 'watcher_set_enabled';
-const RISK_LEVEL = 'read';
+const RISK_LEVEL = 'medium';
 
 const SCHEMA = {
   description:
