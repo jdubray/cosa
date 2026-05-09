@@ -971,7 +971,15 @@ async function runBackupTask() {
   }
 
   if (backupResult.success) {
-    log.info(`Backup complete: ${backupResult.row_count} rows → ${backupResult.backup_path}`);
+    const files   = backupResult.backup_files ?? [];
+    const skipped = backupResult.skipped_tables ?? [];
+    const totalRows = files.reduce((n, f) => n + (f.row_count ?? 0), 0);
+    const summary = files.map((f) => `${f.table}=${f.row_count ?? '?'}`).join(', ');
+    log.info(
+      `Backup complete: ${files.length} table(s), ${totalRows} rows total ` +
+      `[${summary}]` +
+      (skipped.length > 0 ? ` — skipped: ${skipped.join(', ')}` : '')
+    );
     return;
   }
 
@@ -1024,17 +1032,63 @@ async function runBackupTask() {
 async function runBackupVerifyTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
+  const tables    = appliance.tools?.backup_run?.tables ?? [];
+  const backupDir = appliance.tools?.backup_run?.backup_dir ?? '/tmp/cosa-backups';
 
-  let verifyResult;
+  // 1. Probe the most-recent file to discover the batch timestamp. The verify
+  //    tool's auto-discovery picks the freshest *.jsonl regardless of table.
+  let probeResult;
   try {
-    verifyResult = await backupVerifyTool.handler({});
+    probeResult = await backupVerifyTool.handler({});
   } catch (err) {
     log.error(`[backup-verify] tool threw: ${err.message}`);
-    verifyResult = { verified: false, error: err.message };
+    probeResult = { verified: false, error: err.message };
   }
 
-  if (verifyResult.verified) {
-    log.info(`Backup verification passed: ${verifyResult.backup_path}`);
+  // 2. Extract the batch timestamp (e.g. 2026-05-09T10-00-00-729Z) from
+  //    "<dir>/<table>_<timestamp>.jsonl". If we cannot, fall back to
+  //    single-file verification so the legacy alert path still fires.
+  const tsMatch = (probeResult.backup_path ?? '').match(
+    /_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.jsonl$/
+  );
+
+  /** @type {Array<{ table: string, verified: boolean, backup_path: string,
+   *   expected_hash?: string|null, actual_hash?: string|null, error?: string }>} */
+  const perTable = [];
+  let verifyResult = probeResult;
+
+  if (tsMatch && tables.length > 0) {
+    const timestamp = tsMatch[1];
+    for (const table of tables) {
+      const filePath = `${backupDir}/${table}_${timestamp}.jsonl`;
+      try {
+        const r = await backupVerifyTool.handler({ backup_path: filePath });
+        perTable.push({ table, verified: r.verified, backup_path: filePath,
+          expected_hash: r.expected_hash, actual_hash: r.actual_hash });
+      } catch (err) {
+        perTable.push({ table, verified: false, backup_path: filePath,
+          error: err.message });
+      }
+    }
+
+    const failed = perTable.filter((r) => !r.verified);
+    if (failed.length === 0) {
+      log.info(`Backup verification passed: ${perTable.length} table(s) @ ${timestamp}`);
+      return;
+    }
+    // Synthesize an alert payload that names the first failure for the
+    // legacy single-file fields, while listing every failed table in body.
+    verifyResult = {
+      verified:      false,
+      backup_path:   failed[0].backup_path,
+      expected_hash: failed[0].expected_hash ?? null,
+      actual_hash:   failed[0].actual_hash   ?? null,
+      error:         failed[0].error,
+      failed_tables: failed.map((r) => r.table),
+    };
+  } else if (probeResult.verified) {
+    // No tables configured (or path unparseable), but the single probe passed.
+    log.info(`Backup verification passed: ${probeResult.backup_path}`);
     return;
   }
 
@@ -1047,11 +1101,15 @@ async function runBackupVerifyTask() {
   }
 
   const applianceName = appliance.name ?? 'Appliance';
+  const failedTables  = verifyResult.failed_tables ?? [];
   const title  = `${applianceName} — Backup Verification Failed`;
   const body   = [
     'COSA automated backup verification failed:',
     '',
-    `Backup path:    ${verifyResult.backup_path ?? 'unknown'}`,
+    failedTables.length > 0
+      ? `Failed tables: ${failedTables.join(', ')} (${failedTables.length} of ${perTable.length})`
+      : `Backup path:    ${verifyResult.backup_path ?? 'unknown'}`,
+    `First failure:  ${verifyResult.backup_path ?? 'unknown'}`,
     `Expected hash:  ${verifyResult.expected_hash ?? 'n/a'}`,
     `Actual hash:    ${verifyResult.actual_hash ?? 'n/a'}`,
     '',

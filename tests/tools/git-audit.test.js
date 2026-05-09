@@ -141,6 +141,20 @@ describe('AC1 — input handling and defaults', () => {
     expect(cmd).toContain('48 hours ago');
   });
 
+  it('uses repo_path from appliance config when input.repoPath is omitted', async () => {
+    // Regression: cron called handler({}) and the tool used to read only
+    // input.repoPath, throwing `invalid repoPath "undefined"` every 8h.
+    await handler({});
+    expect(mockExec.mock.calls[0][0]).toContain(`git -C "${REPO_PATH}"`);
+  });
+
+  it('throws "invalid repoPath" when neither input nor config provides repo_path', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: { tools: { git_audit: { expected_authors: [KNOWN_AUTHOR] } } },
+    });
+    await expect(handler({})).rejects.toThrow('invalid repoPath');
+  });
+
   it('uses expectedAuthors from input over config', async () => {
     const altAuthor = 'other@example.com';
     mockExec.mockResolvedValue({

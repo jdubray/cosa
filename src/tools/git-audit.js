@@ -196,7 +196,7 @@ async function handler(input) {
   const toolCfg          = appliance.tools?.git_audit ?? {};
   const lookbackHours    = input.lookbackHours    ?? toolCfg.lookback_hours    ?? DEFAULT_LOOKBACK_HOURS;
   const expectedAuthors  = input.expectedAuthors  ?? toolCfg.expected_authors  ?? [];
-  const repoPath         = input.repoPath;
+  const repoPath         = input.repoPath         ?? toolCfg.repo_path;
 
   // Validate repoPath is an absolute path to prevent shell injection through
   // unexpected characters.  We only allow paths starting with '/' followed by
