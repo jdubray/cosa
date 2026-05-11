@@ -215,6 +215,21 @@ function buildWeeklyDigestTrigger() {
     ? `${lastBackupAlertRow.sent_at} — "${lastBackupAlertRow.title}" (category=${lastBackupAlertRow.category}, severity=${lastBackupAlertRow.severity})`
     : 'never recorded';
 
+  const HEALTH_CATEGORIES = ['health_check'];
+  const TUNNEL_CATEGORIES = ['tunnel_health_check'];
+  const healthAlertsPast7 = countAlertsByCategoriesSince(HEALTH_CATEGORIES, sinceIso);
+  const tunnelAlertsPast7 = countAlertsByCategoriesSince(TUNNEL_CATEGORIES, sinceIso);
+  const lastHealthAlertRow = findMostRecentAlertByCategories([...HEALTH_CATEGORIES, ...TUNNEL_CATEGORIES]);
+  const lastHealthAlertLine = lastHealthAlertRow
+    ? `${lastHealthAlertRow.sent_at} — "${lastHealthAlertRow.title}" (category=${lastHealthAlertRow.category}, severity=${lastHealthAlertRow.severity})`
+    : 'never recorded';
+  // Run counts derived from the live cron schedule (see schedule() calls at
+  // the bottom of this file): lunch 0,30/11-13 + midday 0/14-16 + dinner
+  // 0,30/17-20 = 17 runs/day × 7 = 119 appliance health-checks per week;
+  // tunnel runs 0 * * * * = 24 × 7 = 168 per week.
+  const HEALTH_RUNS_PER_WEEK = 119;
+  const TUNNEL_RUNS_PER_WEEK = 168;
+
   return {
     type:    'cron',
     source:  'weekly-digest',
@@ -222,8 +237,12 @@ function buildWeeklyDigestTrigger() {
 
 PRECOMPUTED FACTS (AUTHORITATIVE — pulled directly from the alerts ledger; your prose MUST agree with these and must NOT contradict them):
 - Reporting window: ${sinceIso} → ${new Date(nowMs).toISOString()} (rolling past 7 days).
-- Backup-related alerts in that window: ${backupAlertsPast7}.
-  Categories counted: ${BACKUP_CATEGORIES.join(', ')}.
+- Appliance health-check alerts in that window: ${healthAlertsPast7}. Category: health_check.
+- Tunnel health-check alerts in that window: ${tunnelAlertsPast7}. Category: tunnel_health_check.
+- Most recent health-related alert (any time, ever): ${lastHealthAlertLine}.
+- Scheduled appliance health-check runs in a 7-day window: ${HEALTH_RUNS_PER_WEEK} (lunch 0,30 11-13 + midday 0 14-16 + dinner 0,30 17-20, every day).
+- Scheduled tunnel health-check runs in a 7-day window: ${TUNNEL_RUNS_PER_WEEK} (hourly).
+- Backup-related alerts in that window: ${backupAlertsPast7}. Categories counted: ${BACKUP_CATEGORIES.join(', ')}.
 - Most recent backup-related alert (any time, ever): ${lastBackupAlertLine}.
 - Nightly backup cron schedule: 0 3 * * * (03:00 local) — so a 7-day window contains 7 scheduled runs.
 - Nightly verify cron schedule: 5 3 * * * (03:05 local) — verifies all configured tables of the most recent batch.
@@ -243,6 +262,12 @@ Then write the complete digest as your response using this exact structure:
 - Section: SKILLS (new skills created, skills improved)
 - Section: OPERATOR ACTIVITY (sessions, approval requests)
 - Footer: "— COSA"
+
+CRITICAL RULES FOR THE HEALTH CHECK SECTION:
+- Use the precomputed appliance and tunnel run counts above verbatim — do NOT approximate, round, or substitute "approximately 168 hourly".
+- If both health-related alert counts above are 0: state "${HEALTH_RUNS_PER_WEEK} appliance health-checks and ${TUNNEL_RUNS_PER_WEEK} tunnel health-checks ran in the window. No degraded, unreachable, or tunnel failure alerts were raised." Do NOT invent incidents.
+- If either count > 0: list each alert with sent_at, title, and category.
+- Never reference historical degradation outside the reporting window unless an alert WITHIN it cites it.
 
 CRITICAL RULES FOR THE BACKUPS SECTION:
 - If "Backup-related alerts in that window" above is 0: state explicitly "7 nightly backups scheduled in the reporting window; no backup or verification failure alerts were raised. No incidents." Do NOT invent failures. Do NOT reference incidents older than the reporting window even if session_search returns them.
