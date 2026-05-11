@@ -631,6 +631,46 @@ function findRecentAlert(category, severity, sinceIso) {
 }
 
 /**
+ * Count alerts whose category is in `categories` and whose `sent_at` is at
+ * or after `sinceIso`.  Used by the weekly digest to surface authoritative
+ * failure counts without relying on FTS5 session search.
+ *
+ * @param {string[]} categories
+ * @param {string}   sinceIso
+ * @returns {number}
+ */
+function countAlertsByCategoriesSince(categories, sinceIso) {
+  if (!Array.isArray(categories) || categories.length === 0) return 0;
+  const placeholders = categories.map(() => '?').join(',');
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM alerts
+       WHERE category IN (${placeholders}) AND sent_at >= ?`
+    )
+    .get(...categories, sinceIso);
+  return row?.n ?? 0;
+}
+
+/**
+ * Return the single most recent alert matching any of `categories`.  Used by
+ * the weekly digest to report "last failure ever" alongside current-week
+ * counts.
+ *
+ * @param {string[]} categories
+ * @returns {object|undefined}
+ */
+function findMostRecentAlertByCategories(categories) {
+  if (!Array.isArray(categories) || categories.length === 0) return undefined;
+  const placeholders = categories.map(() => '?').join(',');
+  return getDb()
+    .prepare(
+      `SELECT * FROM alerts WHERE category IN (${placeholders})
+       ORDER BY sent_at DESC LIMIT 1`
+    )
+    .get(...categories);
+}
+
+/**
  * Return the single most recent alert for a given category, regardless of
  * severity.  Used to detect whether a recovery notification should be sent
  * after the appliance returns to a healthy state.
@@ -805,6 +845,8 @@ module.exports = {
   createAlert,
   findRecentAlert,
   findLastAlertByCategory,
+  countAlertsByCategoriesSince,
+  findMostRecentAlertByCategories,
   // Suppressed findings
   createSuppression,
   isSuppressionActive,

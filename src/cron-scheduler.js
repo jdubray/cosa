@@ -27,7 +27,14 @@ const { getConfig }    = require('../config/cosa.config');
 const orchestrator     = require('./orchestrator');
 const emailGateway     = require('./email-gateway');
 const sshBackend       = require('./ssh-backend');
-const { createAlert, findRecentAlert, findLastAlertByCategory, getLastToolOutput } = require('./session-store');
+const {
+  createAlert,
+  findRecentAlert,
+  findLastAlertByCategory,
+  getLastToolOutput,
+  countAlertsByCategoriesSince,
+  findMostRecentAlertByCategories,
+} = require('./session-store');
 const { createLogger } = require('./logger');
 const healthCheckTool        = require('./tools/health-check');
 const internetIpCheckTool    = require('./tools/internet-ip-check');
@@ -194,13 +201,36 @@ Current time: ${new Date().toISOString()}`,
 /** @returns {{ type: string, source: string, message: string }} */
 function buildWeeklyDigestTrigger() {
   // Monday = start of the week; use the Monday date as the "week of" date.
-  const weekOf = _getMondayDateString();
+  const weekOf   = _getMondayDateString();
+  const nowMs    = Date.now();
+  const sinceIso = new Date(nowMs - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Authoritative facts pulled from the structured alerts ledger so the
+  // agent cannot infer failure from stale session_search hits.  Categories
+  // cover the legacy 'backup' label plus the post-2026-05-08 split.
+  const BACKUP_CATEGORIES = ['backup', 'backup-run', 'backup-verify', 'backup-offsite'];
+  const backupAlertsPast7  = countAlertsByCategoriesSince(BACKUP_CATEGORIES, sinceIso);
+  const lastBackupAlertRow = findMostRecentAlertByCategories(BACKUP_CATEGORIES);
+  const lastBackupAlertLine = lastBackupAlertRow
+    ? `${lastBackupAlertRow.sent_at} — "${lastBackupAlertRow.title}" (category=${lastBackupAlertRow.category}, severity=${lastBackupAlertRow.severity})`
+    : 'never recorded';
+
   return {
     type:    'cron',
     source:  'weekly-digest',
-    message: `Generate the weekly operational digest. Gather data as follows:
-1. Run session_search with query "backup success failure" to summarise backup status for the past 7 days.
-2. Run session_search with query "health degraded unreachable alert" to summarise health check results for the past 7 days.
+    message: `Generate the weekly operational digest.
+
+PRECOMPUTED FACTS (AUTHORITATIVE — pulled directly from the alerts ledger; your prose MUST agree with these and must NOT contradict them):
+- Reporting window: ${sinceIso} → ${new Date(nowMs).toISOString()} (rolling past 7 days).
+- Backup-related alerts in that window: ${backupAlertsPast7}.
+  Categories counted: ${BACKUP_CATEGORIES.join(', ')}.
+- Most recent backup-related alert (any time, ever): ${lastBackupAlertLine}.
+- Nightly backup cron schedule: 0 3 * * * (03:00 local) — so a 7-day window contains 7 scheduled runs.
+- Nightly verify cron schedule: 5 3 * * * (03:05 local) — verifies all configured tables of the most recent batch.
+
+Gather supplementary data as follows:
+1. Use session_search ONLY to enrich narrative for items that ALSO appear in the precomputed facts above. Do not promote a session_search hit into a current-week issue unless its date falls inside the reporting window.
+2. Run session_search with query "health degraded unreachable" to summarise health check incidents in the past 7 days (filter results to entries dated within the reporting window).
 3. Query the skills database via session_search for skills created or improved this week.
 4. Count operator-initiated sessions and approval requests from the past 7 days.
 
@@ -214,12 +244,21 @@ Then write the complete digest as your response using this exact structure:
 - Section: OPERATOR ACTIVITY (sessions, approval requests)
 - Footer: "— COSA"
 
+CRITICAL RULES FOR THE BACKUPS SECTION:
+- If "Backup-related alerts in that window" above is 0: state explicitly "7 nightly backups scheduled in the reporting window; no backup or verification failure alerts were raised. No incidents." Do NOT invent failures. Do NOT reference incidents older than the reporting window even if session_search returns them.
+- If > 0: list each alert with its sent_at date, title, and category. Use archive_search only to enrich detail.
+- Never reference historical dates (e.g. an April incident) unless an alert WITHIN the reporting window explicitly cites them.
+
+CRITICAL RULES FOR THE ANOMALIES SECTION:
+- Only include items that ALSO appear as an alert in the past 7 days. Resolved or stale issues from prior weeks MUST NOT be promoted to current-week anomalies.
+- If there are no alerts in the past 7 days, this section must say "No anomalies." — period.
+
 IMPORTANT: Your response IS the email body — it will be sent to the operator automatically. Write only the digest content. Do not include any preamble, meta-commentary about sending, or instructions to the operator. Start directly with the digest header.
 
 The email subject will be: [COSA] Weekly Digest: week of ${weekOf}
 Plain text only — no HTML, no markdown.
 
-Current time: ${new Date().toISOString()}`,
+Current time: ${new Date(nowMs).toISOString()}`,
   };
 }
 
