@@ -46,6 +46,7 @@ const watcherListTool            = require('./tools/watcher-list');
 const watcherRemoveTool          = require('./tools/watcher-remove');
 const watcherSetEnabledTool      = require('./tools/watcher-set-enabled');
 const internetIpCheckTool        = require('./tools/internet-ip-check');
+const unitHealthTool             = require('./tools/unit-health');
 
 // ---------------------------------------------------------------------------
 // Credential store CLI subcommand
@@ -190,7 +191,7 @@ async function boot() {
     tokenRotationRemindTool, pauseApplianceTool,
     applianceStatusPollTool, applianceApiCallTool,
     watcherRegisterTool, watcherListTool, watcherRemoveTool, watcherSetEnabledTool,
-    internetIpCheckTool,
+    internetIpCheckTool, unitHealthTool,
   ]) {
     toolRegistry.register(t.name, t.schema, t.handler, t.riskLevel);
   }

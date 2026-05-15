@@ -338,3 +338,54 @@ describe('backup_verify — backup_path validation', () => {
     expect(result.verified).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gap #1 closure — per-database prefix scoping
+// ---------------------------------------------------------------------------
+
+describe('backup_verify — prefix scoping (multi-DB)', () => {
+  it('passing prefix narrows the auto-detect glob to that database', async () => {
+    mockExec.mockResolvedValueOnce({
+      stdout:   makeVerifyOutput({ backupPath: '/tmp/cosa-backups/campaigns__admins_2026-05-15T03-00-00-000Z.jsonl' }),
+      stderr:   '',
+      exitCode: 0,
+    });
+
+    await handler({ prefix: 'campaigns__' });
+
+    const [, script] = mockExec.mock.calls[0];
+    expect(script).toContain("'/tmp/cosa-backups'/campaigns__*.jsonl");
+    expect(script).not.toMatch(/'\/tmp\/cosa-backups'\/\*\.jsonl/);
+  });
+
+  it('strips shell metacharacters from prefix to prevent injection', async () => {
+    mockExec.mockResolvedValueOnce({
+      stdout:   'NO_BACKUP_FOUND\n',
+      stderr:   '',
+      exitCode: 0,
+    });
+
+    await expect(
+      handler({ prefix: "evil; rm -rf /; echo " })
+    ).rejects.toThrow(/No backup file found/);
+
+    const [, script] = mockExec.mock.calls[0];
+    expect(script).not.toContain('rm -rf');
+    // The glob should be scoped to a sanitized prefix — the original metacharacters
+    // (space, semicolon, slash) must not survive into the bash script's glob.
+    expect(script).toMatch(/'\/tmp\/cosa-backups'\/evilrm-rf[a-zA-Z0-9_.\-]*\*\.jsonl/);
+  });
+
+  it('omitting prefix preserves the legacy unscoped glob', async () => {
+    mockExec.mockResolvedValueOnce({
+      stdout:   makeVerifyOutput(),
+      stderr:   '',
+      exitCode: 0,
+    });
+
+    await handler();
+
+    const [, script] = mockExec.mock.calls[0];
+    expect(script).toContain("'/tmp/cosa-backups'/*.jsonl");
+  });
+});

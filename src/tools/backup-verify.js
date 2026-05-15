@@ -27,6 +27,14 @@ const INPUT_SCHEMA = {
         'If omitted, the most recent *.jsonl file in the ' +
         'configured backup directory is used.',
     },
+    prefix: {
+      type:        'string',
+      description:
+        'Optional filename prefix used to scope auto-detection to one ' +
+        'database in multi-DB mode (e.g. "campaigns__"). The glob becomes ' +
+        '<backup_dir>/<prefix>*.jsonl, so only files belonging to that DB ' +
+        'are considered. Ignored when backup_path is provided.',
+    },
   },
   required:             [],
   additionalProperties: false,
@@ -71,16 +79,21 @@ function shEscape(value) {
  * @param {string|null} backupPathOverride - Explicit path, or null for auto-detect.
  * @returns {string}
  */
-function buildScript(backupDir, backupPathOverride) {
+function buildScript(backupDir, backupPathOverride, prefix = '') {
   const qDir = `'${shEscape(backupDir)}'`;
 
-  // Locate the target file — either the explicit override or the most recent glob.
+  // Locate the target file — either the explicit override or the most recent
+  // glob, optionally scoped to one database via a filename prefix.
+  const safePrefix = prefix.replace(/[^A-Za-z0-9_.\-]/g, '');
+  const glob = safePrefix
+    ? `${qDir}/${safePrefix}*.jsonl`
+    : `${qDir}/*.jsonl`;
   const locateBlock = backupPathOverride
     ? `BACKUP_PATH='${shEscape(backupPathOverride)}'`
     : [
         `BACKUP_PATH=""`,
-        `if ls ${qDir}/*.jsonl 1>/dev/null 2>&1; then`,
-        `  BACKUP_PATH=$(ls -t ${qDir}/*.jsonl | head -1)`,
+        `if ls ${glob} 1>/dev/null 2>&1; then`,
+        `  BACKUP_PATH=$(ls -t ${glob} | head -1)`,
         `fi`,
       ].join('\n');
 
@@ -177,7 +190,7 @@ function execWithTimeout(command, stdin, timeoutMs) {
  * }>}
  * @throws {Error} When no backup file is found, or on SSH/script failure.
  */
-async function handler({ backup_path: backupPathArg } = {}) {
+async function handler({ backup_path: backupPathArg, prefix } = {}) {
   const { appliance } = getConfig();
   const backupDir = appliance.tools?.backup_run?.backup_dir ?? DEFAULT_BACKUP_DIR;
   const timeoutMs = (appliance.tools?.backup_run?.timeout_s ?? 120) * 1000;
@@ -205,7 +218,7 @@ async function handler({ backup_path: backupPathArg } = {}) {
     }
   }
 
-  const script = buildScript(backupDir, normalisedPath);
+  const script = buildScript(backupDir, normalisedPath, prefix ?? '');
 
   // ── Execute via SSH ────────────────────────────────────────────────────────
   let execResult;

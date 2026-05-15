@@ -127,16 +127,33 @@ tools:
     # Absolute path required: non-interactive SSH shells don't source bun's
     # PATH additions, so `bun` alone resolves to "command not found".
     js_runtime: "/home/baanbaan/.bun/bin/bun"
-    tables:
-      - orders
-      - payments
-      - payment_errors
-      - merchants
-      - menu_items
-      - employees
-      - timesheets
-      - reservations
-      - feedback
+    # Multi-database backup. Each entry is exported to JSONL with a
+    # `<name>__` filename prefix so backup-verify can scope its glob per DB.
+    # Tables not present in the live schema are skipped with a warning;
+    # add/remove tables here as the schemas evolve.
+    databases:
+      - name: merchant
+        path: "/home/baanbaan/baan-baan-merchant/v2/data/merchant.db"
+        tables:
+          - orders
+          - payments
+          - payment_errors
+          - merchants
+          - menu_items
+          - employees
+          - timesheets
+          - reservations
+          - feedback
+      - name: campaigns
+        path: "/var/lib/hanuman-kirkland/campaigns.db"
+        # Verify exact table names with:
+        #   ssh baanbaan@192.168.1.248 'sqlite3 /var/lib/hanuman-kirkland/campaigns.db ".tables"'
+        # Tables missing at runtime are skipped (logged warning), so over-listing
+        # here is safe.
+        tables:
+          - campaigns
+          - admin_users
+          - redirects
   restart_appliance:
     enabled: true
     graceful_timeout_seconds: 60
@@ -220,11 +237,14 @@ tools:
         reason: "admin seed CLI; password supplied via process.argv[3] at runtime, hashed before INSERT into admin_users"
   tunnel_health_check:
     enabled: true
-    # NOTE: apex `hanuman-kirkland.com` has no A record at Cloudflare DNS
-    # (only www. and qr. are wired up in the public DNS zone, even though
-    # cloudflared.config.yml lists the apex as an ingress hostname).
-    # Probe the resolvable www. host until/unless apex DNS is added.
-    url: "https://www.hanuman-kirkland.com/"
+    # All public tunnel hostnames the appliance serves. Each is probed
+    # independently with per-URL alert dedup, so an outage on one hostname
+    # does not suppress alerts on another. NOTE: apex `hanuman-kirkland.com`
+    # has no A record at Cloudflare DNS (only www. and qr. are wired up in
+    # the public DNS zone), so we probe the resolvable www. host.
+    urls:
+      - "https://hanuman-thai-cafe.baanbaan.org/"   # Merchant POS — primary public hostname
+      - "https://www.hanuman-kirkland.com/"          # Marketing engine
     timeout_ms: 10000
     # HTTP statuses considered healthy. Cloudflare 521/522/523 (origin down /
     # connection timeout / unreachable) are 5xx and trigger an alert; so does
@@ -274,6 +294,19 @@ tools:
     enabled: true
   internet_ip_check:
     enabled: true
+  unit_health:
+    enabled: true
+    # Per-systemd-unit liveness check. Each unit is probed with
+    # `systemctl is-active`; any state other than "active" raises a
+    # degraded alert. Units default to the dBOM-required set below
+    # when this list is omitted.
+    units:
+      - baanbaan          # Merchant POS (Bun) — main revenue path
+      - baanbaan-ocr      # Invoice OCR sidecar (uvicorn, 8765)
+      - marketing-engine  # hanuman-kirkland.com QR redirector (3100)
+      - cloudflared       # Public ingress for both hostnames
+    # Dedup: don't re-alert the same degraded unit set inside this window.
+    dedup_window_minutes: 30
   internet_ip_watch:
     enabled: true
     # Absolute path to BaanBaan's .env file on the appliance.

@@ -70,6 +70,40 @@ function shEscape(value) {
 }
 
 /**
+ * Resolve the list of databases to back up from appliance config.
+ *
+ * Returns a normalized array of `{ name, path, tables, filePrefix }`:
+ *   - When `tools.backup_run.databases` is configured, it's used directly.
+ *     Each entry's `filePrefix` is `${name}__` so files are namespaced and
+ *     verify can glob per-database.
+ *   - Otherwise (legacy single-DB), one entry is synthesized from
+ *     `database.path` + `tools.backup_run.tables` with an EMPTY `filePrefix`,
+ *     preserving the historic `${table}_${ts}.jsonl` filename format.
+ *
+ * @param {object} appliance - appliance config object from getConfig().
+ * @returns {Array<{ name: string, path: string, tables: string[], filePrefix: string }>}
+ */
+function resolveDatabases(appliance) {
+  const cfg = appliance.tools?.backup_run ?? {};
+  if (Array.isArray(cfg.databases) && cfg.databases.length > 0) {
+    return cfg.databases
+      .filter((d) => d && typeof d.path === 'string' && Array.isArray(d.tables))
+      .map((d) => ({
+        name:       d.name ?? 'db',
+        path:       d.path,
+        tables:     d.tables,
+        filePrefix: `${d.name ?? 'db'}__`,
+      }));
+  }
+  return [{
+    name:       'primary',
+    path:       appliance.database.path,
+    tables:     cfg.tables ?? [],
+    filePrefix: '',
+  }];
+}
+
+/**
  * Build the multi-step bash script that exports N tables as JSONL.
  *
  * For each table the script:
@@ -99,7 +133,7 @@ function shEscape(value) {
  * @param {string}   runtimeExpr  - Shell expression evaluating to the JS binary path
  * @returns {string}
  */
-function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
+function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr, filePrefix = '') {
   const qDb  = `'${shEscape(dbPath)}'`;
   const qDir = `'${shEscape(backupDir)}'`;
 
@@ -116,7 +150,7 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr) {
     `.on('end',()=>{if(!d.trim())return;JSON.parse(d).forEach(r=>console.log(JSON.stringify(r)))})"`;
 
   const tableSteps = tables.map(table => {
-    const backupFile  = `${table}_${fileTs}.jsonl`;
+    const backupFile  = `${filePrefix}${table}_${fileTs}.jsonl`;
     const backupPath  = `${backupDir}/${backupFile}`;
     const sidecarPath = `${backupPath}.sha256`;
     const qBackup     = `'${shEscape(backupPath)}'`;
@@ -219,13 +253,15 @@ function execWithTimeout(command, stdin, timeoutMs) {
  */
 async function handler() {
   const { appliance } = getConfig();
-  const dbPath    = appliance.database.path;
   const backupDir = appliance.tools?.backup_run?.backup_dir ?? DEFAULT_BACKUP_DIR;
   const timeoutMs = (appliance.tools?.backup_run?.timeout_s ?? DEFAULT_TIMEOUT_S) * 1000;
-  const tables    = appliance.tools?.backup_run?.tables     ?? null;
   const jsRuntime = appliance.tools?.backup_run?.js_runtime ?? null;
 
-  if (!Array.isArray(tables) || tables.length === 0) {
+  const databases = resolveDatabases(appliance);
+
+  // Validate config: every DB must have at least one table configured.
+  const emptyDb = databases.find((d) => !Array.isArray(d.tables) || d.tables.length === 0);
+  if (emptyDb || databases.length === 0) {
     return {
       success:      false,
       backup_files: [],
@@ -248,85 +284,138 @@ async function handler() {
   const startMs   = Date.now();
   const fileTs    = isoToFileTs(startedAt);
 
-  // ── Schema-drift guard ────────────────────────────────────────────────────
-  // Query sqlite_master first so that a stale configured table name (dropped
-  // upstream) becomes a skipped-with-warning, not a fail-the-entire-backup.
-  const existing = await discoverExistingTables(dbPath);
-  if (existing === null) {
+  /** @type {Array<{ database: string, table: string, path: string, row_count: number|null, checksum: string|null }>} */
+  const backupFiles  = [];
+  /** @type {string[]} */
+  const skippedAll   = [];
+  /** @type {string[]} */
+  const dbErrors     = [];
+
+  for (const db of databases) {
+    const dbResult = await _backupOneDatabase(
+      db, backupDir, fileTs, runtimeExpr, timeoutMs
+    );
+    backupFiles.push(...dbResult.backup_files);
+    skippedAll.push(...dbResult.skipped_tables);
+    if (dbResult.error) {
+      dbErrors.push(`[${db.name}] ${dbResult.error}`);
+    }
+  }
+
+  const completedAt = new Date().toISOString();
+  const durationMs  = Date.now() - startMs;
+
+  if (dbErrors.length > 0) {
     return {
-      success:      false,
-      backup_files: [],
-      started_at:   startedAt,
-      completed_at: new Date().toISOString(),
-      duration_ms:  Date.now() - startMs,
-      error:        'Failed to enumerate tables from sqlite_master — aborting before backup.',
+      success:        false,
+      backup_files:   backupFiles,
+      skipped_tables: skippedAll,
+      started_at:     startedAt,
+      completed_at:   completedAt,
+      duration_ms:    durationMs,
+      error:          dbErrors.join('; '),
     };
   }
 
-  const skippedTables  = tables.filter((t) => !existing.has(t));
-  const tablesToBackup = tables.filter((t) =>  existing.has(t));
+  return {
+    success:        true,
+    backup_files:   backupFiles,
+    skipped_tables: skippedAll,
+    started_at:     startedAt,
+    completed_at:   completedAt,
+    duration_ms:    durationMs,
+  };
+}
 
-  if (skippedTables.length > 0) {
+/**
+ * Back up one database. Extracted from handler so multi-DB and single-DB
+ * paths share identical per-DB logic. Returns the per-DB result so the
+ * caller can aggregate; never throws.
+ *
+ * @param {{ name: string, path: string, tables: string[], filePrefix: string }} db
+ * @param {string} backupDir
+ * @param {string} fileTs
+ * @param {string} runtimeExpr
+ * @param {number} timeoutMs
+ * @returns {Promise<{
+ *   backup_files:   Array<{ database: string, table: string, path: string, row_count: number|null, checksum: string|null }>,
+ *   skipped_tables: string[],
+ *   error?:         string,
+ * }>}
+ */
+async function _backupOneDatabase(db, backupDir, fileTs, runtimeExpr, timeoutMs) {
+  // Skipped-table tags are bare table names in legacy single-DB mode (so
+  // long-standing tests and callers keep matching `['orders']`), and
+  // `${dbName}.${table}` in multi-DB mode so each entry stays unambiguous.
+  const tagSkipped = (t) => (db.filePrefix === '' ? t : `${db.name}.${t}`);
+  // ── Schema-drift guard ────────────────────────────────────────────────────
+  // Query sqlite_master first so that a stale configured table name (dropped
+  // upstream) becomes a skipped-with-warning, not a fail-the-entire-backup.
+  const existing = await discoverExistingTables(db.path);
+  if (existing === null) {
+    return {
+      backup_files:   [],
+      skipped_tables: [],
+      error:          `Failed to enumerate tables from sqlite_master at ${db.path} — aborting backup for this DB.`,
+    };
+  }
+
+  const skipped        = db.tables.filter((t) => !existing.has(t));
+  const tablesToBackup = db.tables.filter((t) =>  existing.has(t));
+
+  if (skipped.length > 0) {
     log.warn(
-      `Skipping ${skippedTables.length} configured table(s) missing from DB: ` +
-      `[${skippedTables.join(', ')}]. Update appliance.yaml to remove them.`
+      `[${db.name}] Skipping ${skipped.length} configured table(s) missing from DB: ` +
+      `[${skipped.join(', ')}]. Update appliance.yaml to remove them.`
     );
   }
 
+  const skippedTagged = skipped.map(tagSkipped);
+
   if (tablesToBackup.length === 0) {
     return {
-      success:        false,
       backup_files:   [],
-      skipped_tables: skippedTables,
-      started_at:     startedAt,
-      completed_at:   new Date().toISOString(),
-      duration_ms:    Date.now() - startMs,
+      skipped_tables: skippedTagged,
       error:
-        `None of the configured tables exist in the DB. ` +
-        `Configured: [${tables.join(', ')}]. ` +
+        `[${db.name}] None of the configured tables exist in the DB. ` +
+        `Configured: [${db.tables.join(', ')}]. ` +
         `Existing (sample): [${[...existing].slice(0, 10).join(', ')}${existing.size > 10 ? ', ...' : ''}].`,
     };
   }
 
-  const script = buildScript(dbPath, backupDir, tablesToBackup, fileTs, runtimeExpr);
+  const script = buildScript(
+    db.path, backupDir, tablesToBackup, fileTs, runtimeExpr, db.filePrefix
+  );
 
-  // ── Execute backup script via SSH ─────────────────────────────────────────
   let execResult;
   try {
     execResult = await execWithTimeout('bash -s', script, timeoutMs);
   } catch (err) {
     return {
-      success:      false,
-      backup_files: [],
-      started_at:   startedAt,
-      completed_at: new Date().toISOString(),
-      duration_ms:  Date.now() - startMs,
-      error:        err.message,
+      backup_files:   [],
+      skipped_tables: skippedTagged,
+      error:          err.message,
     };
   }
 
   const { stdout, stderr, exitCode } = execResult;
-  const completedAt = new Date().toISOString();
-  const durationMs  = Date.now() - startMs;
 
   if (exitCode !== 0) {
     return {
-      success:      false,
-      backup_files: [],
-      started_at:   startedAt,
-      completed_at: completedAt,
-      duration_ms:  durationMs,
-      error:        `Backup script exited ${exitCode}: ${stderr.trim()}`,
+      backup_files:   [],
+      skipped_tables: skippedTagged,
+      error:          `Backup script exited ${exitCode}: ${(stderr ?? '').trim()}`,
     };
   }
 
-  // ── Parse 2×N output lines: row_count\nchecksum per backed-up table ───────
+  // Parse 2×N output lines: row_count\nchecksum per backed-up table.
   const lines = stdout.trim().split('\n');
   const backupFiles = tablesToBackup.map((table, i) => {
-    const backupFile = `${table}_${fileTs}.jsonl`;
+    const backupFile = `${db.filePrefix}${table}_${fileTs}.jsonl`;
     const rowCount   = parseInt(lines[i * 2], 10);
     const checksum   = (lines[i * 2 + 1] ?? '').trim();
     return {
+      database:  db.name,
       table,
       path:      `${backupDir}/${backupFile}`,
       row_count: isNaN(rowCount) ? null : rowCount,
@@ -335,12 +424,8 @@ async function handler() {
   });
 
   return {
-    success:        true,
     backup_files:   backupFiles,
-    skipped_tables: skippedTables,
-    started_at:     startedAt,
-    completed_at:   completedAt,
-    duration_ms:    durationMs,
+    skipped_tables: skippedTagged,
   };
 }
 

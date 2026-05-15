@@ -99,6 +99,12 @@ jest.mock('../src/tools/resource-threshold-monitor', () => ({
   handler: (...a) => mockRtmHandler(...a),
 }));
 
+const mockUnitHealthHandler = jest.fn();
+jest.mock('../src/tools/unit-health', () => ({
+  name:    'unit_health',
+  handler: (...a) => mockUnitHealthHandler(...a),
+}));
+
 // ---------------------------------------------------------------------------
 // Module under test
 // ---------------------------------------------------------------------------
@@ -111,6 +117,7 @@ const {
   runNetworkScanTask,
   runAccessLogScanTask,
   runTunnelHealthCheckTask,
+  runUnitHealthCheckTask,
   runWeeklySecurityDigestTask,
   runCredentialAuditTask,
   runComplianceVerifyTask,
@@ -486,6 +493,99 @@ describe('AC4c – tunnel_health_check hourly probe', () => {
     start();
     const hourly = callsWithExpr('0 * * * *');
     expect(hourly.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC4c.2: tunnel_health_check — multi-URL probe (Gap #2 closure)
+// ---------------------------------------------------------------------------
+
+describe('AC4c.2 – tunnel_health_check probes every configured URL', () => {
+  const URL_POS       = 'https://hanuman-thai-cafe.baanbaan.org/';
+  const URL_MARKETING = 'https://www.hanuman-kirkland.com/';
+
+  const MULTI_URL_CONFIG = {
+    appliance: {
+      ...BASE_CONFIG.appliance,
+      tools: {
+        tunnel_health_check: {
+          enabled: true,
+          urls: [URL_POS, URL_MARKETING],
+          timeout_ms: 10000,
+          expected_status_max: 499,
+        },
+      },
+    },
+  };
+
+  let originalFetch;
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    mockGetConfig.mockReturnValue(MULTI_URL_CONFIG);
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  test('probes every URL in cfg.urls when all healthy', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ status: 200 });
+    await runTunnelHealthCheckTask();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenNthCalledWith(1, URL_POS, expect.any(Object));
+    expect(global.fetch).toHaveBeenNthCalledWith(2, URL_MARKETING, expect.any(Object));
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+  });
+
+  test('alerts only for the failing URL when one is down', async () => {
+    global.fetch = jest.fn().mockImplementation((url) => {
+      if (url === URL_POS) return Promise.resolve({ status: 521 });
+      return Promise.resolve({ status: 200 });
+    });
+    await runTunnelHealthCheckTask();
+
+    expect(mockCreateAlert).toHaveBeenCalledTimes(1);
+    expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'tunnel_health_check',
+      severity: 'critical',
+      title:    expect.stringContaining(URL_POS),
+    }));
+  });
+
+  test('per-URL dedup: prior alert for URL_A does not suppress URL_B', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ status: 522 });
+    // findRecentAlert is title-scoped. URL_A has a recent alert; URL_B does not.
+    mockFindRecentAlert.mockImplementation((_cat, _sev, _since, titleSubstr) => {
+      return titleSubstr === URL_POS
+        ? { id: 1, sent_at: new Date().toISOString() }
+        : undefined;
+    });
+
+    await runTunnelHealthCheckTask();
+
+    // URL_POS was deduped; URL_MARKETING alerted.
+    expect(mockCreateAlert).toHaveBeenCalledTimes(1);
+    expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
+      title: expect.stringContaining(URL_MARKETING),
+    }));
+  });
+
+  test('legacy single-string url still works', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        ...BASE_CONFIG.appliance,
+        tools: {
+          tunnel_health_check: {
+            enabled: true,
+            url: URL_MARKETING,
+            timeout_ms: 10000,
+          },
+        },
+      },
+    });
+    global.fetch = jest.fn().mockResolvedValue({ status: 200 });
+    await runTunnelHealthCheckTask();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(URL_MARKETING, expect.any(Object));
   });
 });
 
@@ -1056,5 +1156,128 @@ describe('RTM-AC8 – resource_threshold_monitor dedup', () => {
     mockRtmHandler.mockRejectedValue(new Error('SSH timeout'));
     await expect(runResourceThresholdTask()).resolves.toBeUndefined();
     expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap #3 closure: unit_health cron task
+// ---------------------------------------------------------------------------
+
+describe('unit_health cron task', () => {
+  const UNIT_HEALTH_CONFIG = {
+    appliance: {
+      ...BASE_CONFIG.appliance,
+      tools: { unit_health: { enabled: true } },
+    },
+  };
+
+  beforeEach(() => {
+    mockGetConfig.mockReturnValue(UNIT_HEALTH_CONFIG);
+  });
+
+  test('does NOT alert when every unit is active', async () => {
+    mockUnitHealthHandler.mockResolvedValue({
+      success: true,
+      overall_status: 'healthy',
+      units: [
+        { unit: 'baanbaan',         state: 'active', active: true },
+        { unit: 'baanbaan-ocr',     state: 'active', active: true },
+        { unit: 'marketing-engine', state: 'active', active: true },
+        { unit: 'cloudflared',      state: 'active', active: true },
+      ],
+      checked_at: new Date().toISOString(),
+    });
+    await runUnitHealthCheckTask();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  test('alerts critical when any unit is degraded', async () => {
+    mockUnitHealthHandler.mockResolvedValue({
+      success: true,
+      overall_status: 'degraded',
+      units: [
+        { unit: 'baanbaan',         state: 'active',   active: true },
+        { unit: 'baanbaan-ocr',     state: 'failed',   active: false },
+        { unit: 'marketing-engine', state: 'inactive', active: false },
+        { unit: 'cloudflared',      state: 'active',   active: true },
+      ],
+      checked_at: new Date().toISOString(),
+    });
+    await runUnitHealthCheckTask();
+
+    expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'unit_health',
+      severity: 'critical',
+      title:    expect.stringContaining('baanbaan-ocr=failed'),
+    }));
+    expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      subject: expect.stringContaining('Unit health degraded'),
+    }));
+  });
+
+  test('alerts critical when probe is unreachable', async () => {
+    mockUnitHealthHandler.mockResolvedValue({
+      success: false,
+      overall_status: 'unreachable',
+      units: [
+        { unit: 'baanbaan',         state: 'unknown', active: false },
+        { unit: 'baanbaan-ocr',     state: 'unknown', active: false },
+        { unit: 'marketing-engine', state: 'unknown', active: false },
+        { unit: 'cloudflared',      state: 'unknown', active: false },
+      ],
+      checked_at: new Date().toISOString(),
+      error: 'connection refused',
+    });
+    await runUnitHealthCheckTask();
+
+    expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'unit_health',
+      severity: 'critical',
+    }));
+    expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      subject: expect.stringContaining('unreachable'),
+    }));
+  });
+
+  test('dedupes — same failing-unit set inside window does not double-alert', async () => {
+    mockUnitHealthHandler.mockResolvedValue({
+      success: true,
+      overall_status: 'degraded',
+      units: [
+        { unit: 'baanbaan',         state: 'active', active: true },
+        { unit: 'baanbaan-ocr',     state: 'failed', active: false },
+        { unit: 'marketing-engine', state: 'active', active: true },
+        { unit: 'cloudflared',      state: 'active', active: true },
+      ],
+      checked_at: new Date().toISOString(),
+    });
+    mockFindRecentAlert.mockReturnValue({ id: 1, sent_at: new Date().toISOString() });
+    await runUnitHealthCheckTask();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+  });
+
+  test('swallows tool handler errors instead of throwing', async () => {
+    mockUnitHealthHandler.mockRejectedValue(new Error('SSH boom'));
+    await expect(runUnitHealthCheckTask()).resolves.toBeUndefined();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  test('start() registers unit_health on */10 8-21 * * * expression', () => {
+    start();
+    const calls = mockCronSchedule.mock.calls.filter((c) => c[0] === '*/10 8-21 * * *');
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('start() skips unit_health when enabled=false', () => {
+    mockGetConfig.mockReturnValue({
+      appliance: {
+        ...BASE_CONFIG.appliance,
+        tools: { unit_health: { enabled: false } },
+      },
+    });
+    start();
+    const calls = mockCronSchedule.mock.calls.filter((c) => c[0] === '*/10 8-21 * * *');
+    expect(calls.length).toBe(0);
   });
 });

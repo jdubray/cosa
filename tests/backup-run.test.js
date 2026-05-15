@@ -470,3 +470,146 @@ describe('AC6 — schema-drift guard', () => {
     expect(result.skipped_tables).toEqual([]);
   });
 });
+
+// ===========================================================================
+// Gap #1 closure — multi-database backups (tools.backup_run.databases)
+// ===========================================================================
+
+describe('multi-database backup', () => {
+  /** Set a config with a `databases` array; overrides the legacy fixture. */
+  function setMultiDbConfig() {
+    _currentConfig = {
+      appliance: {
+        database: { path: '/legacy/ignored.db' },
+        tools: {
+          backup_run: {
+            backup_dir: BACKUP_DIR,
+            timeout_s:  30,
+            databases: [
+              { name: 'merchant',  path: '/db/merchant.db',  tables: ['orders'] },
+              { name: 'campaigns', path: '/db/campaigns.db', tables: ['admins'] },
+            ],
+          },
+        },
+      },
+    };
+    getConfig.mockReturnValue(_currentConfig);
+  }
+
+  /**
+   * Mock the SSH backend so discovery + backup both succeed across both DBs.
+   * Discovery returns whichever tables the calling DB has configured (parsed
+   * from the sqlite3 command line). Backup scripts return one row_count +
+   * checksum pair per table.
+   */
+  function mockMultiDbSuccess() {
+    let bashCallCount = 0;
+    sshBackend.exec = jest.fn().mockImplementation((cmd, stdin) => {
+      if (isDiscoveryCmd(cmd)) {
+        if (cmd.includes('/db/merchant.db'))  return Promise.resolve({ stdout: 'orders\n', stderr: '', exitCode: 0 });
+        if (cmd.includes('/db/campaigns.db')) return Promise.resolve({ stdout: 'admins\n', stderr: '', exitCode: 0 });
+        return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+      }
+      if (cmd === 'bash -s') {
+        bashCallCount += 1;
+        // First bash -s call is merchant, second is campaigns (run order matches config order).
+        return Promise.resolve({
+          stdout:   bashCallCount === 1 ? '10\nm-hash\n' : '5\nc-hash\n',
+          stderr:   '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    });
+  }
+
+  test('runs one discovery + one bash -s exec per configured database', async () => {
+    setMultiDbConfig();
+    mockMultiDbSuccess();
+
+    const result = await handler();
+
+    expect(result.success).toBe(true);
+    const discoveryCalls = sshBackend.exec.mock.calls.filter((c) => isDiscoveryCmd(c[0]));
+    const bashCalls      = sshBackend.exec.mock.calls.filter((c) => c[0] === 'bash -s');
+    expect(discoveryCalls).toHaveLength(2);
+    expect(bashCalls).toHaveLength(2);
+  });
+
+  test('backup_files entries are tagged with database name and use the dbName__ filename prefix', async () => {
+    setMultiDbConfig();
+    mockMultiDbSuccess();
+
+    const result = await handler();
+
+    expect(result.backup_files).toHaveLength(2);
+    const merchant  = result.backup_files.find((f) => f.database === 'merchant');
+    const campaigns = result.backup_files.find((f) => f.database === 'campaigns');
+    expect(merchant).toMatchObject({ table: 'orders', row_count: 10, checksum: 'm-hash' });
+    expect(campaigns).toMatchObject({ table: 'admins', row_count:  5, checksum: 'c-hash' });
+    expect(merchant.path).toMatch(/\/merchant__orders_.*\.jsonl$/);
+    expect(campaigns.path).toMatch(/\/campaigns__admins_.*\.jsonl$/);
+  });
+
+  test('one DB failing does not abort the others; aggregated success=false', async () => {
+    setMultiDbConfig();
+    // merchant discovery OK; campaigns discovery fails.
+    sshBackend.exec = jest.fn().mockImplementation((cmd) => {
+      if (isDiscoveryCmd(cmd) && cmd.includes('/db/merchant.db')) {
+        return Promise.resolve({ stdout: 'orders\n', stderr: '', exitCode: 0 });
+      }
+      if (isDiscoveryCmd(cmd) && cmd.includes('/db/campaigns.db')) {
+        return Promise.resolve({ stdout: '', stderr: 'unable to open database', exitCode: 1 });
+      }
+      if (cmd === 'bash -s') return Promise.resolve({ stdout: '10\nm-hash\n', stderr: '', exitCode: 0 });
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    });
+
+    const result = await handler();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/campaigns/);
+    expect(result.backup_files).toHaveLength(1);
+    expect(result.backup_files[0]).toMatchObject({ database: 'merchant', table: 'orders' });
+  });
+
+  test('skipped_tables uses dbName.tableName in multi-DB mode', async () => {
+    _currentConfig = {
+      appliance: {
+        database: { path: '/legacy/ignored.db' },
+        tools: {
+          backup_run: {
+            backup_dir: BACKUP_DIR,
+            databases: [
+              { name: 'merchant',  path: '/db/merchant.db',  tables: ['orders', 'ghost_table'] },
+              { name: 'campaigns', path: '/db/campaigns.db', tables: ['admins'] },
+            ],
+          },
+        },
+      },
+    };
+    getConfig.mockReturnValue(_currentConfig);
+
+    let bashCallCount = 0;
+    sshBackend.exec = jest.fn().mockImplementation((cmd) => {
+      if (isDiscoveryCmd(cmd)) {
+        if (cmd.includes('/db/merchant.db'))  return Promise.resolve({ stdout: 'orders\n', stderr: '', exitCode: 0 });
+        if (cmd.includes('/db/campaigns.db')) return Promise.resolve({ stdout: 'admins\n', stderr: '', exitCode: 0 });
+      }
+      if (cmd === 'bash -s') {
+        bashCallCount += 1;
+        return Promise.resolve({
+          stdout:   bashCallCount === 1 ? '10\nm-hash\n' : '5\nc-hash\n',
+          stderr:   '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    });
+
+    const result = await handler();
+
+    expect(result.success).toBe(true);
+    expect(result.skipped_tables).toEqual(['merchant.ghost_table']);
+  });
+});

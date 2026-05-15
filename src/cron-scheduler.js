@@ -49,6 +49,7 @@ const accessLogScanTool      = require('./tools/access-log-scan');
 const shiftReportTool                = require('./tools/shift-report');
 const resourceThresholdMonitorTool   = require('./tools/resource-threshold-monitor');
 const autoPatchTool                  = require('./tools/auto-patch');
+const unitHealthTool                 = require('./tools/unit-health');
 
 const log = createLogger('cron-scheduler');
 
@@ -103,9 +104,11 @@ const TUNNEL_HEALTH_CATEGORY      = 'tunnel_health_check';
 const AUTO_PATCH_COSA_CATEGORY      = 'auto_patch_cosa';
 const AUTO_PATCH_APPLIANCE_CATEGORY = 'auto_patch_appliance';
 const RESOURCE_THRESHOLD_CATEGORY = 'resource_threshold_monitor';
+const UNIT_HEALTH_CATEGORY        = 'unit_health';
 
 const TUNNEL_HEALTH_DEDUP_WINDOW_MS    = 65 * 60 * 1000;
 const INTERNET_IP_WATCH_DEDUP_WINDOW_MS = 5 * 60 * 1000;
+const UNIT_HEALTH_DEDUP_WINDOW_MS       = 30 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1096,65 +1099,107 @@ async function runBackupTask() {
 async function runBackupVerifyTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
-  const tables    = appliance.tools?.backup_run?.tables ?? [];
   const backupDir = appliance.tools?.backup_run?.backup_dir ?? '/tmp/cosa-backups';
 
-  // 1. Probe the most-recent file to discover the batch timestamp. The verify
-  //    tool's auto-discovery picks the freshest *.jsonl regardless of table.
-  let probeResult;
-  try {
-    probeResult = await backupVerifyTool.handler({});
-  } catch (err) {
-    log.error(`[backup-verify] tool threw: ${err.message}`);
-    probeResult = { verified: false, error: err.message };
-  }
+  // Resolve databases the same way backup-run does:
+  //   - multi-DB:  tools.backup_run.databases (list of { name, path, tables })
+  //                Files are namespaced as `<name>__<table>_<ts>.jsonl`.
+  //   - legacy:    one synthetic DB with empty prefix; files use `<table>_<ts>.jsonl`.
+  const dbCfgList = Array.isArray(appliance.tools?.backup_run?.databases)
+    ? appliance.tools.backup_run.databases
+    : null;
+  const databases = dbCfgList
+    ? dbCfgList.map((d) => ({
+        name:       d.name ?? 'db',
+        tables:     d.tables ?? [],
+        filePrefix: `${d.name ?? 'db'}__`,
+      }))
+    : [{
+        name:       'primary',
+        tables:     appliance.tools?.backup_run?.tables ?? [],
+        filePrefix: '',
+      }];
 
-  // 2. Extract the batch timestamp (e.g. 2026-05-09T10-00-00-729Z) from
-  //    "<dir>/<table>_<timestamp>.jsonl". If we cannot, fall back to
-  //    single-file verification so the legacy alert path still fires.
-  const tsMatch = (probeResult.backup_path ?? '').match(
-    /_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.jsonl$/
-  );
-
-  /** @type {Array<{ table: string, verified: boolean, backup_path: string,
+  /** @type {Array<{ database: string, table: string, verified: boolean, backup_path: string,
    *   expected_hash?: string|null, actual_hash?: string|null, error?: string }>} */
   const perTable = [];
-  let verifyResult = probeResult;
+  /** @type {string[]} */
+  const probeErrors = [];
 
-  if (tsMatch && tables.length > 0) {
+  for (const db of databases) {
+    // Probe this database's most-recent file to discover its batch timestamp.
+    let probe;
+    try {
+      probe = await backupVerifyTool.handler({ prefix: db.filePrefix });
+    } catch (err) {
+      log.error(`[backup-verify] probe for ${db.name} threw: ${err.message}`);
+      probeErrors.push(`${db.name}: ${err.message}`);
+      continue;
+    }
+
+    const tsMatch = (probe.backup_path ?? '').match(
+      /_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.jsonl$/
+    );
+
+    if (!tsMatch || db.tables.length === 0) {
+      // No timestamp parseable or no tables configured. Treat the single
+      // probe result as the verification outcome for this DB.
+      perTable.push({
+        database:      db.name,
+        table:         '(probe)',
+        verified:      probe.verified,
+        backup_path:   probe.backup_path ?? '(no file)',
+        expected_hash: probe.expected_hash ?? null,
+        actual_hash:   probe.actual_hash   ?? null,
+        error:         probe.error,
+      });
+      continue;
+    }
+
     const timestamp = tsMatch[1];
-    for (const table of tables) {
-      const filePath = `${backupDir}/${table}_${timestamp}.jsonl`;
+    for (const table of db.tables) {
+      const filePath = `${backupDir}/${db.filePrefix}${table}_${timestamp}.jsonl`;
       try {
         const r = await backupVerifyTool.handler({ backup_path: filePath });
-        perTable.push({ table, verified: r.verified, backup_path: filePath,
-          expected_hash: r.expected_hash, actual_hash: r.actual_hash });
+        perTable.push({
+          database:      db.name,
+          table,
+          verified:      r.verified,
+          backup_path:   filePath,
+          expected_hash: r.expected_hash,
+          actual_hash:   r.actual_hash,
+        });
       } catch (err) {
-        perTable.push({ table, verified: false, backup_path: filePath,
-          error: err.message });
+        perTable.push({
+          database:    db.name,
+          table,
+          verified:    false,
+          backup_path: filePath,
+          error:       err.message,
+        });
       }
     }
+  }
 
-    const failed = perTable.filter((r) => !r.verified);
-    if (failed.length === 0) {
-      log.info(`Backup verification passed: ${perTable.length} table(s) @ ${timestamp}`);
-      return;
-    }
-    // Synthesize an alert payload that names the first failure for the
-    // legacy single-file fields, while listing every failed table in body.
-    verifyResult = {
-      verified:      false,
-      backup_path:   failed[0].backup_path,
-      expected_hash: failed[0].expected_hash ?? null,
-      actual_hash:   failed[0].actual_hash   ?? null,
-      error:         failed[0].error,
-      failed_tables: failed.map((r) => r.table),
-    };
-  } else if (probeResult.verified) {
-    // No tables configured (or path unparseable), but the single probe passed.
-    log.info(`Backup verification passed: ${probeResult.backup_path}`);
+  const failed = perTable.filter((r) => !r.verified);
+  if (failed.length === 0 && probeErrors.length === 0) {
+    log.info(`Backup verification passed: ${perTable.length} entries across ${databases.length} DB(s)`);
     return;
   }
+
+  // Pick a representative failure for the legacy single-file alert fields.
+  const lead = failed[0] ?? { backup_path: null, expected_hash: null, actual_hash: null };
+  const verifyResult = {
+    verified:      false,
+    backup_path:   lead.backup_path,
+    expected_hash: lead.expected_hash ?? null,
+    actual_hash:   lead.actual_hash   ?? null,
+    error:         lead.error,
+    // Tag failed entries with `<db>.<table>` when in multi-DB mode for clarity.
+    failed_tables: failed.map((r) => (
+      r.database && r.database !== 'primary' ? `${r.database}.${r.table}` : r.table
+    )),
+  };
 
   const sinceIso = new Date(Date.now() - ALERT_DEDUP_WINDOW_MS).toISOString();
   const recent   = findRecentAlert(BACKUP_VERIFY_CATEGORY, 'critical', sinceIso);
@@ -1580,15 +1625,38 @@ async function runTunnelHealthCheckTask() {
   const { appliance } = getConfig();
   const cfg = appliance.tools?.tunnel_health_check ?? {};
 
-  const url       = cfg.url;
   const timeoutMs = cfg.timeout_ms ?? 10_000;
   const maxOk     = cfg.expected_status_max ?? 499;
 
-  if (!url) {
-    log.warn('[tunnel-health-check] no url configured; skipping');
+  // Accept either `urls` (array) or legacy `url` (string). Each URL is probed
+  // independently with per-URL alert dedup so an outage on one hostname never
+  // suppresses alerts on another.
+  const urls = Array.isArray(cfg.urls)
+    ? cfg.urls.filter((u) => typeof u === 'string' && u.length > 0)
+    : (typeof cfg.url === 'string' && cfg.url.length > 0 ? [cfg.url] : []);
+
+  if (urls.length === 0) {
+    log.warn('[tunnel-health-check] no url(s) configured; skipping');
     return;
   }
 
+  for (const url of urls) {
+    await _probeTunnelUrl(url, timeoutMs, maxOk, appliance.operator.email);
+  }
+}
+
+/**
+ * Probe a single tunnel URL and alert (with per-URL dedup) on failure.
+ * Extracted from runTunnelHealthCheckTask so the same logic runs identically
+ * for one URL or many.
+ *
+ * @param {string} url
+ * @param {number} timeoutMs
+ * @param {number} maxOk
+ * @param {string} operatorEmail
+ * @returns {Promise<void>}
+ */
+async function _probeTunnelUrl(url, timeoutMs, maxOk, operatorEmail) {
   let status;
   let error;
   const t0 = Date.now();
@@ -1609,20 +1677,20 @@ async function runTunnelHealthCheckTask() {
     return;
   }
 
-  // Dedup — sustained outages should not email hourly.
+  // Per-URL dedup — the title contains the URL, so the LIKE filter scopes
+  // the lookup to alerts for this specific hostname.
   const sinceIso = new Date(Date.now() - TUNNEL_HEALTH_DEDUP_WINDOW_MS).toISOString();
-  const recent   = findRecentAlert(TUNNEL_HEALTH_CATEGORY, 'critical', sinceIso);
+  const recent   = findRecentAlert(TUNNEL_HEALTH_CATEGORY, 'critical', sinceIso, url);
   if (recent) {
-    log.warn(`Tunnel still failing (${error ?? `HTTP ${status}`}); alert suppressed by dedup`);
+    log.warn(`Tunnel still failing for ${url} (${error ?? `HTTP ${status}`}); alert suppressed by dedup`);
     return;
   }
 
   const summary = error
-    ? `Cloudflared tunnel unreachable: ${error}`
-    : `Cloudflared tunnel returned HTTP ${status}`;
+    ? `Cloudflared tunnel unreachable (${url}): ${error}`
+    : `Cloudflared tunnel returned HTTP ${status} (${url})`;
 
-  const operatorEmail = appliance.operator.email;
-  const subject       = `[COSA] Tunnel health alert — ${url}`;
+  const subject = `[COSA] Tunnel health alert — ${url}`;
   const body =
     `${summary}\n\n` +
     `URL:        ${url}\n` +
@@ -1645,6 +1713,75 @@ async function runTunnelHealthCheckTask() {
   });
 
   log.error(`[tunnel-health-check] ${summary}`);
+}
+
+/**
+ * Run the unit_health tool and alert when any required systemd unit is not
+ * active. Catches the case where a process is restart-looping or has stopped
+ * entirely — process-monitor's substring match against `ps aux` cannot
+ * distinguish "uvicorn is the OCR sidecar" from "uvicorn is some other unit",
+ * and tunnel_health_check only proves the external ingress is reachable.
+ *
+ * Per-unit-set dedup: re-alerts are suppressed inside UNIT_HEALTH_DEDUP_WINDOW_MS
+ * when the same degraded-unit set is still failing.
+ *
+ * @returns {Promise<void>}
+ */
+async function runUnitHealthCheckTask() {
+  let result;
+  try {
+    result = await unitHealthTool.handler();
+  } catch (err) {
+    log.error(`[unit-health] tool threw: ${err.message}`);
+    return;
+  }
+
+  if (result.overall_status === 'healthy') {
+    log.info('Unit health OK: all units active');
+    return;
+  }
+
+  const { appliance } = getConfig();
+  const operatorEmail = appliance.operator.email;
+
+  // Build a stable signature of the failing-unit set so dedup is per-set.
+  // Example: "baanbaan-ocr=failed;cloudflared=inactive"
+  const failing  = (result.units || []).filter((u) => !u.active);
+  const failKey  = failing.map((u) => `${u.unit}=${u.state}`).join(';');
+  const dedupWin = (appliance.tools?.unit_health?.dedup_window_minutes ?? 30) * 60 * 1000;
+  const sinceIso = new Date(Date.now() - dedupWin).toISOString();
+  const recent   = findRecentAlert(UNIT_HEALTH_CATEGORY, 'critical', sinceIso, failKey);
+  if (recent) {
+    log.warn(`Unit health still degraded (${failKey}); alert suppressed by dedup`);
+    return;
+  }
+
+  const summary  = result.overall_status === 'unreachable'
+    ? `Unit health probe unreachable: ${result.error ?? 'ssh error'}`
+    : `Unit health degraded: ${failKey}`;
+  const subject  = `[COSA] ${summary}`;
+  const tableStr = (result.units || [])
+    .map((u) => `  ${u.unit.padEnd(20)} ${u.state}`)
+    .join('\n');
+  const body =
+    `${summary}\n\n` +
+    `Per-unit state:\n${tableStr}\n\n` +
+    `Checked at: ${result.checked_at}\n` +
+    (result.error ? `Error:      ${result.error}\n` : '');
+
+  await emailGateway.sendEmail({ to: operatorEmail, subject, text: body });
+
+  createAlert({
+    session_id: null,
+    severity:   'critical',
+    category:   UNIT_HEALTH_CATEGORY,
+    title:      `${summary} :: ${failKey}`,
+    body,
+    sent_at:    new Date().toISOString(),
+    email_to:   operatorEmail,
+  });
+
+  log.error(`[unit-health] ${summary}`);
 }
 
 /**
@@ -2324,6 +2461,11 @@ function start() {
   // Hourly — public ingress reachability via cloudflared tunnel
   schedule('tunnel_health_check', '0 * * * *', runTunnelHealthCheckTask);
 
+  // Every 10 min during business hours — per-systemd-unit liveness probe.
+  // Catches restart-looping or stopped units that process_monitor's
+  // substring-match against `ps aux` cannot distinguish.
+  schedule('unit_health', '*/10 8-21 * * *', runUnitHealthCheckTask);
+
   // Phase 3 — weekly Monday 2:00 AM
   schedule('security_digest',    '0 2 * * 1', runWeeklySecurityDigestTask);
   schedule('credential_audit',   '0 2 * * 1', runCredentialAuditTask);
@@ -2375,6 +2517,7 @@ module.exports = {
   runNetworkScanTask,
   runAccessLogScanTask,
   runTunnelHealthCheckTask,
+  runUnitHealthCheckTask,
   runWeeklySecurityDigestTask,
   runCredentialAuditTask,
   runComplianceVerifyTask,

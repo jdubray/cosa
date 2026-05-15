@@ -615,12 +615,27 @@ function getLastToolOutput(sessionId, toolName) {
  * Return the most recent alert for a given category and severity that was
  * sent at or after `sinceIso`.  Used for alert deduplication.
  *
+ * When `titleSubstr` is provided, only alerts whose `title` contains the
+ * substring are considered — used by per-target dedup (e.g. tunnel health
+ * checks across multiple URLs, where each URL needs its own dedup window).
+ *
  * @param {string} category
  * @param {string} severity
  * @param {string} sinceIso - ISO 8601 lower-bound timestamp (inclusive).
+ * @param {string} [titleSubstr] - Optional substring that must appear in the alert title.
  * @returns {object|undefined} The matching row, or undefined if none found.
  */
-function findRecentAlert(category, severity, sinceIso) {
+function findRecentAlert(category, severity, sinceIso, titleSubstr) {
+  if (titleSubstr) {
+    return getDb()
+      .prepare(
+        `SELECT * FROM alerts
+         WHERE category = ? AND severity = ? AND sent_at >= ?
+           AND title LIKE ?
+         ORDER BY sent_at DESC LIMIT 1`
+      )
+      .get(category, severity, sinceIso, `%${titleSubstr}%`);
+  }
   return getDb()
     .prepare(
       `SELECT * FROM alerts
