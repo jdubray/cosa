@@ -149,10 +149,16 @@ tools:
         # Verify exact table names with:
         #   ssh baanbaan@192.168.1.248 'sqlite3 /var/lib/hanuman-kirkland/campaigns.db ".tables"'
         # Tables missing at runtime are skipped (logged warning), so over-listing
-        # here is safe.
+        # here is safe. The verify task also filters against the live schema, so
+        # a configured-but-not-yet-created table will not page.
         tables:
           - campaigns
           - admin_users
+          - admin_sessions
+          - coupon_codes
+          - daily_salt
+          - rate_limits
+          - scans
           - redirects
   restart_appliance:
     enabled: true

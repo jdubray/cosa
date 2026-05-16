@@ -1111,11 +1111,13 @@ async function runBackupVerifyTask() {
   const databases = dbCfgList
     ? dbCfgList.map((d) => ({
         name:       d.name ?? 'db',
+        path:       d.path ?? null,
         tables:     d.tables ?? [],
         filePrefix: `${d.name ?? 'db'}__`,
       }))
     : [{
         name:       'primary',
+        path:       appliance.database?.path ?? null,
         tables:     appliance.tools?.backup_run?.tables ?? [],
         filePrefix: '',
       }];
@@ -1157,7 +1159,28 @@ async function runBackupVerifyTask() {
     }
 
     const timestamp = tsMatch[1];
-    for (const table of db.tables) {
+
+    // Filter the configured table list against the live schema. A table that
+    // is listed in appliance.yaml but does not (yet) exist in the DB is
+    // skipped by backup-run silently, so its file will be missing. Without
+    // this filter, the per-file verify below would throw "file not found"
+    // and page the operator for what is really an expected schema drift.
+    let existing = null;
+    if (db.path) {
+      existing = await backupRunTool.discoverExistingTables(db.path);
+      if (existing === null) {
+        log.warn(`[backup-verify] could not enumerate tables for ${db.name}; verifying all configured tables`);
+      }
+    }
+    const tablesToVerify = existing
+      ? db.tables.filter((t) => {
+          if (existing.has(t)) return true;
+          log.info(`[backup-verify] skipping ${db.name}.${t}: not in live schema`);
+          return false;
+        })
+      : db.tables;
+
+    for (const table of tablesToVerify) {
       const filePath = `${backupDir}/${db.filePrefix}${table}_${timestamp}.jsonl`;
       try {
         const r = await backupVerifyTool.handler({ backup_path: filePath });

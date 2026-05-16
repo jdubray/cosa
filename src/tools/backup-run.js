@@ -433,4 +433,12 @@ async function _backupOneDatabase(db, backupDir, fileTs, runtimeExpr, timeoutMs)
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = { name: NAME, schema: SCHEMA, handler, riskLevel: RISK_LEVEL };
+module.exports = {
+  name:      NAME,
+  schema:    SCHEMA,
+  handler,
+  riskLevel: RISK_LEVEL,
+  // Exposed so the verify task can apply the same schema-drift filter and
+  // avoid alerting on configured-but-not-yet-created tables.
+  discoverExistingTables,
+};
