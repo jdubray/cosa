@@ -263,8 +263,13 @@ tools:
     enabled: true
     repo_path: "/home/baanbaan/baan-baan-merchant/v2"
     lookback_hours: 8
+    # Authors that legitimately push to the BaanBaan repo. Anything else is
+    # flagged as "unauthorized author". Match git's commit-author email exactly
+    # (lowercased). The previous `baanbaan@local` was a historical hostname
+    # identity that hasn't been used in months — every real commit was paging.
     expected_authors:
-      - "baanbaan@local"
+      - "kizo-core@users.noreply.github.com"
+      - "jdubray@gmail.com"
   appliance_status_poll:
     enabled: true
     watcher_timeout_ms: 200
