@@ -157,14 +157,20 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('AC1 — startup binary check', () => {
-  it('logs a warning when the binary is absent and Tirith stays disabled', () => {
+  it('logs at info when the binary is absent and Tirith stays disabled', () => {
     mockExistsSync.mockReturnValue(false);
     const { initTirith } = require('../src/security-gate');
 
     initTirith();
 
-    expect(mockLogWarn).toHaveBeenCalledWith(
-      expect.stringContaining('falling back to dangerous-cmd detection only')
+    // Tirith is currently aspirational — absence is the expected state and
+    // is reported at info to avoid noise. Promote back to warn once a
+    // released binary exists.
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      expect.stringContaining('dangerous-cmd detection is the only active scanner')
+    );
+    expect(mockLogWarn).not.toHaveBeenCalledWith(
+      expect.stringContaining('Tirith binary not')
     );
   });
 

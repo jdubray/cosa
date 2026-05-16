@@ -74,7 +74,11 @@ let tirithConfig    = { mode: 'block', exceptions: [] };
  */
 function initTirith() {
   if (!fs.existsSync(TIRITH_BIN)) {
-    log.warn(`Tirith binary not found at ${TIRITH_BIN} — falling back to dangerous-cmd detection only`);
+    // Tirith is currently aspirational (no released binary), so absence is
+    // the expected state — log at info to avoid noise in digests and journals.
+    // Promote back to warn once a Tirith release exists and installation is
+    // documented in setup.js.
+    log.info(`Tirith binary not present at ${TIRITH_BIN}; dangerous-cmd detection is the only active scanner`);
     tirithAvailable = false;
     return;
   }
