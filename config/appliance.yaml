@@ -159,7 +159,6 @@ tools:
           - daily_salt
           - rate_limits
           - scans
-          - redirects
   restart_appliance:
     enabled: true
     graceful_timeout_seconds: 60
