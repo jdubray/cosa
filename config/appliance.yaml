@@ -171,7 +171,13 @@ tools:
     enabled: true
   webhook_hmac_verify:
     enabled: true
-    endpoint: "/api/webhooks/pos/test-merchant"
+    # The bun API at 192.168.1.248:3000 is loopback-only by design, so the
+    # probe runs over SSH against http://127.0.0.1:3000 on the appliance.
+    # All fields below are optional — defaults match the production layout.
+    # internal_base_url: "http://127.0.0.1:3000"
+    # path_template:     "/webhooks/generic/{merchantId}"
+    # merchant_db_path:  "/home/baanbaan/baan-baan-merchant/v2/data/merchant.db"
+    # merchant_id:       "m_69c917c12c234519"   # pin a specific probe target if needed
   compliance_verify:
     enabled: true
     sensitive_files:

@@ -1,6 +1,7 @@
 'use strict';
 
 const { getConfig }    = require('../../config/cosa.config');
+const sshBackend       = require('../ssh-backend');
 const { createLogger } = require('../logger');
 
 const log = createLogger('webhook-hmac-verify');
@@ -12,11 +13,14 @@ const log = createLogger('webhook-hmac-verify');
 const NAME       = 'webhook_hmac_verify';
 const RISK_LEVEL = 'read';
 
-/**
- * Deliberately invalid HMAC signature sent with the probe request.
- * It is obviously bogus (wrong format and wrong value) so a correct
- * implementation will always reject it with HTTP 401.
- */
+// The appliance bun service is loopback-only (127.0.0.1:3000) by design, so
+// the probe cannot reach it from the LAN — it must be executed on the
+// appliance itself via SSH. See docs/baanbaan_tools.md for the API surface.
+const DEFAULT_LOOPBACK_BASE = 'http://127.0.0.1:3000';
+const DEFAULT_PATH_TEMPLATE = '/webhooks/generic/{merchantId}';
+const DEFAULT_MERCHANT_DB   = '/home/baanbaan/baan-baan-merchant/v2/data/merchant.db';
+
+// Deliberately bogus signature: wrong hex content, right header format.
 const INVALID_SIGNATURE = 'sha256=00000000000000000000000000000000cosa-probe-invalid';
 
 const INPUT_SCHEMA = {
@@ -28,51 +32,82 @@ const INPUT_SCHEMA = {
 
 const SCHEMA = {
   description:
-    'Verify that HMAC signature validation is enforced on the POS webhook ' +
-    'endpoint. Sends a POST request with a deliberately invalid X-Signature ' +
-    'header to the configured webhook endpoint. Returns verified: true if the ' +
-    'server responds with HTTP 401 (signature rejected), or verified: false ' +
-    'with severity critical if it responds with HTTP 200 (HMAC not enforced). ' +
-    'Risk level: read (passive probe, no state mutation).',
+    'Verify that the POS webhook endpoint rejects requests carrying an ' +
+    'invalid HMAC signature. Executes a curl on the appliance over SSH ' +
+    '(the API is loopback-only and unreachable from the LAN by design). ' +
+    'Returns verified: true if the endpoint responds with HTTP 401 (probe ' +
+    'rejected), verified: false with severity: critical on HTTP 200 ' +
+    '(unsigned webhook accepted), and verified: false with severity: null ' +
+    'on any other status.',
   inputSchema: INPUT_SCHEMA,
 };
 
 // ---------------------------------------------------------------------------
-// HTTP helper
+// Internal helpers
 // ---------------------------------------------------------------------------
 
+function shEscape(value) {
+  return String(value).replace(/'/g, "'\\''");
+}
+
 /**
- * POST to `url` with a single JSON body and the given headers.
- * Hard-times out after `timeoutMs` milliseconds.
+ * Pull a usable merchant id off the appliance. Prefer one with a configured
+ * webhook secret (so the probe exercises the HMAC compare path); fall back to
+ * any merchant otherwise (rejection still happens, one guard earlier).
+ *
+ * @param {string} dbPath
+ * @returns {Promise<string|null>}
+ */
+async function resolveMerchantId(dbPath) {
+  const qDb = `'${shEscape(dbPath)}'`;
+  const cmd =
+    `sqlite3 -readonly ${qDb} ` +
+    `"SELECT id FROM merchants WHERE webhook_secret_enc IS NOT NULL ORDER BY id LIMIT 1; ` +
+    `SELECT id FROM merchants ORDER BY id LIMIT 1"`;
+
+  let result;
+  try {
+    result = await sshBackend.exec(cmd);
+  } catch {
+    return null;
+  }
+  if (result.exitCode !== 0) return null;
+
+  const lines = result.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  return lines[0] ?? null;
+}
+
+/**
+ * Build the loopback probe script. Prints a single KEY=VALUE block so the
+ * caller can parse the outcome without ambiguity.
  *
  * @param {string} url
- * @param {Record<string, string>} headers
- * @param {object} body
- * @param {number} timeoutMs
- * @returns {Promise<{ reachable: boolean, statusCode: number|null, error: string|null }>}
+ * @returns {string}
  */
-async function httpPost(url, headers, body, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+function buildScript(url) {
+  const qUrl = `'${shEscape(url)}'`;
+  const qSig = `'${shEscape(INVALID_SIGNATURE)}'`;
+  return [
+    'set -u',
+    '',
+    `OUT=$(curl -sS --max-time 5 -o /dev/null -w "HTTP_CODE=%{http_code}\\nCURL_EXIT=%{exitcode}\\n" \\`,
+    `  -X POST ${qUrl} \\`,
+    `  -H "X-Webhook-Signature: ${qSig}" \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -d '{"event":"cosa.hmac.probe"}' 2>&1) || true`,
+    'printf "%s\\n" "$OUT"',
+  ].join('\n');
+}
 
-  try {
-    const res = await fetch(url, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
-      body:    JSON.stringify(body),
-      signal:  controller.signal,
-    });
-    clearTimeout(timer);
-    return { reachable: true, statusCode: res.status, error: null };
-  } catch (err) {
-    clearTimeout(timer);
-    const isTimeout = err.name === 'AbortError';
-    return {
-      reachable:  false,
-      statusCode: null,
-      error:      isTimeout ? `Request timed out after ${timeoutMs} ms` : err.message,
-    };
+function parseOutput(stdout) {
+  const result = { http_code: null, curl_exit: null };
+  for (const line of stdout.split('\n').map((s) => s.trim())) {
+    const m = line.match(/^([A-Z_]+)=(.*)$/);
+    if (!m) continue;
+    if (m[1] === 'HTTP_CODE') result.http_code = parseInt(m[2], 10);
+    if (m[1] === 'CURL_EXIT') result.curl_exit = parseInt(m[2], 10);
   }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,38 +116,48 @@ async function httpPost(url, headers, body, timeoutMs) {
 
 /**
  * @returns {Promise<{
- *   verified:     boolean,
- *   status_code:  number | null,
- *   severity:     'critical' | null,
- *   endpoint:     string,
- *   message:      string,
- *   checked_at:   string
+ *   verified:    boolean,
+ *   status_code: number | null,
+ *   severity:    'critical' | null,
+ *   endpoint:    string,
+ *   message:     string,
+ *   checked_at:  string,
  * }>}
  */
 async function handler() {
   const checked_at = new Date().toISOString();
   const { appliance } = getConfig();
+  const toolCfg = appliance.tools?.webhook_hmac_verify ?? {};
 
-  const baseUrl    = appliance.appliance_api.base_url;
-  const timeoutMs  = appliance.appliance_api.request_timeout_ms ?? 10000;
+  const loopbackBase = toolCfg.internal_base_url ?? DEFAULT_LOOPBACK_BASE;
+  const pathTemplate = toolCfg.path_template    ?? DEFAULT_PATH_TEMPLATE;
+  const merchantDb   = toolCfg.merchant_db_path ?? DEFAULT_MERCHANT_DB;
 
-  const webhookPath = appliance.tools?.webhook_hmac_verify?.endpoint
-    ?? '/api/webhooks/pos/test-merchant';
+  let merchantId = toolCfg.merchant_id ?? null;
+  if (!merchantId) {
+    merchantId = await resolveMerchantId(merchantDb);
+  }
+  if (!merchantId) {
+    const message = `Could not resolve a merchant id for the probe (db: ${merchantDb}).`;
+    log.warn(message);
+    return {
+      verified:    false,
+      status_code: null,
+      severity:    null,
+      endpoint:    `${loopbackBase}${pathTemplate}`,
+      message,
+      checked_at,
+    };
+  }
 
-  const endpoint = `${baseUrl}${webhookPath}`;
+  const endpoint = `${loopbackBase}${pathTemplate.replace('{merchantId}', merchantId)}`;
+  log.info(`Probing HMAC enforcement at ${endpoint} (via SSH loopback)`);
 
-  log.info(`Probing HMAC enforcement at ${endpoint}`);
-
-  const { reachable, statusCode, error } = await httpPost(
-    endpoint,
-    { 'X-Signature': INVALID_SIGNATURE },
-    { event: 'cosa.hmac.probe', timestamp: checked_at },
-    timeoutMs
-  );
-
-  // ── Unreachable ────────────────────────────────────────────────────────────
-  if (!reachable) {
-    const message = `Endpoint unreachable: ${error}`;
+  let execResult;
+  try {
+    execResult = await sshBackend.exec('bash -s', buildScript(endpoint));
+  } catch (err) {
+    const message = `SSH probe failed: ${err.message}`;
     log.warn(message);
     return {
       verified:    false,
@@ -124,13 +169,12 @@ async function handler() {
     };
   }
 
-  // ── HTTP 401 — HMAC enforcement active ────────────────────────────────────
-  if (statusCode === 401) {
-    const message = 'HMAC signature validation is active: probe request rejected with 401.';
-    log.info(message);
+  if (execResult.exitCode !== 0) {
+    const message = `SSH probe script exited ${execResult.exitCode}: ${(execResult.stderr || '').trim()}`;
+    log.warn(message);
     return {
-      verified:    true,
-      status_code: statusCode,
+      verified:    false,
+      status_code: null,
       severity:    null,
       endpoint,
       message,
@@ -138,8 +182,38 @@ async function handler() {
     };
   }
 
-  // ── HTTP 200 — HMAC NOT enforced ──────────────────────────────────────────
-  if (statusCode === 200) {
+  const { http_code, curl_exit } = parseOutput(execResult.stdout || '');
+
+  // curl couldn't reach the endpoint (loopback service down, etc.)
+  if (curl_exit !== 0 || http_code === null || http_code === 0) {
+    const message =
+      `Endpoint unreachable from appliance loopback: ` +
+      `curl exit=${curl_exit}, http_code=${http_code}.`;
+    log.warn(message);
+    return {
+      verified:    false,
+      status_code: http_code,
+      severity:    null,
+      endpoint,
+      message,
+      checked_at,
+    };
+  }
+
+  if (http_code === 401) {
+    const message = 'HMAC signature validation is active: probe request rejected with 401.';
+    log.info(message);
+    return {
+      verified:    true,
+      status_code: http_code,
+      severity:    null,
+      endpoint,
+      message,
+      checked_at,
+    };
+  }
+
+  if (http_code === 200) {
     const message =
       'CRITICAL: HMAC signature validation is NOT enforced. ' +
       'The webhook endpoint accepted a request with an invalid signature (HTTP 200). ' +
@@ -147,7 +221,7 @@ async function handler() {
     log.error(message);
     return {
       verified:    false,
-      status_code: statusCode,
+      status_code: http_code,
       severity:    'critical',
       endpoint,
       message,
@@ -155,14 +229,13 @@ async function handler() {
     };
   }
 
-  // ── Any other status code — inconclusive ──────────────────────────────────
   const message =
-    `Inconclusive: endpoint returned HTTP ${statusCode}. ` +
+    `Inconclusive: endpoint returned HTTP ${http_code}. ` +
     'Expected 401 (HMAC enforced) or 200 (HMAC absent). Manual review required.';
   log.warn(message);
   return {
     verified:    false,
-    status_code: statusCode,
+    status_code: http_code,
     severity:    null,
     endpoint,
     message,
