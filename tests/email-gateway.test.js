@@ -19,6 +19,7 @@ const mockImapSearch          = jest.fn();
 const mockImapFetchOne        = jest.fn();
 const mockImapMessageFlagsAdd = jest.fn();
 const mockImapLogout          = jest.fn();
+const mockImapOn              = jest.fn();
 const mockLockRelease         = jest.fn();
 
 jest.mock('imapflow', () => ({
@@ -29,6 +30,7 @@ jest.mock('imapflow', () => ({
     fetchOne:        (...a) => mockImapFetchOne(...a),
     messageFlagsAdd: (...a) => mockImapMessageFlagsAdd(...a),
     logout:          (...a) => mockImapLogout(...a),
+    on:              (...a) => mockImapOn(...a),
   })),
 }));
 
@@ -604,6 +606,26 @@ describe('AC9 — Gmail App Password authentication', () => {
 
     expect(ImapFlow).toHaveBeenCalledWith(
       expect.objectContaining({ secure: true })
+    );
+  });
+
+  // Regression: 2026-05-17 09:40 PDT — ImapFlow socket timeout emitted 'error'
+  // on the client with no listener attached, crashing cosa.service.
+  it('attaches an error listener to the ImapFlow client', async () => {
+    await _runPoll();
+
+    expect(mockImapOn).toHaveBeenCalledWith('error', expect.any(Function));
+  });
+
+  it('error listener logs a warning instead of throwing', async () => {
+    await _runPoll();
+
+    const errorHandler = mockImapOn.mock.calls.find(([evt]) => evt === 'error')?.[1];
+    expect(errorHandler).toBeInstanceOf(Function);
+
+    expect(() => errorHandler(new Error('Socket timeout'))).not.toThrow();
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      expect.stringMatching(/IMAP client error event:.*Socket timeout/)
     );
   });
 

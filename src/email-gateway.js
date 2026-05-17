@@ -159,7 +159,7 @@ function _dkimPasses(parsed, domain) {
  */
 function buildImapClient() {
   const { env } = getConfig();
-  return new ImapFlow({
+  const client = new ImapFlow({
     host:             env.email.imapHost,
     port:             env.email.imapPort,
     secure:           true,
@@ -172,6 +172,13 @@ function buildImapClient() {
     },
     logger: false,
   });
+  // ImapFlow emits 'error' on socket timeouts independently of the awaited
+  // promise rejection. Without a listener, Node treats it as unhandled and
+  // crashes the process (observed 2026-05-17 09:40 PDT).
+  client.on('error', (err) => {
+    log.warn(`IMAP client error event: ${err.message}`);
+  });
+  return client;
 }
 
 /**
