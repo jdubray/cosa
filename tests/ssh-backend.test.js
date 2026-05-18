@@ -406,6 +406,35 @@ describe('AC3 — reconnect on drop', () => {
     setSpy.mockRestore();
   });
 
+  // Regression: 2026-05-17 — a post-ready 'error' event used to fire the
+  // once('error') reject handler, which set _connected=false and called
+  // client.destroy(). destroy() then emitted 'close', but the 'close' handler's
+  // `if (_connected)` guard was already false, so scheduleReconnect() was
+  // skipped and the in-process SSH stayed dead until cosa.service was restarted.
+  it('reconnects after a post-ready error → close sequence', async () => {
+    jest.useFakeTimers();
+
+    const initP = init();
+    await jest.runAllTimersAsync();
+    await initP;
+    expect(isConnected()).toBe(true);
+
+    const droppedClient = mockSsh.lastClient;
+
+    // Simulate the real ssh2 sequence on a network drop: 'error' then 'close'.
+    droppedClient.emit('error', new Error('read ECONNRESET'));
+    droppedClient.emit('close');
+
+    expect(isConnected()).toBe(false);
+
+    // Reconnect timer should fire on the first backoff window.
+    jest.advanceTimersByTime(1100);
+    await jest.runAllTimersAsync();
+
+    expect(isConnected()).toBe(true);
+    expect(mockSsh.lastClient).not.toBe(droppedClient);
+  });
+
   it('uses exponential backoff: second attempt waits longer than first', async () => {
     jest.useFakeTimers();
     mockSsh.connectResult = 'error'; // make reconnects fail so we can observe timing

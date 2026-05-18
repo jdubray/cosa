@@ -96,23 +96,37 @@ function buildSshOptions() {
 function openConnection() {
   return new Promise((resolve, reject) => {
     const client = new Client();
+    let isReady = false;
 
     client.once('ready', () => {
+      isReady = true;
       _client = client;
       _connected = true;
       _reconnectAttempts = 0;
       resolve();
     });
 
-    client.once('error', (err) => {
-      _connected = false;
-      client.destroy();
-      reject(err);
+    // Single persistent error listener. Pre-ready errors reject init();
+    // post-ready errors are logged and 'close' (which follows) drives reconnect.
+    // Previously this was a `once('error')` that set _connected=false and
+    // destroy()ed the client, racing the 'close' handler and skipping reconnect
+    // (observed 2026-05-17: connection stuck for hours after appliance blip).
+    client.on('error', (err) => {
+      if (!isReady) {
+        _connected = false;
+        client.destroy();
+        reject(err);
+      } else {
+        log.warn(`SSH client error after ready: ${err.message}`);
+      }
     });
 
-    // Persistent listener: if the connection drops after 'ready', schedule reconnect.
+    // Schedule reconnect when an established connection drops. Gating on
+    // `_client === client` (instead of the previous `_connected` flag) means
+    // a post-ready error → destroy → close sequence still triggers reconnect,
+    // and repeated 'close' events on the same client remain idempotent.
     client.on('close', () => {
-      if (_connected) {
+      if (isReady && _client === client) {
         _connected = false;
         _client = null;
         scheduleReconnect();
