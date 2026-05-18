@@ -198,9 +198,35 @@ function scheduleReconnect() {
  * @returns {Promise<{stdout: string, stderr: string, exitCode: number}>}
  * @throws {Error} if the SSH connection is not established.
  */
+/**
+ * Tag an SSH exec error with a stable `.kind` so callers can branch on the
+ * cause without parsing free-form messages. Preserves the original message
+ * and stack — only adds metadata.
+ *
+ * @param {Error} err
+ * @returns {Error} the same error, with `kind` set
+ */
+function _classifySshError(err) {
+  if (err && typeof err === 'object' && err.kind) return err;
+
+  const code = err && err.code;
+  const msg  = (err && err.message) || '';
+
+  let kind = 'other';
+  if (code === 'ETIMEDOUT' || /timed out/i.test(msg))                       kind = 'timeout';
+  else if (code === 'ECONNRESET' || /ECONNRESET/.test(msg))                 kind = 'connection_reset';
+  else if (code === 'ECONNREFUSED' || /ECONNREFUSED/.test(msg))             kind = 'connection_refused';
+  else if (code === 'EHOSTUNREACH' || /host (is )?unreachable/i.test(msg))  kind = 'host_unreachable';
+  else if (/All configured authentication methods failed/i.test(msg))       kind = 'auth_failed';
+  else if (/SSH not connected/i.test(msg))                                  kind = 'not_connected';
+
+  err.kind = kind;
+  return err;
+}
+
 function exec(command, stdinData = null, timeoutMs = null) {
   if (!_connected || !_client) {
-    return Promise.reject(new Error('SSH not connected — command cannot be executed'));
+    return Promise.reject(_classifySshError(new Error('SSH not connected — command cannot be executed')));
   }
 
   const { appliance } = getConfig();
@@ -219,7 +245,7 @@ function exec(command, stdinData = null, timeoutMs = null) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (err) reject(err);
+      if (err) reject(_classifySshError(err));
       else resolve(value);
     }
 
@@ -307,4 +333,4 @@ function disconnect() {
   }
 }
 
-module.exports = { exec, isConnected, init, disconnect, backoffMs };
+module.exports = { exec, isConnected, init, disconnect, backoffMs, _classifySshError };

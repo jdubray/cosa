@@ -2754,6 +2754,98 @@ async function runAutoPatchApplianceTask() {
 const _tasks = new Map();
 
 /**
+ * Per-schedule-key re-entrancy guard. The previous fire-and-forget callback
+ * left every cron task vulnerable to overlapping runs: if a task ran longer
+ * than its cron interval, the next tick would launch a second copy on top of
+ * it — causing duplicate alerts, session-store contention, and SSH-backend
+ * exec races (observed 2026-05-18 review §B P0).
+ *
+ * @type {Set<string>}
+ */
+const _runningKeys = new Set();
+
+/**
+ * Test-only: expose the running-set so unit tests can probe whether a key
+ * was held during an in-flight invocation. Not part of the production API.
+ *
+ * @returns {Set<string>}
+ */
+function _getRunningKeys() {
+  return _runningKeys;
+}
+
+/**
+ * Map of task name → runner function. Used both by start() for cron
+ * registration and by fireCronTask() for manual one-shot invocation
+ * (e.g. recovering from an overnight SSH outage that suppressed a run).
+ *
+ * Keep in sync with the schedule(...) calls in start() below.
+ *
+ * @returns {Record<string, () => Promise<void>>}
+ */
+function _taskRunnerMap() {
+  return {
+    internet_ip_watch:         runInternetIpWatchTask,
+    health_check_lunch:        runHealthCheckTask,
+    health_check_midday:       runHealthCheckTask,
+    health_check_dinner:       runHealthCheckTask,
+    backup:                    runBackupTask,
+    backup_verify:             runBackupVerifyTask,
+    archive_check:             runArchiveCheckTask,
+    shift_report:              runShiftReportTask,
+    weekly_digest:             runWeeklyDigestTask,
+    git_audit:                 runGitAuditTask,
+    process_monitor:           runProcessMonitorTask,
+    network_scan:              runNetworkScanTask,
+    access_log_scan:           runAccessLogScanTask,
+    tunnel_health_check:       runTunnelHealthCheckTask,
+    unit_health:               runUnitHealthCheckTask,
+    security_digest:           runWeeklySecurityDigestTask,
+    credential_audit:          runCredentialAuditTask,
+    compliance_verify:         runComplianceVerifyTask,
+    webhook_hmac_verify:       runWebhookHmacVerifyTask,
+    jwt_secret_check:          runJwtSecretCheckTask,
+    pci_assessment:            runPciAssessmentTask,
+    token_rotation_remind:     runTokenRotationRemindTask,
+    resource_threshold_monitor: runResourceThresholdTask,
+    auto_patch_appliance:      runAutoPatchApplianceTask,
+    auto_patch_cosa:           runAutoPatchCosaTask,
+  };
+}
+
+/**
+ * Invoke a registered cron task by name. Used by `scripts/fire-cron-task.js`
+ * to manually re-fire a task that failed or was suppressed (e.g. when the
+ * 03:00 backup missed last night because the in-process SSH was stuck).
+ *
+ * Errors propagate to the caller — the CLI exits non-zero on failure.
+ *
+ * @param {string} name
+ * @returns {Promise<void>}
+ */
+async function fireCronTask(name) {
+  const runners = _taskRunnerMap();
+  const fn      = runners[name];
+  if (!fn) {
+    const known = Object.keys(runners).sort().join(', ');
+    throw new Error(`Unknown cron task: "${name}". Known: ${known}`);
+  }
+  // Respect the same mutex the cron scheduler uses — refuse if a scheduled
+  // tick is already in flight, so manual fires can't race ongoing runs and
+  // produce duplicate alerts.
+  if (_runningKeys.has(name)) {
+    throw new Error(`Cannot fire "${name}": prior run is still in progress`);
+  }
+  _runningKeys.add(name);
+  log.info(`Manual fire: ${name}`);
+  try {
+    await fn();
+  } finally {
+    _runningKeys.delete(name);
+  }
+}
+
+/**
  * Register all Phase 2 and Phase 3 cron tasks.
  * A second call while tasks are already running is a silent no-op.
  */
@@ -2773,7 +2865,15 @@ function start() {
     }
     const expr = cronConfig[key] ?? defaultExpr;
     const task = cron.schedule(expr, () => {
-      fn().catch(err => log.error(`${key} task error: ${err.message}`));
+      if (_runningKeys.has(key)) {
+        log.warn(`Cron tick skipped: ${key} prior run still in progress`);
+        return;
+      }
+      _runningKeys.add(key);
+      Promise.resolve()
+        .then(() => fn())
+        .catch((err) => log.error(`${key} task error: ${err.message}`))
+        .finally(() => _runningKeys.delete(key));
     });
     _tasks.set(key, task);
     log.info(`Cron registered: ${key} (${expr})`);
@@ -2838,6 +2938,7 @@ function start() {
 function stop() {
   for (const task of _tasks.values()) task.stop();
   _tasks.clear();
+  _runningKeys.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -2874,6 +2975,11 @@ module.exports = {
   runAutoPatchCosaTask,
   runAutoPatchApplianceTask,
   buildAutoPatchAlertBody,
+  // Manual task invocation (used by scripts/fire-cron-task.js)
+  fireCronTask,
+  // Test-only introspection
+  _getRunningKeys,
+  _taskRunnerMap,
   // Trigger builders exported for testing.
   buildHealthCheckTrigger,
   buildBackupTrigger,

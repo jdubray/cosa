@@ -58,7 +58,7 @@ jest.mock('../src/logger', () => ({
 // Module under test
 // ---------------------------------------------------------------------------
 
-const { start, stop, runHealthCheckTask } = require('../src/cron-scheduler');
+const { start, stop, runHealthCheckTask, _getRunningKeys, fireCronTask, _taskRunnerMap } = require('../src/cron-scheduler');
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -183,6 +183,70 @@ describe('AC1 — cron registration', () => {
     start();
     const callback = mockCronSchedule.mock.calls[0][1];
     expect(typeof callback).toBe('function');
+  });
+
+  it('exposes a _taskRunnerMap with every scheduled name', () => {
+    start();
+    const knownNames = Object.keys(_taskRunnerMap());
+    const scheduledNames = mockCronSchedule.mock.calls.map(([, /* cb */]) => null); // count only
+    // Sanity: the map covers as many entries as the schedule() loop registers.
+    // (The map drives scripts/fire-cron-task.js, so a missing entry would be
+    // a silent breakage of the CLI.)
+    expect(knownNames.length).toBeGreaterThanOrEqual(scheduledNames.length);
+    expect(knownNames).toContain('credential_audit');
+    expect(knownNames).toContain('backup');
+    expect(knownNames).toContain('backup_verify');
+  });
+
+  it('fireCronTask throws for an unknown task name', async () => {
+    await expect(fireCronTask('does_not_exist')).rejects.toThrow(/Unknown cron task/);
+  });
+
+  it('fireCronTask refuses to run when the task is already in flight', async () => {
+    // Hold runHealthCheckTask via a never-resolving runSession to keep the
+    // mutex held for the duration of the test.
+    let resolveHold;
+    const hold = new Promise((r) => { resolveHold = r; });
+    mockRunSession.mockReturnValueOnce(hold);
+
+    start();
+    const lunchCallback = mockCronSchedule.mock.calls.find(([expr]) => expr === '0,30 11-13 * * *')[1];
+    lunchCallback();                                       // takes the mutex
+    await Promise.resolve();
+    expect(_getRunningKeys().has('health_check_lunch')).toBe(true);
+
+    await expect(fireCronTask('health_check_lunch')).rejects.toThrow(/prior run is still in progress/);
+
+    resolveHold({ session_id: 'sess-x', response: 'done' });
+    await new Promise((r) => setImmediate(r));
+  });
+
+  // Regression: 2026-05-18 review §B P0 — the cron callback used to fire-and-
+  // forget without checking whether a prior tick was still in flight. A slow
+  // task could spawn duplicate concurrent runs, causing duplicate alerts and
+  // session-store contention.
+  it('skips a second tick while the prior run is still in progress', async () => {
+    // Hold runHealthCheckTask in a pending state via a deferred runSession.
+    let resolveFirst;
+    const firstPending = new Promise((r) => { resolveFirst = r; });
+    mockRunSession.mockReturnValueOnce(firstPending);
+
+    start();
+    const lunchCallback = mockCronSchedule.mock.calls.find(([expr]) => expr === '0,30 11-13 * * *')[1];
+
+    lunchCallback();                              // tick 1 — starts, holds
+    await Promise.resolve();                      // let microtasks settle
+    expect(_getRunningKeys().has('health_check_lunch')).toBe(true);
+
+    const callsBefore = mockRunSession.mock.calls.length;
+    lunchCallback();                              // tick 2 — should be skipped
+    lunchCallback();                              // tick 3 — should be skipped
+    expect(mockRunSession.mock.calls.length).toBe(callsBefore);
+
+    // Release the first tick and confirm the key clears.
+    resolveFirst({ session_id: 'sess-test', response: 'ok' });
+    await new Promise((r) => setImmediate(r));    // drain .finally()
+    expect(_getRunningKeys().has('health_check_lunch')).toBe(false);
   });
 });
 

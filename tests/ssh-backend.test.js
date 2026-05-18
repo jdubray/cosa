@@ -149,7 +149,7 @@ jest.mock('../src/logger', () => ({
 // Module under test (required AFTER mocks are registered)
 // ---------------------------------------------------------------------------
 
-const { exec, isConnected, init, disconnect, backoffMs } = require('../src/ssh-backend');
+const { exec, isConnected, init, disconnect, backoffMs, _classifySshError } = require('../src/ssh-backend');
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -468,5 +468,53 @@ describe('AC3 — reconnect on drop', () => {
     expect(backoffs[1]).toBeGreaterThan(backoffs[0]);
 
     jest.restoreAllMocks();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSH error classification — exec() rejections carry a stable .kind so
+// callers don't have to parse free-form error messages.
+// ---------------------------------------------------------------------------
+
+describe('_classifySshError()', () => {
+  it('tags timeout errors as kind="timeout"', () => {
+    const err = _classifySshError(new Error('Command timed out after 30000ms'));
+    expect(err.kind).toBe('timeout');
+  });
+
+  it('tags ETIMEDOUT-coded errors as timeout', () => {
+    const err = new Error('connect ETIMEDOUT');
+    err.code = 'ETIMEDOUT';
+    expect(_classifySshError(err).kind).toBe('timeout');
+  });
+
+  it('tags ECONNRESET as connection_reset', () => {
+    const err = new Error('read ECONNRESET');
+    err.code = 'ECONNRESET';
+    expect(_classifySshError(err).kind).toBe('connection_reset');
+  });
+
+  it('tags ECONNREFUSED as connection_refused', () => {
+    const err = new Error('connect ECONNREFUSED 192.168.1.248:22');
+    err.code = 'ECONNREFUSED';
+    expect(_classifySshError(err).kind).toBe('connection_refused');
+  });
+
+  it('tags ssh2 auth failures as auth_failed', () => {
+    expect(_classifySshError(new Error('All configured authentication methods failed')).kind).toBe('auth_failed');
+  });
+
+  it('tags the "SSH not connected" message as not_connected', () => {
+    expect(_classifySshError(new Error('SSH not connected — command cannot be executed')).kind).toBe('not_connected');
+  });
+
+  it('falls back to "other" for unknown errors', () => {
+    expect(_classifySshError(new Error('some weird thing')).kind).toBe('other');
+  });
+
+  it('exec() rejection carries .kind for the not-connected path', async () => {
+    // Default disconnect() in afterEach guarantees we are disconnected.
+    await disconnect();
+    await expect(exec('echo x')).rejects.toMatchObject({ kind: 'not_connected' });
   });
 });
