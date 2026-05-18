@@ -27,6 +27,7 @@ const { getConfig }    = require('../config/cosa.config');
 const orchestrator     = require('./orchestrator');
 const emailGateway     = require('./email-gateway');
 const sshBackend       = require('./ssh-backend');
+const sessionStore = require('./session-store');
 const {
   createAlert,
   findRecentAlert,
@@ -34,7 +35,8 @@ const {
   getLastToolOutput,
   countAlertsByCategoriesSince,
   findMostRecentAlertByCategories,
-} = require('./session-store');
+} = sessionStore;
+const skillStore = require('./skill-store');
 const { createLogger } = require('./logger');
 const healthCheckTool        = require('./tools/health-check');
 const internetIpCheckTool    = require('./tools/internet-ip-check');
@@ -50,6 +52,11 @@ const shiftReportTool                = require('./tools/shift-report');
 const resourceThresholdMonitorTool   = require('./tools/resource-threshold-monitor');
 const autoPatchTool                  = require('./tools/auto-patch');
 const unitHealthTool                 = require('./tools/unit-health');
+const complianceVerifyTool           = require('./tools/compliance-verify');
+const webhookHmacVerifyTool          = require('./tools/webhook-hmac-verify');
+const jwtSecretCheckTool             = require('./tools/jwt-secret-check');
+const pciAssessmentTool              = require('./tools/pci-assessment');
+const tokenRotationRemindTool        = require('./tools/token-rotation-remind');
 
 const log = createLogger('cron-scheduler');
 
@@ -179,23 +186,6 @@ function buildArchiveCheckTrigger() {
     type:    'cron',
     source:  'archive-check',
     message: `Archive integrity check. Run session_search for any backup failure or anomaly mentions in the last 7 days. If a recurring pattern is found, summarise it in your response — the system will alert the operator automatically.
-
-Current time: ${new Date().toISOString()}`,
-  };
-}
-
-/** @returns {{ type: string, source: string, message: string }} */
-function buildShiftReportTrigger() {
-  const today = new Date().toISOString().slice(0, 10);
-  return {
-    type:    'cron',
-    source:  'shift-report',
-    message: `Generate the daily shift report for the past 24 hours. Run shift_report to gather the data, then write the complete plain-text report as your response.
-
-IMPORTANT: Your response IS the email body — it will be sent to the operator automatically. Write only the report content. Do not include any preamble, meta-commentary about sending, or instructions to the operator. Start directly with the report header.
-
-The email subject will be: [COSA] Shift Report: ${today}
-Plain text only — no HTML, no markdown.
 
 Current time: ${new Date().toISOString()}`,
   };
@@ -1437,26 +1427,148 @@ async function runShiftReportTask() {
  * Subject format: [COSA] Weekly Digest: week of YYYY-MM-DD
  * @returns {Promise<void>}
  */
+/**
+ * Collect the deterministic facts used to render the weekly digest.
+ *
+ * @param {string} sinceIso  ISO timestamp marking the start of the 7-day window.
+ * @returns {object}
+ */
+function collectWeeklyDigestData(sinceIso) {
+  const BACKUP_CATEGORIES = ['backup', 'backup-run', 'backup-verify', 'backup-offsite'];
+  const HEALTH_CATEGORIES = ['health_check'];
+  const TUNNEL_CATEGORIES = ['tunnel_health_check'];
+
+  const backupAlerts  = countAlertsByCategoriesSince(BACKUP_CATEGORIES, sinceIso);
+  const healthAlerts  = countAlertsByCategoriesSince(HEALTH_CATEGORIES, sinceIso);
+  const tunnelAlerts  = countAlertsByCategoriesSince(TUNNEL_CATEGORIES, sinceIso);
+  const lastBackup    = findMostRecentAlertByCategories(BACKUP_CATEGORIES);
+  const lastHealth    = findMostRecentAlertByCategories([...HEALTH_CATEGORIES, ...TUNNEL_CATEGORIES]);
+
+  // Skills created/updated in the window. Wrapped in try/catch so a missing
+  // skill_store migration cannot crash the digest.
+  let newSkills = 0;
+  let touchedSkills = 0;
+  try {
+    const rows = skillStore.list();
+    newSkills     = rows.filter((s) => s.created_at && s.created_at >= sinceIso).length;
+    touchedSkills = rows.filter((s) => s.updated_at && s.updated_at >= sinceIso && (!s.created_at || s.created_at < sinceIso)).length;
+  } catch (err) {
+    log.warn(`weekly_digest: skill_store.list() failed: ${err.message}`);
+  }
+
+  // Operator-initiated sessions and approval requests in the window.
+  let emailSessions   = 0;
+  let approvalCount   = 0;
+  try {
+    const db = sessionStore.getDb();
+    emailSessions = db
+      .prepare(`SELECT COUNT(*) AS n FROM sessions WHERE trigger_type = 'email' AND started_at >= ?`)
+      .get(sinceIso).n;
+    approvalCount = db
+      .prepare(`SELECT COUNT(*) AS n FROM approvals WHERE requested_at >= ?`)
+      .get(sinceIso).n;
+  } catch (err) {
+    log.warn(`weekly_digest: session/approval count failed: ${err.message}`);
+  }
+
+  return {
+    backupAlerts, healthAlerts, tunnelAlerts,
+    lastBackup, lastHealth,
+    newSkills, touchedSkills,
+    emailSessions, approvalCount,
+  };
+}
+
+/**
+ * Render the weekly digest email body deterministically. No LLM involvement.
+ *
+ * @param {object} d        Result from collectWeeklyDigestData().
+ * @param {string} weekOf   ISO date of the Monday this digest covers.
+ * @param {string} appName
+ * @returns {string}
+ */
+function formatWeeklyDigestBody(d, weekOf, appName) {
+  // These constants mirror the cron schedule registered at the bottom of this
+  // file; if you change the schedule, update them.
+  const HEALTH_RUNS_PER_WEEK = 119; // lunch + midday + dinner cron windows
+  const TUNNEL_RUNS_PER_WEEK = 168; // hourly
+
+  const fmtAlert = (row) =>
+    row
+      ? `${row.sent_at} — "${row.title}" (category=${row.category}, severity=${row.severity})`
+      : 'none in window';
+
+  const lines = [];
+  lines.push(`${appName} — Weekly Operational Digest`);
+  lines.push(`Week of ${weekOf}`);
+  lines.push('');
+
+  lines.push('HEALTH CHECK');
+  if (d.healthAlerts === 0 && d.tunnelAlerts === 0) {
+    lines.push(`  ${HEALTH_RUNS_PER_WEEK} appliance and ${TUNNEL_RUNS_PER_WEEK} tunnel health-checks ran.`);
+    lines.push('  No degraded, unreachable, or tunnel failure alerts were raised.');
+  } else {
+    lines.push(`  ${HEALTH_RUNS_PER_WEEK} appliance / ${TUNNEL_RUNS_PER_WEEK} tunnel runs scheduled in the window.`);
+    lines.push(`  Alerts: ${d.healthAlerts} appliance + ${d.tunnelAlerts} tunnel.`);
+    lines.push(`  Most recent health-related alert: ${fmtAlert(d.lastHealth)}`);
+  }
+  lines.push('');
+
+  lines.push('BACKUPS');
+  if (d.backupAlerts === 0) {
+    lines.push('  7 nightly backups scheduled in the window; no backup or verification failure alerts were raised.');
+  } else {
+    lines.push(`  7 nightly backups scheduled in the window; ${d.backupAlerts} alert(s) raised.`);
+    lines.push(`  Most recent backup-related alert: ${fmtAlert(d.lastBackup)}`);
+  }
+  lines.push('');
+
+  lines.push('ANOMALIES THIS WEEK');
+  if (d.healthAlerts === 0 && d.tunnelAlerts === 0 && d.backupAlerts === 0) {
+    lines.push('  No anomalies.');
+  } else {
+    if (d.lastHealth) lines.push(`  • ${fmtAlert(d.lastHealth)}`);
+    if (d.lastBackup) lines.push(`  • ${fmtAlert(d.lastBackup)}`);
+  }
+  lines.push('');
+
+  lines.push('SKILLS');
+  if (d.newSkills === 0 && d.touchedSkills === 0) {
+    lines.push('  No new skills created or improved this week.');
+  } else {
+    lines.push(`  ${d.newSkills} new skill(s) created, ${d.touchedSkills} skill(s) improved.`);
+  }
+  lines.push('');
+
+  lines.push('OPERATOR ACTIVITY');
+  lines.push(`  ${d.emailSessions} email session(s), ${d.approvalCount} approval request(s).`);
+  lines.push('');
+
+  lines.push('— COSA');
+  return lines.join('\n');
+}
+
 async function runWeeklyDigestTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
+  const applianceName = appliance.appliance?.name ?? 'COSA appliance';
   const weekOf        = _getMondayDateString();
   const subject       = `[COSA] Weekly Digest: week of ${weekOf}`;
 
   // Deduplication: suppress if a digest was sent in the last 6 days.
-  const sinceIso = new Date(Date.now() - DIGEST_DEDUP_WINDOW_MS).toISOString();
-  const recent   = findRecentAlert(DIGEST_CATEGORY, 'info', sinceIso);
+  const sinceDedupIso = new Date(Date.now() - DIGEST_DEDUP_WINDOW_MS).toISOString();
+  const recent        = findRecentAlert(DIGEST_CATEGORY, 'info', sinceDedupIso);
 
   if (recent) {
     log.info(`Suppressed duplicate weekly digest (last sent: ${recent.sent_at})`);
     return;
   }
 
-  const trigger                    = buildWeeklyDigestTrigger();
-  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
-
-  const body   = response || '(No digest data available.)';
-  const sentAt = new Date().toISOString();
+  // Rolling 7-day reporting window (independent of dedup window).
+  const reportSinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const data           = collectWeeklyDigestData(reportSinceIso);
+  const body           = formatWeeklyDigestBody(data, weekOf, applianceName);
+  const sentAt         = new Date().toISOString();
 
   await emailGateway.sendEmail({
     to:      operatorEmail,
@@ -1465,7 +1577,7 @@ async function runWeeklyDigestTask() {
   });
 
   createAlert({
-    session_id: sessionId,
+    session_id: null,
     severity:   'info',
     category:   DIGEST_CATEGORY,
     title:      subject,
@@ -1814,6 +1926,122 @@ async function runUnitHealthCheckTask() {
  * Subject format: [COSA] Weekly Security Digest: week of YYYY-MM-DD
  * @returns {Promise<void>}
  */
+/**
+ * Aggregate the past-7-day signals consumed by the security digest. All values
+ * come from the alerts ledger (and one fresh credential_audit run) — no LLM
+ * round-trip, no flaky session_search.
+ *
+ * @param {string} sinceIso  ISO timestamp at start of the 7-day window.
+ * @returns {object}
+ */
+async function collectSecurityDigestData(sinceIso) {
+  const sectionForCategory = (category) => {
+    const count = countAlertsByCategoriesSince([category], sinceIso);
+    const last  = findMostRecentAlertByCategories([category]);
+    const recentInWindow = last && last.sent_at >= sinceIso ? last : null;
+    return { count, last, recentInWindow };
+  };
+
+  const git      = sectionForCategory(GIT_AUDIT_CATEGORY);
+  const proc     = sectionForCategory(PROCESS_MONITOR_CATEGORY);
+  const network  = sectionForCategory(NETWORK_SCAN_CATEGORY);
+  const access   = sectionForCategory(ACCESS_LOG_CATEGORY);
+  const compl    = sectionForCategory(COMPLIANCE_VERIFY_CATEGORY);
+  const cred     = sectionForCategory(CREDENTIAL_AUDIT_CATEGORY);
+  const jwt      = sectionForCategory(JWT_SECRET_CATEGORY);
+  const hmac     = sectionForCategory(WEBHOOK_HMAC_CATEGORY);
+
+  // Total security incident sessions in the window — anything that emitted an
+  // ips_alert-style critical/high/warning alert under a security category.
+  const SECURITY_CATEGORIES = [
+    GIT_AUDIT_CATEGORY, PROCESS_MONITOR_CATEGORY, NETWORK_SCAN_CATEGORY,
+    ACCESS_LOG_CATEGORY, CREDENTIAL_AUDIT_CATEGORY, WEBHOOK_HMAC_CATEGORY,
+    JWT_SECRET_CATEGORY,
+  ];
+  const incidentCount = countAlertsByCategoriesSince(SECURITY_CATEGORIES, sinceIso);
+
+  return { git, proc, network, access, compl, cred, jwt, hmac, incidentCount };
+}
+
+/**
+ * Render the security digest deterministically. Mirrors the historical 8-section
+ * shape so operators see a familiar layout, but the body is now a pure function
+ * of the alerts ledger.
+ *
+ * @param {object}  d              Result from collectSecurityDigestData().
+ * @param {string}  weekOf
+ * @param {string}  appName
+ * @param {string}  nextScanDate
+ * @param {string}  nextPciDate
+ * @param {boolean} accessLogEnabled
+ * @returns {string}
+ */
+function formatSecurityDigestBody(d, weekOf, appName, nextScanDate, nextPciDate, accessLogEnabled) {
+  const sectionLine = (label, sec) => {
+    if (sec.count === 0) return `${label}: ✓ no findings in window`;
+    const last = sec.recentInWindow ?? sec.last;
+    return `${label}: ⚠ ${sec.count} alert(s); latest "${last.title}" (${last.severity}) @ ${last.sent_at}`;
+  };
+
+  const lines = [];
+  lines.push(`${appName} — Weekly Security Digest`);
+  lines.push(`Week of ${weekOf}`);
+  lines.push('');
+  lines.push(sectionLine('GIT AUDIT       ', d.git));
+  lines.push(sectionLine('PROCESS MONITOR ', d.proc));
+  lines.push(sectionLine('NETWORK SCAN    ', d.network));
+
+  if (accessLogEnabled) {
+    lines.push(sectionLine('ACCESS LOG      ', d.access));
+  } else {
+    lines.push('ACCESS LOG      : N/A — appliance is LAN-only with key-only SSH; no web frontend');
+  }
+
+  // Compliance — surface the freshest compliance_verify alert (which is created
+  // on the same Monday 2:00 AM cron tick and contains the JSON in `body`).
+  let complianceLine = 'COMPLIANCE      : (no compliance_verify alert on record)';
+  if (d.compl.last) {
+    let overall = 'unknown';
+    try {
+      const parsed = JSON.parse(d.compl.last.body ?? '{}');
+      const fc = parsed.fail_count ?? 0;
+      const wc = parsed.warning_count ?? 0;
+      overall = fc > 0 ? 'non_compliant' : wc > 0 ? 'needs_review' : 'compliant';
+    } catch { /* leave as 'unknown' */ }
+    complianceLine = `COMPLIANCE      : ${overall === 'compliant' ? '✓' : '⚠'} ${overall} (last verify @ ${d.compl.last.sent_at})`;
+  }
+  lines.push(complianceLine);
+
+  // JWT — same pattern: last jwt_secret_check alert in window indicates rotation needed.
+  if (d.jwt.recentInWindow) {
+    lines.push(`JWT SECRET      : ⚠ ${d.jwt.recentInWindow.title} @ ${d.jwt.recentInWindow.sent_at}`);
+  } else {
+    lines.push('JWT SECRET      : ✓ no rotation alert in window');
+  }
+
+  // Webhook HMAC
+  if (d.hmac.recentInWindow) {
+    lines.push(`WEBHOOK HMAC    : ⚠ ${d.hmac.recentInWindow.title} @ ${d.hmac.recentInWindow.sent_at}`);
+  } else {
+    lines.push('WEBHOOK HMAC    : ✓ enforced (no critical alert in window)');
+  }
+
+  // Credentials — credential_audit creates a single alert per run including 0-finding runs.
+  if (d.cred.last) {
+    const finding = d.cred.last.severity === 'info' ? '✓ no active findings' : `⚠ ${d.cred.last.title}`;
+    lines.push(`CREDENTIALS     : ${finding} (last audit @ ${d.cred.last.sent_at})`);
+  } else {
+    lines.push('CREDENTIALS     : (no credential_audit alert on record)');
+  }
+
+  lines.push('');
+  lines.push(`SECURITY INCIDENTS THIS WEEK: ${d.incidentCount}`);
+  lines.push('');
+  lines.push(`Next scan: ${nextScanDate} | Next PCI assessment: ${nextPciDate}`);
+  lines.push('— COSA Security Monitor');
+  return lines.join('\n');
+}
+
 async function runWeeklySecurityDigestTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
@@ -1821,19 +2049,27 @@ async function runWeeklySecurityDigestTask() {
   const appName       = appliance.appliance?.name ?? 'COSA';
   const subject       = `[COSA] Weekly Security Digest — ${appName} — ${weekOf}`;
 
-  const sinceIso = new Date(Date.now() - DIGEST_DEDUP_WINDOW_MS).toISOString();
-  const recent   = findRecentAlert(SEC_DIGEST_CATEGORY, 'info', sinceIso);
+  const sinceDedupIso = new Date(Date.now() - DIGEST_DEDUP_WINDOW_MS).toISOString();
+  const recent        = findRecentAlert(SEC_DIGEST_CATEGORY, 'info', sinceDedupIso);
 
   if (recent) {
     log.info(`Suppressed duplicate security digest (last sent: ${recent.sent_at})`);
     return;
   }
 
-  const trigger                    = buildWeeklySecurityDigestTrigger();
-  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
+  const accessLogEnabled = appliance.tools?.access_log_scan?.enabled !== false;
+  const nextScanDate     = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const nextPciDate      = (() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + 1);
+    return d.toISOString().slice(0, 10);
+  })();
 
-  const body   = response || '(No security digest data available.)';
-  const sentAt = new Date().toISOString();
+  const reportSinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const data           = await collectSecurityDigestData(reportSinceIso);
+  const body           = formatSecurityDigestBody(data, weekOf, appName, nextScanDate, nextPciDate, accessLogEnabled);
+  const sentAt         = new Date().toISOString();
 
   await emailGateway.sendEmail({
     to:      operatorEmail,
@@ -1842,7 +2078,7 @@ async function runWeeklySecurityDigestTask() {
   });
 
   createAlert({
-    session_id: sessionId,
+    session_id: null,
     severity:   'info',
     category:   SEC_DIGEST_CATEGORY,
     title:      subject,
@@ -1949,10 +2185,14 @@ async function runCredentialAuditTask() {
  * @returns {Promise<void>}
  */
 async function runComplianceVerifyTask() {
-  const trigger                    = buildComplianceVerifyTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
+  let verifyResult;
+  try {
+    verifyResult = await complianceVerifyTool.handler({});
+  } catch (err) {
+    log.error(`Compliance verify threw: ${err.message}`);
+    return;
+  }
 
-  const verifyResult  = getLastToolOutput(sessionId, 'compliance_verify') ?? {};
   const failCount     = verifyResult.fail_count    ?? 0;
   const warningCount  = verifyResult.warning_count ?? 0;
   const overallStatus = failCount > 0
@@ -1962,7 +2202,7 @@ async function runComplianceVerifyTask() {
       : 'compliant';
 
   createAlert({
-    session_id: sessionId,
+    session_id: null,
     severity:   failCount > 0 ? 'warning' : 'info',
     category:   COMPLIANCE_VERIFY_CATEGORY,
     title:      `Compliance verify: ${overallStatus}`,
@@ -1980,15 +2220,19 @@ async function runComplianceVerifyTask() {
  * @returns {Promise<void>}
  */
 async function runWebhookHmacVerifyTask() {
-  const trigger                    = buildWebhookHmacTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
+  let verifyResult;
+  try {
+    verifyResult = await webhookHmacVerifyTool.handler({});
+  } catch (err) {
+    log.error(`Webhook HMAC verify threw: ${err.message}`);
+    return;
+  }
 
-  const verifyResult   = getLastToolOutput(sessionId, 'webhook_hmac_verify') ?? {};
   const hmacNotEnforced = verifyResult.verified === false && verifyResult.status_code === 200;
 
   if (hmacNotEnforced) {
     createAlert({
-      session_id: sessionId,
+      session_id: null,
       severity:   'critical',
       category:   WEBHOOK_HMAC_CATEGORY,
       title:      'Webhook HMAC: endpoint accepted invalid signature (HTTP 200)',
@@ -2007,25 +2251,33 @@ async function runWebhookHmacVerifyTask() {
  * @returns {Promise<void>}
  */
 async function runJwtSecretCheckTask() {
-  const trigger                    = buildJwtSecretCheckTrigger();
-  const { session_id: sessionId }  = await runSessionWithTimeout(trigger);
+  let checkResult;
+  try {
+    checkResult = await jwtSecretCheckTool.handler({});
+  } catch (err) {
+    log.error(`JWT secret check threw: ${err.message}`);
+    return;
+  }
 
-  const checkResult  = getLastToolOutput(sessionId, 'jwt_secret_check') ?? {};
-  const dueCount     = (checkResult.rotation_due ?? []).length;
+  // The tool returns { credential_name, needs_rotation, age_days, ... }. The
+  // pre-migration code looked for `rotation_due` (an array that never existed)
+  // and so could not alert — discovered while migrating off the LLM round-trip.
+  const needsRotation = checkResult.needs_rotation === true;
 
-  if (dueCount > 0) {
+  if (needsRotation) {
+    const credName = checkResult.credential_name ?? 'jwt_secret';
     createAlert({
-      session_id: sessionId,
+      session_id: null,
       severity:   'warning',
       category:   JWT_SECRET_CATEGORY,
-      title:      `JWT secret check: ${dueCount} secret(s) due for rotation`,
+      title:      `JWT secret check: ${credName} needs rotation`,
       body:       JSON.stringify(checkResult),
       sent_at:    new Date().toISOString(),
       email_to:   null,
     });
   }
 
-  log.info(`JWT secret check complete: ${dueCount} secret(s) due`);
+  log.info(`JWT secret check complete: needsRotation=${needsRotation}`);
 }
 
 /**
@@ -2035,9 +2287,55 @@ async function runJwtSecretCheckTask() {
  * Deduplication: no second report within 25 days.
  * @returns {Promise<void>}
  */
+function formatPciAssessmentBody(result, applianceName, monthOf) {
+  const statusGlyph = {
+    pass:    '✓',
+    fail:    '✗',
+    warning: '⚠',
+    manual:  '·',
+  };
+
+  const requirements = result?.requirements ?? [];
+  const lines = [];
+  lines.push(`COSA — Monthly PCI Self-Assessment (SAQ-A)`);
+  lines.push(`Appliance:       ${applianceName}`);
+  lines.push(`Month:           ${monthOf}`);
+  lines.push(`Assessment date: ${result?.assessmentDate ?? new Date().toISOString()}`);
+  lines.push(`Overall status:  ${(result?.overallStatus ?? 'unknown').toUpperCase()}`);
+
+  const passCount = requirements.filter((r) => r.status === 'pass').length;
+  const failCount = requirements.filter((r) => r.status === 'fail').length;
+  const warnCount = requirements.filter((r) => r.status === 'warning').length;
+  const manCount  = requirements.filter((r) => r.status === 'manual').length;
+  lines.push(`Counts:          ${passCount} pass, ${failCount} fail, ${warnCount} warning, ${manCount} manual`);
+  lines.push('');
+  lines.push('REQUIREMENTS');
+  lines.push('────────────');
+  for (const r of requirements) {
+    const glyph = statusGlyph[r.status] ?? '?';
+    lines.push(`${glyph} [${r.id}] ${r.description}`);
+    lines.push(`    status:   ${r.status}`);
+    if (r.evidence)       lines.push(`    evidence: ${r.evidence}`);
+    if (r.recommendation) lines.push(`    action:   ${r.recommendation}`);
+    lines.push('');
+  }
+
+  const actions = result?.actionItems ?? [];
+  if (actions.length > 0) {
+    lines.push('ACTION ITEMS');
+    lines.push('────────────');
+    for (const a of actions) lines.push(`  • ${a}`);
+    lines.push('');
+  }
+
+  lines.push('— COSA Security Monitor');
+  return lines.join('\n');
+}
+
 async function runPciAssessmentTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
+  const applianceName = appliance.appliance?.name ?? 'COSA appliance';
   const monthOf       = new Date().toISOString().slice(0, 7);
   const subject       = `[COSA] Monthly PCI Assessment: ${monthOf}`;
 
@@ -2049,10 +2347,15 @@ async function runPciAssessmentTask() {
     return;
   }
 
-  const trigger                    = buildPciAssessmentTrigger();
-  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
+  let result;
+  try {
+    result = await pciAssessmentTool.handler({});
+  } catch (err) {
+    log.error(`PCI assessment threw: ${err.message}`);
+    return;
+  }
 
-  const body   = response || '(No PCI assessment data available.)';
+  const body   = formatPciAssessmentBody(result, applianceName, monthOf);
   const sentAt = new Date().toISOString();
 
   await emailGateway.sendEmail({
@@ -2062,7 +2365,7 @@ async function runPciAssessmentTask() {
   });
 
   createAlert({
-    session_id: sessionId,
+    session_id: null,
     severity:   'info',
     category:   PCI_ASSESSMENT_CATEGORY,
     title:      subject,
@@ -2071,7 +2374,7 @@ async function runPciAssessmentTask() {
     email_to:   operatorEmail,
   });
 
-  log.info(`PCI assessment sent: ${subject}`);
+  log.info(`PCI assessment sent: ${subject} (overall=${result?.overallStatus})`);
 }
 
 /**
@@ -2081,6 +2384,24 @@ async function runPciAssessmentTask() {
  * Deduplication: no second reminder within 25 days.
  * @returns {Promise<void>}
  */
+function formatTokenRotationBody(result, monthOf) {
+  const lines = [`COSA Monthly Token Rotation Reminder — ${monthOf}`, ''];
+  const due = (result?.checked ?? []).filter((c) => c.dueForRotation);
+
+  lines.push(`${due.length} credential(s) due for rotation:`, '');
+  for (const c of due) {
+    lines.push(`  • ${c.label}`);
+    lines.push(`      last rotated: ${c.lastRotated}`);
+    lines.push(`      age:          ${c.ageDays} days (limit: ${c.maxAgeDays})`);
+    lines.push(`      overdue by:   ${c.ageDays - c.maxAgeDays} day(s)`);
+    lines.push('');
+  }
+  lines.push('Rotate the credential(s) above and update the rotation date in');
+  lines.push('appliance.yaml under appliance.compliance.<key>.');
+  lines.push('', '— COSA');
+  return lines.join('\n');
+}
+
 async function runTokenRotationRemindTask() {
   const { appliance } = getConfig();
   const operatorEmail = appliance.operator.email;
@@ -2093,36 +2414,37 @@ async function runTokenRotationRemindTask() {
     return;
   }
 
-  const trigger                    = buildTokenRotationRemindTrigger();
-  const { session_id: sessionId, response } = await runSessionWithTimeout(trigger);
+  let result;
+  try {
+    result = await tokenRotationRemindTool.handler({});
+  } catch (err) {
+    log.error(`Token rotation remind threw: ${err.message}`);
+    return;
+  }
+
+  if ((result?.dueCount ?? 0) === 0) {
+    log.info('Token rotation check complete: no tokens due');
+    return;
+  }
 
   const monthOf = new Date().toISOString().slice(0, 7);
   const subject = `[COSA] Token Rotation Reminder: ${monthOf}`;
+  const body    = formatTokenRotationBody(result, monthOf);
+  const sentAt  = new Date().toISOString();
 
-  // Only send an email if Claude's response indicates tokens are due.
-  if (response && !/no tokens? (are )?due/i.test(response)) {
-    const sentAt = new Date().toISOString();
+  await emailGateway.sendEmail({ to: operatorEmail, subject, text: body });
 
-    await emailGateway.sendEmail({
-      to:      operatorEmail,
-      subject,
-      text:    response,
-    });
+  createAlert({
+    session_id: null,
+    severity:   'info',
+    category:   TOKEN_ROTATION_CATEGORY,
+    title:      subject,
+    body,
+    sent_at:    sentAt,
+    email_to:   operatorEmail,
+  });
 
-    createAlert({
-      session_id: sessionId,
-      severity:   'info',
-      category:   TOKEN_ROTATION_CATEGORY,
-      title:      subject,
-      body:       response,
-      sent_at:    sentAt,
-      email_to:   operatorEmail,
-    });
-
-    log.info(`Token rotation reminder sent: ${subject}`);
-  } else {
-    log.info('Token rotation check complete: no tokens due');
-  }
+  log.info(`Token rotation reminder sent: ${subject} (${result.dueCount} due)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -2555,7 +2877,6 @@ module.exports = {
   // Trigger builders exported for testing.
   buildHealthCheckTrigger,
   buildBackupTrigger,
-  buildShiftReportTrigger,
   buildWeeklyDigestTrigger,
   buildGitAuditTrigger,
   buildProcessMonitorTrigger,

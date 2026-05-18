@@ -29,10 +29,19 @@ jest.mock('../src/email-gateway', () => ({
 const mockCreateAlert      = jest.fn();
 const mockFindRecentAlert  = jest.fn();
 const mockGetLastToolOutput = jest.fn();
+const mockCountAlerts      = jest.fn(() => 0);
+const mockFindMostRecent   = jest.fn(() => null);
+const mockGetDb            = jest.fn(() => ({
+  prepare: () => ({ get: () => ({ n: 0 }), all: () => [] }),
+}));
 jest.mock('../src/session-store', () => ({
-  createAlert:       (...a) => mockCreateAlert(...a),
-  findRecentAlert:   (...a) => mockFindRecentAlert(...a),
-  getLastToolOutput: (...a) => mockGetLastToolOutput(...a),
+  createAlert:                     (...a) => mockCreateAlert(...a),
+  findRecentAlert:                 (...a) => mockFindRecentAlert(...a),
+  getLastToolOutput:               (...a) => mockGetLastToolOutput(...a),
+  countAlertsByCategoriesSince:    (...a) => mockCountAlerts(...a),
+  findMostRecentAlertByCategories: (...a) => mockFindMostRecent(...a),
+  findLastAlertByCategory:         jest.fn(() => null),
+  getDb:                           (...a) => mockGetDb(...a),
 }));
 
 jest.mock('../src/logger', () => ({
@@ -105,6 +114,41 @@ jest.mock('../src/tools/unit-health', () => ({
   handler: (...a) => mockUnitHealthHandler(...a),
 }));
 
+const mockComplianceVerifyHandler = jest.fn();
+jest.mock('../src/tools/compliance-verify', () => ({
+  name:    'compliance_verify',
+  handler: (...a) => mockComplianceVerifyHandler(...a),
+}));
+
+const mockWebhookHmacHandler = jest.fn();
+jest.mock('../src/tools/webhook-hmac-verify', () => ({
+  name:    'webhook_hmac_verify',
+  handler: (...a) => mockWebhookHmacHandler(...a),
+}));
+
+const mockJwtSecretCheckHandler = jest.fn();
+jest.mock('../src/tools/jwt-secret-check', () => ({
+  name:    'jwt_secret_check',
+  handler: (...a) => mockJwtSecretCheckHandler(...a),
+}));
+
+const mockPciAssessmentHandler = jest.fn();
+jest.mock('../src/tools/pci-assessment', () => ({
+  name:    'pci_assessment',
+  handler: (...a) => mockPciAssessmentHandler(...a),
+}));
+
+const mockTokenRotationHandler = jest.fn();
+jest.mock('../src/tools/token-rotation-remind', () => ({
+  name:    'token_rotation_remind',
+  handler: (...a) => mockTokenRotationHandler(...a),
+}));
+
+const mockSkillList = jest.fn(() => []);
+jest.mock('../src/skill-store', () => ({
+  list: (...a) => mockSkillList(...a),
+}));
+
 // ---------------------------------------------------------------------------
 // Module under test
 // ---------------------------------------------------------------------------
@@ -173,6 +217,37 @@ beforeEach(() => {
   mockProcessMonitorHandler.mockResolvedValue({ severity: 'none' });
   mockNetworkScanHandler.mockResolvedValue({ unknownDevices: [] });
   mockAccessLogScanHandler.mockResolvedValue({ anomalies: [] });
+  mockComplianceVerifyHandler.mockResolvedValue({
+    summary: 'All checks passed.',
+    findings: [],
+    pass_count:    13,
+    fail_count:    0,
+    warning_count: 0,
+    checked_at:    new Date().toISOString(),
+  });
+  mockWebhookHmacHandler.mockResolvedValue({
+    verified: true, status_code: 401, endpoint: '/api/webhooks/pos/test',
+    severity: null, checked_at: new Date().toISOString(),
+  });
+  mockJwtSecretCheckHandler.mockResolvedValue({
+    credential_name: 'jwt_secret', entropy_bits: 256, age_days: 10,
+    last_rotated: new Date().toISOString(), needs_rotation: false,
+    recommendation: null, checked_at: new Date().toISOString(),
+  });
+  mockPciAssessmentHandler.mockResolvedValue({
+    assessmentDate: new Date().toISOString(),
+    scope: 'SAQ-A',
+    requirements: [
+      { id: '2.1', description: 'No default accounts', status: 'pass', evidence: 'ok' },
+    ],
+    overallStatus: 'compliant',
+    actionItems: [],
+  });
+  mockTokenRotationHandler.mockResolvedValue({
+    checked: [], dueCount: 0, alertSent: false,
+    checked_at: new Date().toISOString(),
+  });
+  mockSkillList.mockReturnValue([]);
 });
 
 afterEach(() => {
@@ -808,15 +883,15 @@ describe('AC7 – compliance_verify Monday 2:00 AM', () => {
   });
 
   test('always creates alert record (to feed into digest)', async () => {
-    mockGetLastToolOutput.mockReturnValue({ overallStatus: 'compliant' });
+    mockComplianceVerifyHandler.mockResolvedValue({ fail_count: 0, warning_count: 0 });
     await runComplianceVerifyTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
       category: 'compliance_verify',
     }));
   });
 
-  test.skip('uses warning severity when non_compliant', async () => {
-    mockGetLastToolOutput.mockReturnValue({ overallStatus: 'non_compliant' });
+  test('uses warning severity when non_compliant', async () => {
+    mockComplianceVerifyHandler.mockResolvedValue({ fail_count: 1, warning_count: 0 });
     await runComplianceVerifyTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
       severity: 'warning',
@@ -824,7 +899,7 @@ describe('AC7 – compliance_verify Monday 2:00 AM', () => {
   });
 
   test('uses info severity when compliant', async () => {
-    mockGetLastToolOutput.mockReturnValue({ overallStatus: 'compliant' });
+    mockComplianceVerifyHandler.mockResolvedValue({ fail_count: 0, warning_count: 0 });
     await runComplianceVerifyTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
       severity: 'info',
@@ -848,9 +923,12 @@ describe('AC8 – webhook_hmac_verify Monday 2:00 AM', () => {
     expect(message).toMatch(/critical|HMAC/i);
   });
 
-  test.skip('creates critical alert when inactive endpoints detected', async () => {
-    mockGetLastToolOutput.mockReturnValue({
-      inactive: ['/api/webhooks/pos/test-merchant'],
+  test('creates critical alert when invalid signature accepted (HTTP 200)', async () => {
+    mockWebhookHmacHandler.mockResolvedValue({
+      verified: false, status_code: 200, severity: 'critical',
+      endpoint: '/api/webhooks/pos/test-merchant',
+      message: 'HMAC not enforced',
+      checked_at: new Date().toISOString(),
     });
     await runWebhookHmacVerifyTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
@@ -859,8 +937,13 @@ describe('AC8 – webhook_hmac_verify Monday 2:00 AM', () => {
     }));
   });
 
-  test('does NOT create alert when no inactive endpoints', async () => {
-    mockGetLastToolOutput.mockReturnValue({ inactive: [] });
+  test('does NOT create alert when HMAC is enforced (HTTP 401)', async () => {
+    mockWebhookHmacHandler.mockResolvedValue({
+      verified: true, status_code: 401, severity: null,
+      endpoint: '/api/webhooks/pos/test-merchant',
+      message: 'HMAC enforced',
+      checked_at: new Date().toISOString(),
+    });
     await runWebhookHmacVerifyTask();
     expect(mockCreateAlert).not.toHaveBeenCalled();
   });
@@ -882,9 +965,12 @@ describe('AC9 – jwt_secret_check Monday 2:00 AM', () => {
     expect(message).toMatch(/rotation/i);
   });
 
-  test('creates alert when secrets are due for rotation', async () => {
-    mockGetLastToolOutput.mockReturnValue({
-      rotation_due: ['jwt_secret'],
+  test('creates alert when secret needs rotation', async () => {
+    mockJwtSecretCheckHandler.mockResolvedValue({
+      credential_name: 'jwt_secret', entropy_bits: 256, age_days: 200,
+      last_rotated: '2025-10-01T00:00:00.000Z', needs_rotation: true,
+      recommendation: 'Rotate now',
+      checked_at: new Date().toISOString(),
     });
     await runJwtSecretCheckTask();
     expect(mockCreateAlert).toHaveBeenCalledWith(expect.objectContaining({
@@ -893,8 +979,13 @@ describe('AC9 – jwt_secret_check Monday 2:00 AM', () => {
     }));
   });
 
-  test('does NOT create alert when no secrets are due', async () => {
-    mockGetLastToolOutput.mockReturnValue({ rotation_due: [] });
+  test('does NOT create alert when no rotation needed', async () => {
+    mockJwtSecretCheckHandler.mockResolvedValue({
+      credential_name: 'jwt_secret', entropy_bits: 256, age_days: 10,
+      last_rotated: new Date().toISOString(), needs_rotation: false,
+      recommendation: null,
+      checked_at: new Date().toISOString(),
+    });
     await runJwtSecretCheckTask();
     expect(mockCreateAlert).not.toHaveBeenCalled();
   });
@@ -964,11 +1055,17 @@ describe('AC11 – token_rotation_remind monthly 1st 2:00 AM', () => {
     expect(message).toMatch(/rotation|reminder/i);
   });
 
-  test('sends email when response indicates tokens are due', async () => {
+  test('sends email when dueCount > 0', async () => {
     mockFindRecentAlert.mockReturnValue(undefined);
-    mockRunSession.mockResolvedValue({
-      session_id: 'sess-trr',
-      response: 'JWT secret is due for rotation in 5 days.',
+    mockTokenRotationHandler.mockResolvedValue({
+      checked: [{
+        credential: 'jwt_secret', label: 'JWT signing secret',
+        configured: true, lastRotated: '2025-01-01T00:00:00.000Z',
+        ageDays: 200, daysUntilDue: -110, maxAgeDays: 90,
+        dueForRotation: true,
+      }],
+      dueCount: 1, alertSent: true,
+      checked_at: new Date().toISOString(),
     });
     await runTokenRotationRemindTask();
     expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({
@@ -976,11 +1073,11 @@ describe('AC11 – token_rotation_remind monthly 1st 2:00 AM', () => {
     }));
   });
 
-  test('does NOT send email when response says no tokens due', async () => {
+  test('does NOT send email when dueCount is 0', async () => {
     mockFindRecentAlert.mockReturnValue(undefined);
-    mockRunSession.mockResolvedValue({
-      session_id: 'sess-trr',
-      response: 'No tokens are due for rotation.',
+    mockTokenRotationHandler.mockResolvedValue({
+      checked: [], dueCount: 0, alertSent: false,
+      checked_at: new Date().toISOString(),
     });
     await runTokenRotationRemindTask();
     expect(mockSendEmail).not.toHaveBeenCalled();

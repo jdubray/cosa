@@ -16,14 +16,30 @@ jest.mock('../src/orchestrator', () => ({ runSession: (...a) => mockRunSession(.
 const mockSendEmail = jest.fn();
 jest.mock('../src/email-gateway', () => ({ sendEmail: (...a) => mockSendEmail(...a) }));
 
-const mockCreateAlert      = jest.fn();
-const mockFindRecentAlert  = jest.fn();
+const mockCreateAlert       = jest.fn();
+const mockFindRecentAlert   = jest.fn();
 const mockGetLastToolOutput = jest.fn();
-jest.mock('../src/session-store', () => ({
-  createAlert:       (...a) => mockCreateAlert(...a),
-  findRecentAlert:   (...a) => mockFindRecentAlert(...a),
-  getLastToolOutput: (...a) => mockGetLastToolOutput(...a),
+const mockCountAlerts       = jest.fn(() => 0);
+const mockFindMostRecent    = jest.fn(() => null);
+const mockGetDb             = jest.fn(() => ({
+  prepare: () => ({ get: () => ({ n: 0 }), all: () => [] }),
 }));
+jest.mock('../src/session-store', () => ({
+  createAlert:                     (...a) => mockCreateAlert(...a),
+  findRecentAlert:                 (...a) => mockFindRecentAlert(...a),
+  getLastToolOutput:               (...a) => mockGetLastToolOutput(...a),
+  countAlertsByCategoriesSince:    (...a) => mockCountAlerts(...a),
+  findMostRecentAlertByCategories: (...a) => mockFindMostRecent(...a),
+  findLastAlertByCategory:         jest.fn(() => null),
+  getDb:                           (...a) => mockGetDb(...a),
+}));
+
+jest.mock('../src/skill-store', () => ({ list: jest.fn(() => []) }));
+jest.mock('../src/tools/compliance-verify',     () => ({ name: 'compliance_verify',     handler: jest.fn().mockResolvedValue({ fail_count: 0, warning_count: 0 }) }));
+jest.mock('../src/tools/webhook-hmac-verify',   () => ({ name: 'webhook_hmac_verify',   handler: jest.fn().mockResolvedValue({ verified: true, status_code: 401 }) }));
+jest.mock('../src/tools/jwt-secret-check',      () => ({ name: 'jwt_secret_check',      handler: jest.fn().mockResolvedValue({ needs_rotation: false }) }));
+jest.mock('../src/tools/pci-assessment',        () => ({ name: 'pci_assessment',        handler: jest.fn().mockResolvedValue({ requirements: [], overallStatus: 'compliant', actionItems: [] }) }));
+jest.mock('../src/tools/token-rotation-remind', () => ({ name: 'token_rotation_remind', handler: jest.fn().mockResolvedValue({ checked: [], dueCount: 0, alertSent: false }) }));
 
 jest.mock('../src/logger', () => ({
   createLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
@@ -290,17 +306,17 @@ describe('AC7 – email is plain text, no HTML', () => {
     expect(emailArgs.html).toBeUndefined();
   });
 
-  test('email body is the orchestrator response (Claude-generated text)', async () => {
+  test('email body is the deterministic digest renderer output', async () => {
     await runWeeklySecurityDigestTask();
     const [{ text }] = mockSendEmail.mock.calls[0];
-    expect(text).toBe(DIGEST_BODY);
-  });
-
-  test('falls back to placeholder text when orchestrator returns empty response', async () => {
-    mockRunSession.mockResolvedValue({ session_id: 'sess-empty', response: '' });
-    await runWeeklySecurityDigestTask();
-    const [{ text }] = mockSendEmail.mock.calls[0];
-    expect(text).toMatch(/No security digest data available/);
+    // Template renderer guarantees a stable 8-section layout regardless of LLM.
+    expect(text).toMatch(/Weekly Security Digest/);
+    expect(text).toMatch(/GIT AUDIT/);
+    expect(text).toMatch(/PROCESS MONITOR/);
+    expect(text).toMatch(/NETWORK SCAN/);
+    expect(text).toMatch(/COMPLIANCE/);
+    expect(text).toMatch(/CREDENTIALS/);
+    expect(text).toMatch(/SECURITY INCIDENTS THIS WEEK:/);
   });
 });
 
@@ -315,10 +331,12 @@ describe('AC8 – deduplication within 6 days', () => {
     expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
-  test('does NOT run orchestrator session when dedup suppresses', async () => {
+  test('does NOT collect digest data when dedup suppresses', async () => {
     mockFindRecentAlert.mockReturnValue({ sent_at: new Date().toISOString() });
+    mockCountAlerts.mockClear();
     await runWeeklySecurityDigestTask();
-    expect(mockRunSession).not.toHaveBeenCalled();
+    // Deduped → renderer is never invoked → no alert-ledger queries fire.
+    expect(mockCountAlerts).not.toHaveBeenCalled();
   });
 
   test('queries findRecentAlert with security_digest category', async () => {
@@ -383,11 +401,12 @@ describe('trigger structure', () => {
     expect(message).toContain(before);
   });
 
-  test('runWeeklySecurityDigestTask sends trigger to orchestrator', async () => {
+  test('runWeeklySecurityDigestTask no longer goes through the orchestrator', async () => {
+    // Post-template-migration the orchestrator is not invoked at all for the
+    // security digest — the renderer reads directly from the alerts ledger.
     await runWeeklySecurityDigestTask();
-    const [trigger] = mockRunSession.mock.calls[0];
-    expect(trigger.type).toBe('cron');
-    expect(trigger.source).toBe('security-digest');
+    expect(mockRunSession).not.toHaveBeenCalled();
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
   });
 });
 
