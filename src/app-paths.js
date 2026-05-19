@@ -25,7 +25,7 @@ const DEFAULT_APP_BASE_PATH = '/home/baanbaan/baan-baan-merchant/v2';
  */
 function appBasePath() {
   const { appliance } = getConfig();
-  return appliance.app_base_path || DEFAULT_APP_BASE_PATH;
+  return (appliance && appliance.app_base_path) || DEFAULT_APP_BASE_PATH;
 }
 
 /**

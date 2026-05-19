@@ -341,3 +341,82 @@ describe('output shape', () => {
     expect(result.checked.length).toBe(4);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Current API — rotation dates come from appliance.compliance.*
+// ---------------------------------------------------------------------------
+//
+// The .skip blocks above test an OLD API where rotation dates were read from
+// credentialStore.getMetadata(). The current tool reads from
+// appliance.compliance.<configKey>. These tests cover the live code path.
+
+describe('current API — appliance.compliance.* rotation dates', () => {
+  /** Build a config object with rotation dates aged the given number of days. */
+  function configWithDates(ages) {
+    const compliance = {};
+    if (ages.clover     != null) compliance.clover_token_last_rotated   = isoAgedDays(ages.clover);
+    if (ages.jwt        != null) compliance.jwt_secret_last_rotated     = isoAgedDays(ages.jwt);
+    if (ages.s3         != null) compliance.s3_access_key_last_rotated  = isoAgedDays(ages.s3);
+    if (ages.ssh        != null) compliance.ssh_key_last_reviewed       = isoAgedDays(ages.ssh);
+    return {
+      appliance: {
+        ...DEFAULT_CONFIG.appliance,
+        compliance,
+      },
+    };
+  }
+  function isoAgedDays(d) {
+    return new Date(NOW_MS - d * DAY_MS).toISOString();
+  }
+
+  test('clover_api_key flagged due once it exceeds the 180-day window', async () => {
+    getConfig.mockReturnValue(configWithDates({ clover: 200, jwt: 10, s3: 10, ssh: 10 }));
+    const result = await handler();
+    const clover = result.checked.find((c) => c.credential === 'clover_api_key');
+    expect(clover.configured).toBe(true);
+    expect(clover.dueForRotation).toBe(true);
+    expect(clover.ageDays).toBe(200);
+    expect(clover.maxAgeDays).toBe(180);
+  });
+
+  test('jwt_secret flagged due once it exceeds the 90-day window', async () => {
+    getConfig.mockReturnValue(configWithDates({ clover: 10, jwt: 120, s3: 10, ssh: 10 }));
+    const result = await handler();
+    const jwt = result.checked.find((c) => c.credential === 'jwt_secret');
+    expect(jwt.dueForRotation).toBe(true);
+    expect(jwt.maxAgeDays).toBe(90);
+  });
+
+  test('credential with no rotation date is marked configured:false and skipped from due-count', async () => {
+    getConfig.mockReturnValue(configWithDates({ jwt: 10, s3: 10, ssh: 10 })); // no clover
+    const result = await handler();
+    const clover = result.checked.find((c) => c.credential === 'clover_api_key');
+    expect(clover.configured).toBe(false);
+    expect(clover.lastRotated).toBeNull();
+    expect(clover.dueForRotation).toBe(false);
+    expect(result.dueCount).toBe(0);
+  });
+
+  test('dueCount reflects total number of overdue credentials', async () => {
+    getConfig.mockReturnValue(configWithDates({ clover: 200, jwt: 120, s3: 10, ssh: 10 }));
+    const result = await handler();
+    expect(result.dueCount).toBe(2);
+  });
+
+  test('returns the documented top-level shape regardless of input', async () => {
+    getConfig.mockReturnValue(configWithDates({ clover: 10, jwt: 10, s3: 10, ssh: 10 }));
+    const result = await handler();
+    expect(Array.isArray(result.checked)).toBe(true);
+    expect(typeof result.dueCount).toBe('number');
+    expect(typeof result.alertSent).toBe('boolean');
+    expect(result.checked_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test('zero credentials configured → checked still has one entry per policy', async () => {
+    getConfig.mockReturnValue(configWithDates({})); // no dates at all
+    const result = await handler();
+    expect(result.checked.length).toBe(4);
+    expect(result.dueCount).toBe(0);
+    for (const entry of result.checked) expect(entry.configured).toBe(false);
+  });
+});
