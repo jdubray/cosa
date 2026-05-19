@@ -102,8 +102,13 @@ const SAFE_SERVICE_NAME = /^[a-zA-Z0-9_\-.]+$/;
  */
 async function issueRestart(serviceName) {
   if (!SAFE_SERVICE_NAME.test(serviceName)) {
+    // Don't echo the raw rejected value into the error message — once we know
+    // it failed the safety check, any character outside [a-zA-Z0-9_\-.] is
+    // present, which may include CR/LF/control chars that would corrupt the
+    // log line if surfaced verbatim (2026-05-18 review §B P2 #12).
     throw new Error(
-      `Invalid service name '${serviceName}': must match ${SAFE_SERVICE_NAME}`
+      `Invalid service name (failed safety check ${SAFE_SERVICE_NAME}); ` +
+      `received ${serviceName.length} character(s)`
     );
   }
   const { exitCode, stderr } = await sshBackend.exec(`systemctl restart ${serviceName}`);

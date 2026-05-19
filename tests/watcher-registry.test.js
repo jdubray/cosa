@@ -117,12 +117,19 @@ function makeInMemoryDb() {
       };
     }
 
-    // ── UPDATE last_alerted_at ────────────────────────────────────────────
+    // ── UPDATE last_alerted_at (atomic cooldown gate) ────────────────────
     if (s.includes('last_alerted_at')) {
       return {
-        run({ id, ts }) {
+        run({ id, ts, cutoff }) {
           const r = store.get(id);
-          if (r) r.last_alerted_at = ts;
+          if (!r) return { changes: 0 };
+          // Mirror the SQL predicate: only update if no prior alert or the
+          // prior alert is older than the cooldown cutoff.
+          if (r.last_alerted_at !== null && r.last_alerted_at >= cutoff) {
+            return { changes: 0 };
+          }
+          r.last_alerted_at = ts;
+          return { changes: 1 };
         },
         all() { return []; },
         get()  { return undefined; },

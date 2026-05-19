@@ -160,8 +160,16 @@ class WatcherRegistry {
             trigger_count     = trigger_count + 1
         WHERE id = @id
       `),
-      markAlerted: db.prepare(`
-        UPDATE watchers SET last_alerted_at = @ts WHERE id = @id
+      // Atomic cooldown gate: only writes the alert timestamp if the watcher
+       // has not been alerted since @cutoff. .changes returns 1 if the alert
+       // is fresh, 0 if a concurrent runAll() already marked it. Replaces the
+       // prior read-then-write pattern that could surface duplicate alerts
+       // when two runAll() calls overlapped (2026-05-18 review §B P2 #10).
+      markAlertedIfFresh: db.prepare(`
+        UPDATE watchers
+        SET last_alerted_at = @ts
+        WHERE id = @id
+          AND (last_alerted_at IS NULL OR last_alerted_at < @cutoff)
       `),
     };
     return this._stmts;
@@ -273,14 +281,16 @@ class WatcherRegistry {
       const triggeredAt = now.toISOString();
       stmts.markTriggered.run({ id: w.id, ts: triggeredAt });
 
-      // Cooldown check
-      const lastAlerted = w.last_alerted_at ? new Date(w.last_alerted_at) : null;
-      if (lastAlerted && now - lastAlerted < cooldownMs) {
+      // Atomic cooldown gate. SQLite serializes writers, so concurrent
+      // runAll() calls cannot both pass the check — only one will see
+      // changes === 1 and emit the alert.
+      const cutoffIso = new Date(now.getTime() - cooldownMs).toISOString();
+      const upd = stmts.markAlertedIfFresh.run({ id: w.id, ts: triggeredAt, cutoff: cutoffIso });
+      if (upd.changes === 0) {
         log.debug(`Watcher "${w.id}" triggered but within cooldown — suppressed`);
         continue;
       }
 
-      stmts.markAlerted.run({ id: w.id, ts: triggeredAt });
       alerts.push({
         watcher_id:   w.id,
         watcher_name: w.name,

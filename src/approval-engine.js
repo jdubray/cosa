@@ -15,6 +15,24 @@ const { createLogger }    = require('./logger');
 
 const log = createLogger('approval-engine');
 
+/**
+ * Sanitize an arbitrary string before interpolating it into a log line. The
+ * inbound `msg.from` field is operator-influenced (it ultimately comes from
+ * an email From: header on the SMTP wire). Without sanitization, a crafted
+ * From: header containing CR/LF or ANSI escapes can inject fake log entries
+ * or corrupt the rendered output. 2026-05-18 review §B P2 #11.
+ *
+ * @param {unknown} s
+ * @returns {string}
+ */
+function _sanitizeForLog(s) {
+  if (typeof s !== 'string') return String(s);
+  return s
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '') // strip ANSI CSI sequences
+    .replace(/[\x00-\x1f\x7f]/g, ' ')      // control chars → space
+    .slice(0, 200);
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -468,7 +486,7 @@ async function processInboundReply(msg) {
 
     // DB after FSM — AND status='pending' guard makes this a no-op if already terminal.
     updateApprovalStatus(approval.approval_id, 'denied', msg.from, note);
-    log.info(`Approval denied: ${approval.approval_id} (${approval.tool_name}) by ${msg.from}`);
+    log.info(`Approval denied: ${approval.approval_id} (${approval.tool_name}) by ${_sanitizeForLog(msg.from)}`);
 
     try {
       await emailGateway.sendEmail({
@@ -495,7 +513,7 @@ async function processInboundReply(msg) {
   }
 
   updateApprovalStatus(approval.approval_id, 'approved', msg.from, null);
-  log.info(`Approval approved: ${approval.approval_id} (${approval.tool_name}) by ${msg.from}`);
+  log.info(`Approval approved: ${approval.approval_id} (${approval.tool_name}) by ${_sanitizeForLog(msg.from)}`);
 
   try {
     await emailGateway.sendEmail({

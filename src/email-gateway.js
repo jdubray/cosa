@@ -226,10 +226,50 @@ async function _dispatchMessage(msg) {
     return;
   }
 
+  // Operator typed SUPPRESS but the format didn't match. Without this branch
+  // the reply would be treated as a brand-new orchestrator session, and the
+  // operator would get no feedback that their suppression failed to parse
+  // (2026-05-18 review §B P2 #15). Reply with the expected format.
+  if (SUPPRESS_LOOSE_RE.test(text)) {
+    log.warn(`Received SUPPRESS reply with unrecognised format from ${msg.from}`);
+    await _sendSuppressionFormatError(msg);
+    return;
+  }
+
   if (APPROVAL_RE.test(text)) {
     await approvalEngine.processInboundReply(msg);
   } else if (_onNewSession) {
     await _onNewSession(msg);
+  }
+}
+
+/** Loose match — anything starting with "SUPPRESS " (catches malformed attempts). */
+const SUPPRESS_LOOSE_RE = /\bSUPPRESS\b/i;
+
+/**
+ * Send a polite parser-error reply when the operator typed SUPPRESS with the
+ * wrong format. Includes the expected syntax so the next attempt can succeed.
+ *
+ * @param {{ from: string }} msg
+ */
+async function _sendSuppressionFormatError(msg) {
+  const { appliance } = getConfig();
+  const operatorEmail = appliance.operator?.email;
+  if (!operatorEmail) return;
+  try {
+    await sendEmail({
+      to:      operatorEmail,
+      subject: '[COSA] Suppression request could not be parsed',
+      text:
+        'COSA could not parse your suppression request.\n\n' +
+        'Expected format:\n' +
+        '  SUPPRESS <pattern>:<file>:<line> [optional reason]\n\n' +
+        'Example:\n' +
+        '  SUPPRESS aws_access_key:test/backup.test.ts:270 test fixture\n\n' +
+        'Reply with the corrected format and the suppression will be recorded.',
+    });
+  } catch (err) {
+    log.warn(`Failed to send suppression format-error email: ${err.message}`);
   }
 }
 
