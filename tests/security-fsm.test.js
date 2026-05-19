@@ -47,8 +47,9 @@ jest.mock('better-sqlite3', () => jest.fn(() => mockDbInstance));
 const mockDispatch = jest.fn();
 jest.mock('../src/tool-registry', () => ({ dispatch: (...a) => mockDispatch(...a) }));
 
+const mockGetConfig = jest.fn(() => ({ env: { dataDir: '/tmp/cosa-test-db' } }));
 jest.mock('../config/cosa.config', () => ({
-  getConfig: () => ({ env: { dataDir: '/tmp/cosa-test-db' } }),
+  getConfig: (...a) => mockGetConfig(...a),
 }));
 
 jest.mock('fs', () => ({
@@ -85,6 +86,8 @@ const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
 beforeEach(() => {
   mockDispatch.mockReset();
   mockDispatch.mockResolvedValue({ success: true });
+  mockGetConfig.mockReset();
+  mockGetConfig.mockReturnValue({ env: { dataDir: '/tmp/cosa-test-db' } });
   dbRunCalls.length = 0;
   mockDbInstance.pragma.mockClear();
   mockDbInstance.exec.mockClear();
@@ -356,7 +359,10 @@ describe('AC8 — alerting_operator NAP: sends alert and schedules timeout', () 
     expect(alertCalls.length).toBeGreaterThan(0);
   });
 
-  it('setTimeout is called with 15-minute delay for ALERT_TIMEOUT', () => {
+  it('setTimeout is called with the 30-minute default ALERT_TIMEOUT delay', () => {
+    // Default raised from 15 → 30 min on 2026-05-18 to give slow operator-ack
+    // orchestrator sessions enough headroom to complete before escalation.
+    // Configurable via appliance.security.alert_timeout_ms.
     const timeoutCalls = [];
     jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay) => {
       timeoutCalls.push({ fn, delay });
@@ -367,7 +373,28 @@ describe('AC8 — alerting_operator NAP: sends alert and schedules timeout', () 
     fsm.send('ANOMALY_DETECTED');
     fsm.send('CLASSIFY_MEDIUM', { severity: 'medium' });
 
-    const alertTimeout = timeoutCalls.find((c) => c.delay === 15 * 60 * 1000);
+    const alertTimeout = timeoutCalls.find((c) => c.delay === 30 * 60 * 1000);
+    expect(alertTimeout).toBeDefined();
+  });
+
+  it('honors appliance.security.alert_timeout_ms when configured', () => {
+    const timeoutCalls = [];
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay) => {
+      timeoutCalls.push({ fn, delay });
+      return {};
+    });
+
+    // Override config to a deliberately distinctive value (7 minutes).
+    mockGetConfig.mockReturnValue({
+      env:       { dataDir: '/tmp/cosa-test' },
+      appliance: { security: { alert_timeout_ms: 7 * 60 * 1000 } },
+    });
+
+    const fsm = createSecurityFSM();
+    fsm.send('ANOMALY_DETECTED');
+    fsm.send('CLASSIFY_MEDIUM', { severity: 'medium' });
+
+    const alertTimeout = timeoutCalls.find((c) => c.delay === 7 * 60 * 1000);
     expect(alertTimeout).toBeDefined();
   });
 

@@ -185,17 +185,27 @@ async function handler({ query, limit = DEFAULT_LIMIT }) {
   const cmd = buildCommand(dbPath);
 
   // ── AC9: Enforce query-level timeout ──────────────────────────────────────
+  // Previously this used Promise.race against a local setTimeout — if the
+  // timeout won, the SSH exec stream was left running on the appliance and
+  // `sqlite3` continued to completion, accumulating orphan processes per
+  // timed-out query (2026-05-18 review §B P1 #7). Delegate to ssh-backend
+  // instead: it calls `stream.destroy()` when its timer fires, which closes
+  // the channel and terminates the remote process.
   const startTime = Date.now();
-
-  const execPromise    = sshBackend.exec(cmd, finalQuery);
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(
-      () => reject(new Error(`Query timed out after ${timeoutMs}ms`)),
-      timeoutMs
-    )
-  );
-
-  const { stdout, stderr, exitCode } = await Promise.race([execPromise, timeoutPromise]);
+  let stdout, stderr, exitCode;
+  try {
+    ({ stdout, stderr, exitCode } = await sshBackend.exec(cmd, finalQuery, timeoutMs));
+  } catch (err) {
+    // Surface a stable message for the AC9 timeout path so callers / tests can
+    // distinguish a query timeout from other SSH errors. The `.kind` tag set
+    // by ssh-backend's classifier is also preserved for programmatic checks.
+    if (err && err.kind === 'timeout') {
+      const tErr = new Error(`Query timed out after ${timeoutMs}ms`);
+      tErr.kind  = 'timeout';
+      throw tErr;
+    }
+    throw err;
+  }
   const queryTimeMs = Date.now() - startTime;
 
   if (exitCode !== 0) {

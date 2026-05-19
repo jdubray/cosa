@@ -430,4 +430,37 @@ describe('AC9 — query timeout', () => {
     mockExec.mockResolvedValue(execResult([{ n: 1 }]));
     await expect(handler({ query: 'SELECT 1 AS n' })).resolves.toHaveProperty('rows');
   });
+
+  // Regression: 2026-05-18 review §B P1 #7 — the prior Promise.race timeout
+  // left the remote sqlite3 process running on the appliance when it tripped,
+  // accumulating orphans. We now pass the timeout into sshBackend.exec(),
+  // which calls stream.destroy() to terminate the remote process.
+  it('passes query_timeout_ms through to sshBackend.exec so the stream is destroyed', async () => {
+    mockExec.mockResolvedValue(execResult([{ n: 1 }]));
+    await handler({ query: 'SELECT 1 AS n' });
+    const [, , timeoutArg] = mockExec.mock.calls[0];
+    expect(timeoutArg).toBe(15000);
+  });
+
+  it('re-throws a sshBackend timeout as "Query timed out after Xms" with kind=timeout', async () => {
+    const err = new Error('Command timed out after 15000ms');
+    err.kind  = 'timeout';
+    mockExec.mockRejectedValue(err);
+
+    await expect(handler({ query: 'SELECT 1' })).rejects.toMatchObject({
+      message: 'Query timed out after 15000ms',
+      kind:    'timeout',
+    });
+  });
+
+  it('does not rewrap non-timeout sshBackend errors', async () => {
+    const err = new Error('read ECONNRESET');
+    err.kind  = 'connection_reset';
+    mockExec.mockRejectedValue(err);
+
+    await expect(handler({ query: 'SELECT 1' })).rejects.toMatchObject({
+      message: 'read ECONNRESET',
+      kind:    'connection_reset',
+    });
+  });
 });

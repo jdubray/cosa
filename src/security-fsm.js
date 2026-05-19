@@ -189,44 +189,57 @@ function createSecurityFSM({ incidentId } = {}) {
    *   1. Execute cloudflare_kill if not yet killed.
    *   2. Send ips_alert after kill completes.
    *   3. Transition to RESPONSE_COMPLETE when done.
+   *
+   * The outer try/finally guarantees the RESPONSE_COMPLETE transition is
+   * attempted even if an unexpected throw escapes one of the inner steps
+   * (2026-05-18 review §B P1 #5: previously, an unforeseen throw could leave
+   * the FSM stuck in `responding` forever — no automatic recovery).
    */
   async function runRespondingNap() {
-    if (!incident.cloudflareKilled) {
+    try {
+      if (!incident.cloudflareKilled) {
+        try {
+          log.info(`[${incident.incidentId}] Executing cloudflare_kill`);
+          await toolRegistry.dispatch('cloudflare_kill', {});
+          incident.cloudflareKilled = true;
+          upsertIncident(incident);
+          log.info(`[${incident.incidentId}] cloudflare_kill completed`);
+        } catch (err) {
+          log.warn(`[${incident.incidentId}] cloudflare_kill failed: ${err.message}`);
+          // Continue — kill failure must not block the alert.
+        }
+      }
+
+      // Always attempt ips_alert after the kill step (success or failure).
       try {
-        log.info(`[${incident.incidentId}] Executing cloudflare_kill`);
-        await toolRegistry.dispatch('cloudflare_kill', {});
-        incident.cloudflareKilled = true;
+        log.info(`[${incident.incidentId}] Sending ips_alert`);
+        await toolRegistry.dispatch('ips_alert', {
+          alert_type: 'intrusion_detected',
+          severity:   incident.severity ?? 'high',
+          message:    `Security incident ${incident.incidentId}: automated response executed`,
+          details:    incident.details,
+        });
+        incident.alertSent = true;
         upsertIncident(incident);
-        log.info(`[${incident.incidentId}] cloudflare_kill completed`);
       } catch (err) {
-        log.warn(`[${incident.incidentId}] cloudflare_kill failed: ${err.message}`);
-        // Continue — kill failure must not block the alert.
+        // ips_alert may not yet be registered; tolerate gracefully.
+        if (err.code !== 'TOOL_NOT_FOUND') {
+          log.warn(`[${incident.incidentId}] ips_alert failed: ${err.message}`);
+        }
       }
-    }
-
-    // Always attempt ips_alert after the kill step (success or failure).
-    try {
-      log.info(`[${incident.incidentId}] Sending ips_alert`);
-      await toolRegistry.dispatch('ips_alert', {
-        alert_type: 'intrusion_detected',
-        severity:   incident.severity ?? 'high',
-        message:    `Security incident ${incident.incidentId}: automated response executed`,
-        details:    incident.details,
-      });
-      incident.alertSent = true;
-      upsertIncident(incident);
-    } catch (err) {
-      // ips_alert may not yet be registered; tolerate gracefully.
-      if (err.code !== 'TOOL_NOT_FOUND') {
-        log.warn(`[${incident.incidentId}] ips_alert failed: ${err.message}`);
+    } finally {
+      // Advance the FSM once automated response actions are complete — and
+      // do so even if something above threw unexpectedly. Surface a failure
+      // here at error level: a stuck `responding` state needs operator
+      // attention because subsequent recovery transitions can never fire.
+      try {
+        fsm.send('RESPONSE_COMPLETE');
+      } catch (err) {
+        log.error(
+          `[${incident.incidentId}] RESPONSE_COMPLETE transition failed: ${err.message} ` +
+          `(incident may be stuck in 'responding' — manual intervention required)`
+        );
       }
-    }
-
-    // Advance the FSM once automated response actions are complete.
-    try {
-      fsm.send('RESPONSE_COMPLETE');
-    } catch (err) {
-      log.warn(`[${incident.incidentId}] RESPONSE_COMPLETE transition failed: ${err.message}`);
     }
   }
 
@@ -253,19 +266,38 @@ function createSecurityFSM({ incidentId } = {}) {
       });
     }
 
-    // Schedule ALERT_TIMEOUT in 15 minutes if no ack arrives.
+    // Schedule ALERT_TIMEOUT if no operator ack arrives.
+    //
+    // 2026-05-18 review §B P1 #9: the previous 15-minute hard-coded interval
+    // could fire while a slow orchestrator session was still processing an
+    // operator ack email, escalating the incident to `responding` and
+    // triggering a spurious cloudflare_kill. Two mitigations here:
+    //   1. Default raised to 30 minutes — gives ack-handling sessions
+    //      generous headroom over typical run times (cron worker timeout
+    //      is 10 min).
+    //   2. Configurable via appliance.security.alert_timeout_ms so an
+    //      operator who wants tighter escalation can opt back in.
     if (incident.alertTimeoutHandle === null) {
+      const appliance = getConfig().appliance ?? {};
+      const alertTimeoutMs = appliance.security?.alert_timeout_ms ?? 30 * 60 * 1000;
+
       incident.alertTimeoutHandle = setTimeout(() => {
         incident.alertTimeoutHandle = null;
         if (incident.state === 'alerting_operator') {
-          log.warn(`[${incident.incidentId}] Alert timeout — escalating to responding`);
+          log.warn(
+            `[${incident.incidentId}] ALERT_TIMEOUT fired after ${alertTimeoutMs}ms — ` +
+            `no operator ack received; escalating to 'responding' (will trigger automated response)`
+          );
           try {
             fsm.send('ALERT_TIMEOUT');
           } catch (err) {
-            log.warn(`[${incident.incidentId}] ALERT_TIMEOUT transition failed: ${err.message}`);
+            log.error(
+              `[${incident.incidentId}] ALERT_TIMEOUT transition failed: ${err.message} ` +
+              `(incident stuck in 'alerting_operator' — manual intervention required)`
+            );
           }
         }
-      }, 15 * 60 * 1000);
+      }, alertTimeoutMs);
       // Allow the process to exit cleanly if this timer is the only active handle.
       // The timer will still fire normally while the process is otherwise running.
       if (typeof incident.alertTimeoutHandle.unref === 'function') {
@@ -342,9 +374,15 @@ function createSecurityFSM({ incidentId } = {}) {
 
       // ── NAPs ────────────────────────────────────────────────────────────────
       if (next === 'responding') {
-        // Fire-and-forget — the NAP manages its own error handling.
+        // Fire-and-forget — the NAP manages its own error handling and has
+        // an outer try/finally to guarantee RESPONSE_COMPLETE is attempted.
+        // If the outer Promise still rejects, something in our error-handling
+        // contract has broken; surface that at error level rather than warn.
         runRespondingNap().catch((err) => {
-          log.warn(`[${incident.incidentId}] respondingNap error: ${err.message}`);
+          log.error(
+            `[${incident.incidentId}] respondingNap unhandled error: ${err.message} ` +
+            `(incident may be stuck in 'responding' — manual intervention required)`
+          );
         });
       }
 
