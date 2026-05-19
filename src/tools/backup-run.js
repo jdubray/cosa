@@ -58,16 +58,7 @@ function isoToFileTs(iso) {
   return iso.replace(/:/g, '-').replace(/\./g, '-');
 }
 
-/**
- * Single-quote-escape a shell argument so it is safe to embed inside a
- * single-quoted bash string.
- *
- * @param {string} value
- * @returns {string}
- */
-function shEscape(value) {
-  return value.replace(/'/g, "'\\''");
-}
+const { shEscape } = require('../shell-utils');
 
 /**
  * Resolve the list of databases to back up from appliance config.

@@ -55,14 +55,7 @@ const SCHEMA = {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Single-quote-escape a shell argument.
- * @param {string} value
- * @returns {string}
- */
-function shEscape(value) {
-  return value.replace(/'/g, "'\\''");
-}
+const { shEscape } = require('../shell-utils');
 
 /**
  * Build the verification bash script.

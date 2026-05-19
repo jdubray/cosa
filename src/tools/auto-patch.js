@@ -41,8 +41,20 @@ function _buildUpgradeCmd(mode) {
 }
 const REBOOT_FLAG_PATH = '/var/run/reboot-required';
 
-const APT_TIMEOUT_MS  = 30 * 60 * 1000;
-const EXEC_MAX_BUFFER = 16 * 1024 * 1024;
+/** Defaults — override via `appliance.tools.auto_patch.{timeout_ms,max_buffer_bytes}`. */
+const APT_TIMEOUT_MS_DEFAULT  = 30 * 60 * 1000;
+const EXEC_MAX_BUFFER_DEFAULT = 16 * 1024 * 1024;
+
+/** Read auto-patch tuning from config with the defaults above. */
+function _aptConfig() {
+  const cfg = getConfig().appliance?.tools?.auto_patch ?? {};
+  return {
+    timeoutMs: typeof cfg.timeout_ms === 'number' && cfg.timeout_ms > 0
+      ? cfg.timeout_ms : APT_TIMEOUT_MS_DEFAULT,
+    maxBuffer: typeof cfg.max_buffer_bytes === 'number' && cfg.max_buffer_bytes > 0
+      ? cfg.max_buffer_bytes : EXEC_MAX_BUFFER_DEFAULT,
+  };
+}
 
 const LOG_TAIL_BYTES = 4096;
 
@@ -123,11 +135,12 @@ function _countUpgraded(stdout) {
  * @returns {Promise<{ exitCode: number, stdout: string, stderr: string }>}
  */
 async function _execTarget(target, command) {
+  const { timeoutMs, maxBuffer } = _aptConfig();
   if (target === 'cosa') {
     try {
       const { stdout, stderr } = await execLocal(command, {
-        timeout:   APT_TIMEOUT_MS,
-        maxBuffer: EXEC_MAX_BUFFER,
+        timeout:   timeoutMs,
+        maxBuffer,
       });
       return { exitCode: 0, stdout: stdout ?? '', stderr: stderr ?? '' };
     } catch (err) {
@@ -139,7 +152,7 @@ async function _execTarget(target, command) {
     }
   }
   try {
-    return await sshBackend.exec(command, null, APT_TIMEOUT_MS);
+    return await sshBackend.exec(command, null, timeoutMs);
   } catch (err) {
     return { exitCode: 1, stdout: '', stderr: err.message ?? String(err) };
   }

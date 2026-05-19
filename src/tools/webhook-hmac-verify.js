@@ -46,9 +46,7 @@ const SCHEMA = {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function shEscape(value) {
-  return String(value).replace(/'/g, "'\\''");
-}
+const { shEscape } = require('../shell-utils');
 
 /**
  * Pull a usable merchant id off the appliance. Prefer one with a configured

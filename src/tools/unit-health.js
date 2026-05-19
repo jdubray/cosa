@@ -45,15 +45,9 @@ const SCHEMA = {
 // ---------------------------------------------------------------------------
 
 /**
- * Single-quote-escape a shell argument so it is safe to embed inside a
- * single-quoted bash string.
- *
- * @param {string} value
- * @returns {string}
+ * Shell-escape helper sourced from the shared module.
  */
-function shEscape(value) {
-  return value.replace(/'/g, "'\\''");
-}
+const { shEscape } = require('../shell-utils');
 
 /**
  * Build a single SSH command that runs `systemctl is-active` for every unit

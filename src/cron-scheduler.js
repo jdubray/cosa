@@ -13,14 +13,7 @@ const SAFE_SERVICE_NAME = /^[a-zA-Z0-9_\-.@]+$/;
 /** Valid .env key: starts with letter or underscore, followed by alphanumeric/underscore. */
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/**
- * Escape a string for use inside a shell single-quoted argument.
- * The only character that can break a single-quote context is `'` itself,
- * which is replaced by `'\''` (end quote, escaped single-quote, reopen quote).
- */
-function shellSingleQuote(str) {
-  return str.replace(/'/g, "'\\''");
-}
+const { shEscape: shellSingleQuote } = require('./shell-utils');
 
 const cron = require('node-cron');
 const { getConfig }    = require('../config/cosa.config');
@@ -76,6 +69,25 @@ const ALERT_DEDUP_WINDOW_MS = 60 * 60 * 1000;
 
 /** Suppress a second shift report within this window (6 hours). */
 const SHIFT_REPORT_DEDUP_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Read a numeric config override at the given dotted path under appliance.*,
+ * falling back to the provided default. Allows site operators to tune dedup
+ * windows in appliance.yaml without code edits (2026-05-18 review §C QW#4).
+ *
+ * Example: _configMs('dedup.alert_window_ms', ALERT_DEDUP_WINDOW_MS)
+ * Reads `appliance.dedup.alert_window_ms` from config; falls back to the
+ * constant if absent or not a number.
+ *
+ * @param {string} dottedPath
+ * @param {number} defaultMs
+ * @returns {number}
+ */
+function _configMs(dottedPath, defaultMs) {
+  const { appliance } = getConfig();
+  const v = dottedPath.split('.').reduce((o, k) => (o == null ? o : o[k]), appliance);
+  return typeof v === 'number' && v > 0 ? v : defaultMs;
+}
 
 /** Suppress a second archive-check alert within 23h (cron fires once a day). */
 const ARCHIVE_CHECK_DEDUP_WINDOW_MS = 23 * 60 * 60 * 1000;
@@ -975,7 +987,7 @@ async function runHealthCheckTask() {
 
   // ── 2. Dedup check ─────────────────────────────────────────────────────────
   const severity = overall_status === 'unreachable' ? 'critical' : 'warning';
-  const sinceIso = new Date(Date.now() - ALERT_DEDUP_WINDOW_MS).toISOString();
+  const sinceIso = new Date(Date.now() - _configMs('dedup.alert_window_ms', ALERT_DEDUP_WINDOW_MS)).toISOString();
   const recent   = findRecentAlert(HEALTH_CHECK_CATEGORY, severity, sinceIso);
 
   if (recent) {
@@ -1041,7 +1053,7 @@ async function runBackupTask() {
   }
 
   // Failure path
-  const sinceIso = new Date(Date.now() - ALERT_DEDUP_WINDOW_MS).toISOString();
+  const sinceIso = new Date(Date.now() - _configMs('dedup.alert_window_ms', ALERT_DEDUP_WINDOW_MS)).toISOString();
   const recent   = findRecentAlert(BACKUP_RUN_CATEGORY, 'critical', sinceIso);
 
   if (recent) {
@@ -1214,11 +1226,11 @@ async function runBackupVerifyTask() {
     )),
   };
 
-  const sinceIso = new Date(Date.now() - ALERT_DEDUP_WINDOW_MS).toISOString();
+  const sinceIso = new Date(Date.now() - _configMs('dedup.alert_window_ms', ALERT_DEDUP_WINDOW_MS)).toISOString();
   const recent   = findRecentAlert(BACKUP_VERIFY_CATEGORY, 'critical', sinceIso);
 
   if (recent) {
-    log.info(`Suppressed duplicate backup-verify alert`);
+    log.info(`Suppressed duplicate backup-verify alert (last sent: ${recent.sent_at})`);
     return;
   }
 
@@ -1380,7 +1392,7 @@ async function runShiftReportTask() {
   const subject       = `[COSA] Shift Report: ${today}`;
 
   // Deduplication: suppress if a shift report was already sent in the last 6 hours.
-  const sinceIso = new Date(Date.now() - SHIFT_REPORT_DEDUP_WINDOW_MS).toISOString();
+  const sinceIso = new Date(Date.now() - _configMs('dedup.shift_report_window_ms', SHIFT_REPORT_DEDUP_WINDOW_MS)).toISOString();
   const recent   = findRecentAlert(SHIFT_REPORT_CATEGORY, 'info', sinceIso);
 
   if (recent) {
