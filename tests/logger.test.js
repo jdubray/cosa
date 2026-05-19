@@ -242,3 +242,33 @@ describe('AC5 — all output is structured JSON', () => {
     stderrSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// alert() severity → level mapping (added 2026-05-18 review §C Medium #7)
+// ---------------------------------------------------------------------------
+
+describe('alert() severity → level mapping', () => {
+  it.each([
+    ['critical', 'error'],
+    ['high',     'error'],
+    ['warning',  'warn'],
+    ['medium',   'warn'],
+    ['low',      'info'],
+    ['info',     'info'],
+    ['',         'info'],
+    [undefined,  'info'],
+  ])('alert(%j) → level=%j', (severity, expectedLevel) => {
+    const log = createLogger('m');
+    log.alert(severity, 'hello');
+    expect(parsedLines()[0].level).toBe(expectedLevel);
+  });
+
+  it('case-insensitive severity strings still map correctly', () => {
+    const log = createLogger('m');
+    log.alert('CRITICAL', 'a');
+    log.alert('Warning', 'b');
+    const lines = parsedLines();
+    expect(lines[0].level).toBe('error');
+    expect(lines[1].level).toBe('warn');
+  });
+});

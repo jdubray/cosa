@@ -68,6 +68,23 @@ function createLogger(moduleName) {
     );
   }
 
+  /**
+   * Map an alert severity to a log level and emit the message. Centralizes
+   * the severity→level mapping so different modules can't disagree on
+   * whether 'medium' is warn or info. 2026-05-18 review §C Medium #7.
+   *
+   * @param {'critical'|'high'|'warning'|'medium'|'low'|'info'|string} severity
+   * @param {string} msg
+   */
+  function alert(severity, msg) {
+    const s = String(severity || '').toLowerCase();
+    const level =
+      s === 'critical' || s === 'high'  ? 'error' :
+      s === 'warning'  || s === 'medium' ? 'warn'  :
+                                           'info';
+    log(level, msg);
+  }
+
   return {
     /** @param {string} msg */
     debug: (msg) => log('debug', msg),
@@ -77,6 +94,13 @@ function createLogger(moduleName) {
     warn:  (msg) => log('warn',  msg),
     /** @param {string} msg */
     error: (msg) => log('error', msg),
+    /**
+     * Severity-aware convenience: alert('critical', '...') → error,
+     * 'warning'/'medium' → warn, 'info'/'low' → info.
+     * @param {string} severity
+     * @param {string} msg
+     */
+    alert,
   };
 }
 

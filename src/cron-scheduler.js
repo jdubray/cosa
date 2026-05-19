@@ -2882,9 +2882,20 @@ function start() {
         return;
       }
       _runningKeys.add(key);
+      // Wall-clock duration is the only signal we have for "is this task
+      // mysteriously slow?" — emit it at the end of every tick so a
+      // maintainer can grep for [cron] <task> ok in <Nms> regardless of
+      // whether the task itself logged anything (2026-05-18 review §C
+      // Larger #9 — silent-success observability sweep).
+      const startedAt = Date.now();
       Promise.resolve()
         .then(() => fn())
-        .catch((err) => log.error(`${key} task error: ${err.message}`))
+        .then(() => {
+          log.info(`[cron] ${key} ok in ${Date.now() - startedAt}ms`);
+        })
+        .catch((err) => {
+          log.error(`[cron] ${key} threw in ${Date.now() - startedAt}ms: ${err.message}`);
+        })
         .finally(() => _runningKeys.delete(key));
     });
     _tasks.set(key, task);

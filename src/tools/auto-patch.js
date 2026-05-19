@@ -3,6 +3,7 @@
 const { exec: childExec } = require('node:child_process');
 const { promisify }       = require('node:util');
 const sshBackend          = require('../ssh-backend');
+const { getConfig }       = require('../../config/cosa.config');
 
 const execLocal = promisify(childExec);
 
