@@ -14,12 +14,19 @@ const log = createLogger('ssh-backend');
 
 const BACKOFF_BASE_MS    = 1000;
 const BACKOFF_MAX_MS     = 30000;
-const MAX_RECONNECT_ATTEMPTS = 5;
+
+/**
+ * Log every Nth reconnect attempt at warn level (the rest at debug) once we
+ * settle into the 30s-capped tail of the backoff curve. Avoids flooding the
+ * journal if the appliance is genuinely unreachable for hours, while still
+ * leaving a periodic breadcrumb.
+ */
+const RECONNECT_LOG_EVERY_N = 10;
 
 /**
  * Calculate exponential backoff delay for reconnect attempts.
  *
- * Sequence: 1s → 2s → 4s → 8s → 16s → 30s (capped).
+ * Sequence: 1s → 2s → 4s → 8s → 16s → 30s (capped, then steady 30s forever).
  *
  * @param {number} attempt - Zero-based attempt number.
  * @returns {number} Delay in milliseconds.
@@ -140,17 +147,22 @@ function openConnection() {
 /**
  * Schedule the next reconnect attempt using exponential backoff.
  * Only one timer is ever active at a time.
+ *
+ * The previous implementation gave up after MAX_RECONNECT_ATTEMPTS=5 and
+ * required a manual `systemctl restart cosa` to recover. That bit us on
+ * 2026-05-18: while the POS was in a PSU-induced reboot loop, all 5 attempts
+ * burned in 43 seconds. The appliance came back 30 seconds later, but the
+ * in-process SSH backend had already abandoned and stayed dead for 4 hours,
+ * spamming "SSH not connected" alert emails every 30 minutes (dedup-cycle).
+ *
+ * Fix: keep trying forever with the 30s backoff ceiling. The host is on the
+ * same LAN — a reboot or brownout always recovers. To avoid log flooding when
+ * the appliance is genuinely down for hours, after the first
+ * RECONNECT_LOG_EVERY_N attempts we drop further failures to debug level and
+ * only emit one warn line every N attempts.
  */
 function scheduleReconnect() {
   if (_reconnectTimer !== null) return;
-
-  if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    log.error(
-      `SSH reconnect abandoned after ${MAX_RECONNECT_ATTEMPTS} attempts — ` +
-      `manual intervention required`
-    );
-    return;
-  }
 
   const delay = backoffMs(_reconnectAttempts);
   _reconnectAttempts++;
@@ -159,9 +171,18 @@ function scheduleReconnect() {
     _reconnectTimer = null;
     try {
       await openConnection();
-      log.info(`Reconnected to ${getConfig().appliance.ssh.host}`);
+      log.info(`Reconnected to ${getConfig().appliance.ssh.host} after ${_reconnectAttempts} attempt(s)`);
     } catch (err) {
-      log.warn(`Reconnect attempt ${_reconnectAttempts} failed: ${err.message}`);
+      // Surface the first handful of failures at warn so an actual outage is
+      // visible; after that, throttle to one warn per RECONNECT_LOG_EVERY_N
+      // attempts to keep the journal readable through a multi-hour outage.
+      const verbose = _reconnectAttempts <= RECONNECT_LOG_EVERY_N
+        || _reconnectAttempts % RECONNECT_LOG_EVERY_N === 0;
+      if (verbose) {
+        log.warn(`Reconnect attempt ${_reconnectAttempts} failed: ${err.message}`);
+      } else {
+        log.debug(`Reconnect attempt ${_reconnectAttempts} failed: ${err.message}`);
+      }
       scheduleReconnect();
     }
   }, delay);

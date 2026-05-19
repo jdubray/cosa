@@ -435,6 +435,34 @@ describe('AC3 — reconnect on drop', () => {
     expect(mockSsh.lastClient).not.toBe(droppedClient);
   });
 
+  // Regression: 2026-05-18 — the previous code gave up after 5 reconnect
+  // attempts and required a manual cosa.service restart. While the POS was
+  // in a PSU-induced reboot loop, all 5 attempts burned in 43s; the appliance
+  // recovered 30s later but the in-process SSH stayed dead for hours.
+  it('keeps retrying past the previous 5-attempt cap', async () => {
+    jest.useFakeTimers();
+    mockSsh.connectResult = 'error';
+
+    // First connection fails, scheduling a reconnect chain.
+    const initP = init();
+    await jest.advanceTimersByTimeAsync(1);
+    await initP;
+    expect(isConnected()).toBe(false);
+
+    // Burn through 10 backoff cycles. The previous implementation would have
+    // abandoned after attempt 5; this one must still be trying. Each tick we
+    // advance one backoff window (cap = 30s).
+    for (let i = 0; i < 10; i++) {
+      await jest.advanceTimersByTimeAsync(35_000);
+    }
+    expect(isConnected()).toBe(false);
+
+    // Flip to success — the very next scheduled tick reconnects cleanly.
+    mockSsh.connectResult = 'success';
+    await jest.advanceTimersByTimeAsync(35_000);
+    expect(isConnected()).toBe(true);
+  });
+
   it('uses exponential backoff: second attempt waits longer than first', async () => {
     jest.useFakeTimers();
     mockSsh.connectResult = 'error'; // make reconnects fail so we can observe timing
@@ -450,16 +478,15 @@ describe('AC3 — reconnect on drop', () => {
       return origSetTimeout(fn, delay);
     });
 
-    // Trigger reconnect chain
+    // Trigger reconnect chain — use advanceTimersByTimeAsync so the now-
+    // infinite reconnect loop doesn't make jest.runAllTimersAsync hang.
     const initP = init();
-    await jest.runAllTimersAsync(); // fires initial error → scheduleReconnect (1000ms)
+    await jest.advanceTimersByTimeAsync(1); // fires initial error → scheduleReconnect (1000ms)
     await initP;
 
     // Run two more backoff cycles
-    jest.advanceTimersByTime(1100); // attempt 1 (1000ms)
-    await jest.runAllTimersAsync();
-    jest.advanceTimersByTime(2200); // attempt 2 (2000ms)
-    await jest.runAllTimersAsync();
+    await jest.advanceTimersByTimeAsync(1100); // attempt 1 (1000ms)
+    await jest.advanceTimersByTimeAsync(2200); // attempt 2 (2000ms)
 
     // Filter to the backoff delays we care about (1000, 2000, ...). Other
     // setTimeout calls (e.g. ssh2 internals) may also be in `delays`.
