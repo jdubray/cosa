@@ -4,6 +4,7 @@ const sshBackend       = require('../ssh-backend');
 const toolRegistry     = require('../tool-registry');
 const { getConfig }    = require('../../config/cosa.config');
 const { createLogger } = require('../logger');
+const { appBasePath }  = require('../app-paths');
 
 const log = createLogger('pci-assessment');
 
@@ -21,7 +22,11 @@ const CMD_DUPLICATE_UIDS    = "awk -F: 'seen[$3]++ {print $1, $3}' /etc/passwd 2
 const CMD_SSHD_PASSWORD_AUTH = 'grep -i "PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null';
 const CMD_AUTH_LOG_LINES    = 'wc -l /var/log/auth.log 2>/dev/null || echo "0 not-found"';
 const CMD_AUTH_LOG_STAT     = 'stat -c "%a %n" /var/log/auth.log 2>/dev/null || echo "not-found /var/log/auth.log"';
-const CMD_SECURITY_MD       = 'find /home/baanbaan/baan-baan-merchant/v2 -name "SECURITY.md" -maxdepth 4 2>/dev/null | head -1';
+// Built at call time so the appliance base path can be overridden via
+// appliance.app_base_path without restarting (read by appBasePath()).
+function buildSecurityMdCmd() {
+  return `find ${appBasePath()} -name "SECURITY.md" -maxdepth 4 2>/dev/null | head -1`;
+}
 
 const INPUT_SCHEMA = {
   type:                 'object',
@@ -362,7 +367,7 @@ function check12_1(securityMdResult) {
 
   return req(
     ID, DESC, 'warning',
-    'SECURITY.md not found in /home/baanbaan/baan-baan-merchant/v2 (searched up to 4 levels deep).',
+    `SECURITY.md not found in ${appBasePath()} (searched up to 4 levels deep).`,
     'Create a SECURITY.md documenting the security policy, incident response contacts, and vulnerability disclosure process.'
   );
 }
@@ -444,7 +449,7 @@ async function handler() {
     sshBackend.exec(CMD_SSHD_PASSWORD_AUTH),
     sshBackend.exec(CMD_AUTH_LOG_LINES),
     sshBackend.exec(CMD_AUTH_LOG_STAT),
-    sshBackend.exec(CMD_SECURITY_MD),
+    sshBackend.exec(buildSecurityMdCmd()),
   ]);
 
   // ── Attempt dep_audit dispatch (6.1 / 6.2) ───────────────────────────────

@@ -18,7 +18,7 @@ const RISK_LEVEL = 'read';
 // appliance itself via SSH. See docs/baanbaan_tools.md for the API surface.
 const DEFAULT_LOOPBACK_BASE = 'http://127.0.0.1:3000';
 const DEFAULT_PATH_TEMPLATE = '/webhooks/generic/{merchantId}';
-const DEFAULT_MERCHANT_DB   = '/home/baanbaan/baan-baan-merchant/v2/data/merchant.db';
+const { appPath } = require('../app-paths');
 
 // Deliberately bogus signature: wrong hex content, right header format.
 const INVALID_SIGNATURE = 'sha256=00000000000000000000000000000000cosa-probe-invalid';
@@ -129,7 +129,7 @@ async function handler() {
 
   const loopbackBase = toolCfg.internal_base_url ?? DEFAULT_LOOPBACK_BASE;
   const pathTemplate = toolCfg.path_template    ?? DEFAULT_PATH_TEMPLATE;
-  const merchantDb   = toolCfg.merchant_db_path ?? DEFAULT_MERCHANT_DB;
+  const merchantDb   = toolCfg.merchant_db_path ?? appPath('data/merchant.db');
 
   let merchantId = toolCfg.merchant_id ?? null;
   if (!merchantId) {

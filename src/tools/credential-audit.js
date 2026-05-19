@@ -14,9 +14,10 @@ const log = createLogger('credential-audit');
 const NAME       = 'credential_audit';
 const RISK_LEVEL = 'read';
 
-// Default path to the git working tree on the remote appliance.
-// Override via tools.credential_audit.repo_path in appliance.yaml.
-const DEFAULT_REPO_PATH = '/home/baanbaan/baan-baan-merchant/v2';
+// Default path to the git working tree on the remote appliance is shared
+// via app-paths.js — override per-tool via tools.credential_audit.repo_path
+// or globally via appliance.app_base_path in appliance.yaml.
+const { appPath } = require('../app-paths');
 
 const INPUT_SCHEMA = {
   type:                 'object',
@@ -293,7 +294,7 @@ async function handler() {
 
   const { appliance } = getConfig();
   const toolCfg       = appliance.tools?.credential_audit ?? {};
-  const repoPath      = toolCfg.repo_path ?? DEFAULT_REPO_PATH;
+  const repoPath      = toolCfg.repo_path ?? appPath();
   const staticSuppressions = Array.isArray(toolCfg.suppressed_findings)
     ? toolCfg.suppressed_findings
     : [];

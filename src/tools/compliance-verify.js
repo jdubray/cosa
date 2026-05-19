@@ -3,6 +3,7 @@
 const sshBackend        = require('../ssh-backend');
 const { getConfig }     = require('../../config/cosa.config');
 const { createLogger }  = require('../logger');
+const { appPath }       = require('../app-paths');
 
 const log = createLogger('compliance-verify');
 
@@ -437,8 +438,8 @@ async function handler() {
 
   // ── Gather configurable file paths ───────────────────────────────────────
   const sensitiveFiles = appliance.tools?.compliance_verify?.sensitive_files ?? [
-    '/home/baanbaan/baan-baan-merchant/v2/.env',
-    '/home/baanbaan/baan-baan-merchant/v2/data/merchant.db',
+    appPath('.env'),
+    appPath('data/merchant.db'),
   ];
   const knownPortSet = new Set(
     (appliance.monitoring?.known_ports ?? []).map(Number)
