@@ -286,6 +286,8 @@ tools:
     enabled: true
   session_search:
     enabled: true
+  read_appliance_state:
+    enabled: true
   archive_search:
     enabled: true
   process_monitor:
