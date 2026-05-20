@@ -36,14 +36,16 @@ function makeInMemoryDb() {
     // ── UPSERT ───────────────────────────────────────────────────────────────
     if (s.includes('on conflict')) {
       return {
-        run({ id, name, description, code, created_at }) {
+        run({ id, name, description, code, runbook_name, created_at }) {
           if (store.has(id)) {
             const r = store.get(id);
             r.name = name; r.description = description;
-            r.code = code; r.enabled = 1;
+            r.code = code; r.runbook_name = runbook_name ?? null; r.enabled = 1;
           } else {
             store.set(id, {
-              id, name, description, code, created_at,
+              id, name, description, code,
+              runbook_name: runbook_name ?? null,
+              created_at,
               last_triggered_at: null, trigger_count: 0,
               last_alerted_at: null, enabled: 1,
             });
@@ -298,6 +300,27 @@ describe('register', () => {
     await expect(
       watcherRegistry.register({ id: 'high_pending_orders', name: 'N', description: 'd', code: NEVER_TRIGGER })
     ).resolves.toBeUndefined();
+  });
+
+  // ── 2.0 runbook binding ──────────────────────────────────────────────────
+  test('accepts and stores an optional runbook_name', async () => {
+    await watcherRegistry.register({
+      id: 'w_rb', name: 'W', description: 'd', code: ALWAYS_TRIGGER, runbook_name: 'restart_pos',
+    });
+    const result = await watcherRegistry.runAll({});
+    expect(result.alerts[0].runbook_name).toBe('restart_pos');
+  });
+
+  test('alerts carry runbook_name=null when no runbook is bound', async () => {
+    await watcherRegistry.register({ id: 'w_norb', name: 'W', description: 'd', code: ALWAYS_TRIGGER });
+    const result = await watcherRegistry.runAll({});
+    expect(result.alerts[0].runbook_name).toBeNull();
+  });
+
+  test('rejects an invalid runbook_name', async () => {
+    await expect(
+      watcherRegistry.register({ id: 'w1', name: 'N', description: 'd', code: NEVER_TRIGGER, runbook_name: 'Bad Name!' })
+    ).rejects.toMatchObject({ code: 'WATCHER_INVALID' });
   });
 });
 

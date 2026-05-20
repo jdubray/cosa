@@ -149,6 +149,23 @@ jest.mock('../src/skill-store', () => ({
   list: (...a) => mockSkillList(...a),
 }));
 
+// 2.0 — watcher-eval dependencies
+const mockPollHandler = jest.fn();
+jest.mock('../src/tools/appliance-status-poll', () => ({
+  name:    'appliance_status_poll',
+  handler: (...a) => mockPollHandler(...a),
+}));
+
+const mockRunbookGet     = jest.fn();
+const mockExecuteRunbook = jest.fn();
+jest.mock('../src/runbook-store', () => ({
+  get:           (...a) => mockRunbookGet(...a),
+  runMigrations: jest.fn(),
+}));
+jest.mock('../src/runbook-executor', () => ({
+  executeRunbook: (...a) => mockExecuteRunbook(...a),
+}));
+
 // ---------------------------------------------------------------------------
 // Module under test
 // ---------------------------------------------------------------------------
@@ -171,6 +188,7 @@ const {
   runTokenRotationRemindTask,
   runResourceThresholdTask,
   runAuditAgentTask,
+  runWatcherEvalTask,
   buildGitAuditTrigger,
   buildProcessMonitorTrigger,
   buildNetworkScanTrigger,
@@ -1436,6 +1454,84 @@ describe('runAuditAgentTask', () => {
   test('start() registers audit_report on Mondays at 08:00', () => {
     start();
     const calls = mockCronSchedule.mock.calls.filter((c) => c[0] === '0 8 * * 1');
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2.0 — Watcher-evaluation loop
+// ---------------------------------------------------------------------------
+
+describe('runWatcherEvalTask', () => {
+  const cfgWithWatchers = (watchers) => ({
+    appliance: { ...BASE_CONFIG.appliance, watchers },
+  });
+
+  test('is a no-op when evaluation_enabled is not true', async () => {
+    // BASE_CONFIG has no watchers block → disabled.
+    await runWatcherEvalTask();
+    expect(mockPollHandler).not.toHaveBeenCalled();
+  });
+
+  test('executes a bound runbook for a fired watcher', async () => {
+    mockGetConfig.mockReturnValue(cfgWithWatchers({ evaluation_enabled: true }));
+    mockPollHandler.mockResolvedValue({
+      success: true,
+      alerts: [{ watcher_id: 'pos_down', watcher_name: 'POS down', message: 'down', runbook_name: 'restart_pos' }],
+    });
+    mockRunbookGet.mockReturnValue({ name: 'restart_pos' });
+    mockExecuteRunbook.mockResolvedValue({ outcome: 'success' });
+
+    await runWatcherEvalTask();
+
+    expect(mockExecuteRunbook).toHaveBeenCalledWith('restart_pos', expect.objectContaining({ watcher: 'pos_down' }));
+    expect(mockRunSession).not.toHaveBeenCalled();
+  });
+
+  test('falls back to a probe session for a fired watcher with no runbook', async () => {
+    mockGetConfig.mockReturnValue(cfgWithWatchers({ evaluation_enabled: true }));
+    mockPollHandler.mockResolvedValue({
+      success: true,
+      alerts: [{ watcher_id: 'odd', watcher_name: 'Odd', message: 'hmm', runbook_name: null }],
+    });
+
+    await runWatcherEvalTask();
+
+    expect(mockExecuteRunbook).not.toHaveBeenCalled();
+    expect(mockRunSession).toHaveBeenCalledTimes(1);
+    const [trigger, options] = mockRunSession.mock.calls[0];
+    expect(trigger).toMatchObject({ type: 'cron', source: 'watcher' });
+    expect(options).toEqual({ role: 'probe' });
+  });
+
+  test('dry_run logs but neither executes runbooks nor opens sessions', async () => {
+    mockGetConfig.mockReturnValue(cfgWithWatchers({ evaluation_enabled: true, dry_run: true }));
+    mockPollHandler.mockResolvedValue({
+      success: true,
+      alerts: [{ watcher_id: 'pos_down', watcher_name: 'POS', message: 'down', runbook_name: 'restart_pos' }],
+    });
+    mockRunbookGet.mockReturnValue({ name: 'restart_pos' });
+
+    await runWatcherEvalTask();
+
+    expect(mockPollHandler).toHaveBeenCalledTimes(1);
+    expect(mockExecuteRunbook).not.toHaveBeenCalled();
+    expect(mockRunSession).not.toHaveBeenCalled();
+  });
+
+  test('does nothing when the poll is unsuccessful', async () => {
+    mockGetConfig.mockReturnValue(cfgWithWatchers({ evaluation_enabled: true }));
+    mockPollHandler.mockResolvedValue({ success: false, error: 'unreachable' });
+
+    await runWatcherEvalTask();
+
+    expect(mockExecuteRunbook).not.toHaveBeenCalled();
+    expect(mockRunSession).not.toHaveBeenCalled();
+  });
+
+  test('start() registers watcher_eval every 5 minutes', () => {
+    start();
+    const calls = mockCronSchedule.mock.calls.filter((c) => c[0] === '*/5 * * * *');
     expect(calls.length).toBeGreaterThanOrEqual(1);
   });
 });

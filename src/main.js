@@ -15,6 +15,7 @@ const { startCli }     = require('./cli');
 const credentialStore       = require('./credential-store');
 const securityGate          = require('./security-gate');
 const applianceStateMachine = require('./appliance-state-machine');
+const runbookStore          = require('./runbook-store');
 
 const log = createLogger('main');
 
@@ -51,6 +52,9 @@ const internetIpCheckTool        = require('./tools/internet-ip-check');
 const unitHealthTool             = require('./tools/unit-health');
 const readApplianceStateTool     = require('./tools/read-appliance-state');
 const sessionTelemetryTool       = require('./tools/session-telemetry');
+const runbookUpsertTool          = require('./tools/runbook-upsert');
+const runbookListTool            = require('./tools/runbook-list');
+const runbookTriggerTool         = require('./tools/runbook-trigger');
 
 // ---------------------------------------------------------------------------
 // Credential store CLI subcommand
@@ -168,6 +172,15 @@ async function boot() {
     process.exit(1);
   }
 
+  // 2a-pre2. Create the runbook tables (shares session.db).
+  try {
+    runbookStore.runMigrations();
+    log.info('Runbook store migrations complete.');
+  } catch (err) {
+    log.error(`Runbook store migration failed: ${err.message}`);
+    process.exit(1);
+  }
+
   // 2b. Run skills.db migrations and install seed skills on first run.
   try {
     skillStore.runMigrations();
@@ -207,6 +220,7 @@ async function boot() {
     watcherRegisterTool, watcherListTool, watcherRemoveTool, watcherSetEnabledTool,
     internetIpCheckTool, unitHealthTool, readApplianceStateTool,
     sessionTelemetryTool,
+    runbookUpsertTool, runbookListTool, runbookTriggerTool,
   ]) {
     toolRegistry.register(t.name, t.schema, t.handler, t.riskLevel);
   }

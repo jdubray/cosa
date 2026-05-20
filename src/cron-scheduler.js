@@ -53,6 +53,10 @@ const tokenRotationRemindTool        = require('./tools/token-rotation-remind');
 
 const applianceStateMachine          = require('./appliance-state-machine');
 
+const applianceStatusPollTool        = require('./tools/appliance-status-poll');
+const runbookStore                   = require('./runbook-store');
+const runbookExecutor                = require('./runbook-executor');
+
 const log = createLogger('cron-scheduler');
 
 // ---------------------------------------------------------------------------
@@ -2981,6 +2985,96 @@ async function runApplicationMetricsTask() {
 }
 
 // ---------------------------------------------------------------------------
+// Watcher-evaluation task (2.0) — autonomous watcher tick + runbook dispatch
+// ---------------------------------------------------------------------------
+
+/**
+ * Autonomously poll the appliance, evaluate watchers, and dispatch a bound
+ * runbook (deterministic, no LLM) for each watcher that fires.  Watchers
+ * without a runbook fall back to a read-only Probe session so the event is
+ * still assessed.
+ *
+ * Gated behind `appliance.watchers.evaluation_enabled` (default OFF) so it can
+ * be soaked before going live; `appliance.watchers.dry_run` logs intended
+ * actions without executing them.
+ *
+ * @returns {Promise<void>}
+ */
+async function runWatcherEvalTask() {
+  const { appliance } = getConfig();
+  const cfg = appliance.watchers ?? {};
+
+  if (cfg.evaluation_enabled !== true) {
+    log.debug('[watcher-eval] disabled (appliance.watchers.evaluation_enabled !== true) — skipping');
+    return;
+  }
+  const dryRun = cfg.dry_run === true;
+
+  // Poll + evaluate watchers via the canonical poll tool (applies cooldown).
+  let pollResult;
+  try {
+    pollResult = await applianceStatusPollTool.handler({});
+  } catch (err) {
+    log.error(`[watcher-eval] appliance poll failed: ${err.message}`);
+    return;
+  }
+  if (!pollResult || pollResult.success !== true) {
+    log.warn(`[watcher-eval] poll unsuccessful — skipping (${pollResult?.error ?? 'no result'})`);
+    return;
+  }
+
+  const alerts = pollResult.alerts ?? [];
+  if (alerts.length === 0) {
+    log.info('[watcher-eval] no watchers fired');
+    return;
+  }
+
+  for (const alert of alerts) {
+    const runbookName = alert.runbook_name;
+    const hasRunbook  = runbookName && runbookStore.get(runbookName);
+
+    if (hasRunbook) {
+      if (dryRun) {
+        log.info(`[watcher-eval] DRY RUN — would execute runbook "${runbookName}" for watcher "${alert.watcher_id}"`);
+        continue;
+      }
+      try {
+        const result = await runbookExecutor.executeRunbook(runbookName, {
+          source:  'watcher',
+          watcher: alert.watcher_id,
+          message: alert.message,
+        });
+        log.info(`[watcher-eval] runbook "${runbookName}" → ${result.outcome} (watcher ${alert.watcher_id})`);
+      } catch (err) {
+        log.error(`[watcher-eval] runbook "${runbookName}" threw: ${err.message}`);
+      }
+    } else {
+      if (dryRun) {
+        log.info(`[watcher-eval] DRY RUN — would open a probe session for watcher "${alert.watcher_id}"`);
+        continue;
+      }
+      try {
+        await runSessionWithTimeout(
+          {
+            type:    'cron',
+            source:  'watcher',
+            message:
+              `A monitoring watcher fired.\n\n` +
+              `Watcher: ${alert.watcher_name} (${alert.watcher_id})\n` +
+              `Detail: ${alert.message}\n\n` +
+              `Assess the situation using read-only tools and report your findings — ` +
+              `the system will alert the operator automatically.`,
+          },
+          { role: 'probe' },
+        );
+      } catch (err) {
+        log.error(`[watcher-eval] probe session for "${alert.watcher_id}" failed: ${err.message}`);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Archive-check task (includes ASM history pruning)
 // ---------------------------------------------------------------------------
 
@@ -3022,6 +3116,7 @@ function _taskRunnerMap() {
     auto_patch_cosa:           runAutoPatchCosaTask,
     application_metrics:       runApplicationMetricsTask,
     audit_report:              runAuditAgentTask,
+    watcher_eval:              runWatcherEvalTask,
   };
 }
 
@@ -3125,6 +3220,8 @@ function start() {
   schedule('weekly_digest', '0 2 * * 1',   runWeeklyDigestTask);
   // Audit Agent — weekly operational report, Mondays 08:00 appliance-local.
   schedule('audit_report',  '0 8 * * 1',   runAuditAgentTask);
+  // Watcher-evaluation tick — every 5 min (no-ops unless evaluation_enabled).
+  schedule('watcher_eval',  '*/5 * * * *', runWatcherEvalTask);
 
   // Phase 3 — every 6 hours
   schedule('git_audit',       '0 */8 * * *', runGitAuditTask);
@@ -3190,6 +3287,7 @@ module.exports = {
   formatShiftReportBody,
   runWeeklyDigestTask,
   runAuditAgentTask,
+  runWatcherEvalTask,
   // Phase 3 task runners
   runGitAuditTask,
   runProcessMonitorTask,

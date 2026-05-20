@@ -59,6 +59,13 @@ const SCHEMA = {
           '  return { triggered: false }; ' +
           '}',
       },
+      runbook_name: {
+        type:        'string',
+        description:
+          'Optional name of a stored runbook to execute deterministically when this watcher ' +
+          'fires (instead of an LLM session). The runbook must already exist (see runbook_upsert). ' +
+          'Must match /^[a-z0-9_]{1,64}$/.',
+      },
     },
     required: ['id', 'name', 'description', 'code'],
     additionalProperties: false,
@@ -76,10 +83,11 @@ const SCHEMA = {
 async function handler(input) {
   try {
     await watcherRegistry.register({
-      id:          input.id,
-      name:        input.name,
-      description: input.description,
-      code:        input.code,
+      id:           input.id,
+      name:         input.name,
+      description:  input.description,
+      code:         input.code,
+      runbook_name: input.runbook_name,
     });
     log.info(`Watcher registered: ${input.id} — "${input.name}"`);
     return {

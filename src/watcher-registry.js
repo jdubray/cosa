@@ -134,13 +134,14 @@ class WatcherRegistry {
     const db = this._db();
     this._stmts = {
       upsert: db.prepare(`
-        INSERT INTO watchers (id, name, description, code, created_at, enabled)
-        VALUES (@id, @name, @description, @code, @created_at, 1)
+        INSERT INTO watchers (id, name, description, code, runbook_name, created_at, enabled)
+        VALUES (@id, @name, @description, @code, @runbook_name, @created_at, 1)
         ON CONFLICT(id) DO UPDATE SET
-          name        = excluded.name,
-          description = excluded.description,
-          code        = excluded.code,
-          enabled     = 1
+          name         = excluded.name,
+          description  = excluded.description,
+          code         = excluded.code,
+          runbook_name = excluded.runbook_name,
+          enabled      = 1
       `),
       listAll: db.prepare(`
         SELECT * FROM watchers ORDER BY created_at ASC
@@ -183,11 +184,14 @@ class WatcherRegistry {
    * Validates all fields before writing to ensure that malformed or
    * excessively large input from the LLM is caught early with a clear error.
    *
-   * @param {{ id: string, name: string, description: string, code: string }} watcher
+   * @param {{ id: string, name: string, description: string, code: string,
+   *           runbook_name?: string }} watcher
+   *   `runbook_name` optionally binds the watcher to a deterministic runbook
+   *   that runs (instead of an LLM session) when the watcher fires.
    * @returns {Promise<void>}
    * @throws {Error} `code:'WATCHER_INVALID'` when any field fails validation
    */
-  async register({ id, name, description, code }) {
+  async register({ id, name, description, code, runbook_name }) {
     if (typeof id !== 'string' || !WATCHER_ID_RE.test(id)) {
       const err  = new Error(
         `Invalid watcher id "${id}" — must match /^[a-z0-9_]{1,64}$/`
@@ -219,15 +223,23 @@ class WatcherRegistry {
       throw err;
     }
 
+    if (runbook_name != null &&
+        (typeof runbook_name !== 'string' || !WATCHER_ID_RE.test(runbook_name))) {
+      const err = new Error(`Invalid runbook_name "${runbook_name}" — must match /^[a-z0-9_]{1,64}$/`);
+      err.code  = 'WATCHER_INVALID';
+      throw err;
+    }
+
     const stmts = this._stmtCache();
     stmts.upsert.run({
       id,
       name,
       description,
       code,
+      runbook_name: runbook_name ?? null,
       created_at: new Date().toISOString(),
     });
-    log.info(`Watcher registered: ${id} — "${name}"`);
+    log.info(`Watcher registered: ${id} — "${name}"${runbook_name ? ` (runbook: ${runbook_name})` : ''}`);
   }
 
   /**
@@ -296,6 +308,7 @@ class WatcherRegistry {
         watcher_name: w.name,
         message:      outcome.message ?? `Watcher "${w.name}" triggered`,
         triggered_at: triggeredAt,
+        runbook_name: w.runbook_name ?? null,
       });
     }
 

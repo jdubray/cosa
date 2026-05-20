@@ -93,6 +93,16 @@ operator:
   # Gmail's limit is 500/day; 50 leaves headroom and catches runaway loops early.
   daily_send_limit: 50
 
+# Multi-agent harness (2.0) — autonomous watcher-evaluation loop.
+# The watcher_eval cron task (every 5 min) polls the appliance, evaluates
+# watchers, and runs a bound runbook (deterministic) or opens a Probe session
+# for each watcher that fires. Disabled by default — enable only after soaking.
+watchers:
+  # Master switch. When false, the watcher_eval tick is a no-op.
+  evaluation_enabled: false
+  # When true, log intended runbook/probe actions without executing them.
+  dry_run: false
+
 cron:
   # Public IP monitor — runs every 2 minutes, 24/7.
   # Detects internet outages and IP changes; updates BaanBaan .env on recovery.
@@ -289,6 +299,12 @@ tools:
   session_telemetry:
     enabled: true
   read_appliance_state:
+    enabled: true
+  runbook_upsert:
+    enabled: true
+  runbook_list:
+    enabled: true
+  runbook_trigger:
     enabled: true
   archive_search:
     enabled: true

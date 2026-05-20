@@ -211,6 +211,15 @@ function runMigrations() {
     if (!cols.some(c => c.name === 'intent_raw')) {
       db.exec('ALTER TABLE sessions ADD COLUMN intent_raw TEXT');
     }
+
+    // Multi-agent harness (2.0): optional runbook binding on a watcher.  When a
+    // watcher with a runbook_name fires, the deterministic runbook executor
+    // runs instead of an LLM session.  The watchers table is created above, so
+    // the snapshot is non-empty by the time we reach here.
+    const watcherCols = db.prepare("PRAGMA table_info('watchers')").all();
+    if (watcherCols.length > 0 && !watcherCols.some(c => c.name === 'runbook_name')) {
+      db.exec('ALTER TABLE watchers ADD COLUMN runbook_name TEXT');
+    }
   });
   migrate();
 }
