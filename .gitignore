@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env_baanbaan
 
 # Runtime data
 data/
