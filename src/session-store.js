@@ -201,6 +201,16 @@ function runMigrations() {
     if (!cols.some(c => c.name === 'is_compressed')) {
       db.exec('ALTER TABLE sessions ADD COLUMN is_compressed INTEGER NOT NULL DEFAULT 0');
     }
+
+    // Multi-agent harness (2.0): per-session agent role + raw intent-classifier
+    // output.  Both nullable so existing rows and cron sessions without a
+    // classifier verdict remain valid.  Same guarded ALTER pattern as above.
+    if (!cols.some(c => c.name === 'agent_role')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN agent_role TEXT');
+    }
+    if (!cols.some(c => c.name === 'intent_raw')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN intent_raw TEXT');
+    }
   });
   migrate();
 }
@@ -237,14 +247,26 @@ function now() {
  * @param {{ type: 'email'|'cron'|'cli', source?: string }} trigger
  *   `type` is the trigger kind; `source` is the sender email, cron task name,
  *   or 'cli'.
+ * @param {{ agentRole?: string, intentRaw?: string }} [opts={}]
+ *   Multi-agent harness fields.  `agentRole` is the resolved agent role
+ *   (`'probe'|'query'|'action'|'audit'`); `intentRaw` is the raw
+ *   intent-classifier JSON for email sessions.  Both optional for backward
+ *   compatibility — omitted values are stored as NULL.
  */
-function createSession(sessionId, trigger) {
+function createSession(sessionId, trigger, opts = {}) {
   getDb()
     .prepare(
-      `INSERT INTO sessions (session_id, trigger_type, trigger_source, status, started_at)
-       VALUES (?, ?, ?, 'open', ?)`
+      `INSERT INTO sessions (session_id, trigger_type, trigger_source, status, started_at, agent_role, intent_raw)
+       VALUES (?, ?, ?, 'open', ?, ?, ?)`
     )
-    .run(sessionId, trigger.type, trigger.source ?? null, now());
+    .run(
+      sessionId,
+      trigger.type,
+      trigger.source ?? null,
+      now(),
+      opts.agentRole ?? null,
+      opts.intentRaw ?? null,
+    );
 }
 
 /**

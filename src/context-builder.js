@@ -51,6 +51,51 @@ const COSA_IDENTITY = [
   '- End with a clear next-step recommendation if action is needed.',
 ].join('\n');
 
+/**
+ * Role-specific Layer-0 personas (multi-agent harness, 2.0).
+ *
+ * Each persona is appended to the shared {@link COSA_IDENTITY} so every role
+ * keeps the common operating principles and communication style while gaining
+ * a distinct objective.  This makes each role's Layer 0 unique (AC G1) without
+ * losing the shared safety guidance.  A request with no role falls back to the
+ * bare {@link COSA_IDENTITY} (backward compatible).
+ *
+ * @type {Record<string, string>}
+ */
+const ROLE_PERSONA = {
+  probe:
+    'You are COSA Probe — an observation-only agent. Run the assigned probe, write ' +
+    'results to the appliance state machine, and send an alert email only when a ' +
+    'threshold is exceeded. Do not modify appliance state. Use the minimum number of ' +
+    'tool calls.',
+  query:
+    'You are COSA Query — an information-retrieval agent. Answer the operator\'s question ' +
+    'precisely using read-only probes. Use the minimum number of tool calls. Do not take ' +
+    'any action or modify any state. If the operator is asking for an action, tell them to ' +
+    'resubmit the request as a command.',
+  action:
+    'You are COSA Action — an execution agent. Read the operator\'s request, diagnose the ' +
+    'current state if needed, then execute the requested action. Request operator approval ' +
+    'before any non-read operation. Verify the outcome after execution and report the result ' +
+    'clearly.',
+  audit:
+    'You are COSA Audit — a telemetry and pattern-analysis agent. Read the session history for ' +
+    'the past 7 days and produce a structured weekly report covering: session volume by role, ' +
+    'tool usage frequency, approval rate, top errors, and one operational recommendation. Be ' +
+    'concise and factual.',
+};
+
+/**
+ * Resolve the Layer-0 identity string for a role.
+ *
+ * @param {string} [role] - Agent role, or undefined for the shared identity.
+ * @returns {string}
+ */
+function identityForRole(role) {
+  const persona = role ? ROLE_PERSONA[role] : null;
+  return persona ? `${COSA_IDENTITY}\n\n## Your role this session\n\n${persona}` : COSA_IDENTITY;
+}
+
 // ---------------------------------------------------------------------------
 // Layer helpers
 // ---------------------------------------------------------------------------
@@ -70,12 +115,14 @@ function formatTool(tool) {
 }
 
 /**
- * Build the tool registry section (Layer 6) from currently registered tools.
+ * Build the tool registry section (Layer 6) from currently registered tools,
+ * filtered to the tools the given role is permitted to call.
  *
+ * @param {string} [role] - Agent role to filter the tool set by.
  * @returns {string}
  */
-function buildToolsSection() {
-  const schemas = toolRegistry.getSchemas();
+function buildToolsSection(role) {
+  const schemas = toolRegistry.getSchemas(role);
   if (schemas.length === 0) return 'Available tools: (none)';
   return `Available tools:\n\n${schemas.map(formatTool).join('\n\n')}`;
 }
@@ -115,15 +162,16 @@ function buildToolsSection() {
  *   activeSkills?:   string[],  // Layer 5 — full skill documents
  *   sessionSummary?: string,    // Layer 7 — compressed context summary
  *   timestamp?:      string,    // Layer 9 — ISO timestamp override (for deterministic tests)
+ *   role?:           string,    // Layer 0/6 — agent role ('probe'|'query'|'action'|'audit')
  * }} [options={}]
  * @returns {Array<{ type: 'text', text: string, cache_control?: { type: 'ephemeral' } }>}
  */
 function build(options = {}) {
-  const { memory, skillIndex, activeSkills, sessionSummary, timestamp } = options;
+  const { memory, skillIndex, activeSkills, sessionSummary, timestamp, role } = options;
 
   // ── Cached block: Layers 0–4 ──────────────────────────────────────────────
   const cachedParts = [
-    COSA_IDENTITY,                 // Layer 0
+    identityForRole(role),         // Layer 0 (role-specific persona; falls back to COSA_IDENTITY)
     APPLIANCE_MD.trimEnd(),        // Layer 1
   ];
 
@@ -157,10 +205,10 @@ function build(options = {}) {
     });
   }
 
-  // Layer 6 — Tool registry.
+  // Layer 6 — Tool registry (filtered to the role's permitted risk levels).
   blocks.push({
     type: 'text',
-    text: buildToolsSection(),
+    text: buildToolsSection(role),
   });
 
   // Layer 7 — Session context summary (compressed middle turns).
@@ -195,4 +243,4 @@ function build(options = {}) {
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = { build };
+module.exports = { build, identityForRole, ROLE_PERSONA };

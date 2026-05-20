@@ -17,7 +17,7 @@ jest.mock('../config/cosa.config', () => ({
 // Module under test
 // ---------------------------------------------------------------------------
 
-const { register, getSchemas, dispatch, _reset } = require('../src/tool-registry');
+const { register, getSchemas, dispatch, ROLE_PERMITTED_RISK, _reset } = require('../src/tool-registry');
 
 // ---------------------------------------------------------------------------
 // Config fixture helpers
@@ -359,5 +359,59 @@ describe('AC6 — enabled flag controls registration', () => {
     expect(names).toContain('health_check');
     expect(names).not.toContain('db_query');
     expect(names).toContain('db_integrity');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2.0 — getSchemas(role) risk-level filtering
+// ---------------------------------------------------------------------------
+
+describe('getSchemas(role) — role-based risk filtering', () => {
+  /** Register one tool per risk level so each filter is observable. */
+  function registerOnePerRisk() {
+    mockGetConfig.mockReturnValue(
+      configWithEnabled('read_tool', 'medium_tool', 'high_tool', 'critical_tool', 'dynamic_tool')
+    );
+    register('read_tool',     NO_INPUT_SCHEMA, jest.fn(), 'read');
+    register('medium_tool',   SIMPLE_SCHEMA,   jest.fn(), 'medium');
+    register('high_tool',     SIMPLE_SCHEMA,   jest.fn(), 'high');
+    register('critical_tool', SIMPLE_SCHEMA,   jest.fn(), 'critical');
+    register('dynamic_tool',  SIMPLE_SCHEMA,   jest.fn(), 'dynamic');
+  }
+
+  beforeEach(registerOnePerRisk);
+
+  it('no role argument returns all tools (backward compatible)', () => {
+    expect(getSchemas().map(s => s.name).sort()).toEqual(
+      ['critical_tool', 'dynamic_tool', 'high_tool', 'medium_tool', 'read_tool']
+    );
+  });
+
+  it('probe role sees only read tools', () => {
+    expect(getSchemas('probe').map(s => s.name)).toEqual(['read_tool']);
+  });
+
+  it('query role sees only read tools (dynamic excluded — plan §3 Q2)', () => {
+    expect(getSchemas('query').map(s => s.name)).toEqual(['read_tool']);
+  });
+
+  it('audit role sees only read tools', () => {
+    expect(getSchemas('audit').map(s => s.name)).toEqual(['read_tool']);
+  });
+
+  it('action role sees every risk level', () => {
+    expect(getSchemas('action').map(s => s.name).sort()).toEqual(
+      ['critical_tool', 'dynamic_tool', 'high_tool', 'medium_tool', 'read_tool']
+    );
+  });
+
+  it('an unknown role applies no filter (returns all tools)', () => {
+    expect(getSchemas('bogus')).toHaveLength(5);
+  });
+
+  it('ROLE_PERMITTED_RISK exposes the four roles', () => {
+    expect(Object.keys(ROLE_PERMITTED_RISK).sort()).toEqual(['action', 'audit', 'probe', 'query']);
+    expect(ROLE_PERMITTED_RISK.query).toEqual(['read']);
+    expect(ROLE_PERMITTED_RISK.action).toEqual(expect.arrayContaining(['high', 'critical', 'dynamic']));
   });
 });

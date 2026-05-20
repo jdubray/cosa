@@ -9,6 +9,7 @@ const approvalEngine   = require('./approval-engine');
 const emailGateway     = require('./email-gateway');
 const cronScheduler    = require('./cron-scheduler');
 const { runSession }   = require('./orchestrator');
+const intentClassifier = require('./intent-classifier');
 const { createLogger } = require('./logger');
 const { startCli }     = require('./cli');
 const credentialStore       = require('./credential-store');
@@ -230,12 +231,22 @@ async function boot() {
       `Read the entire message and execute every requested action before replying.\n\n` +
       `---\n${emailContent}\n---`;
 
+    // Classify intent to route to a read-only Query Agent or the full Action
+    // Agent.  Ambiguous (or any classifier failure) routes to Action, which can
+    // read state and ask for clarification — the conservative default.
+    const classification = await intentClassifier.classify(emailContent);
+    const role = classification.intent === 'query' ? 'query' : 'action';
+    log.info(`Email from ${message.from} classified as ${classification.intent} → ${role} agent`);
+
     try {
-      const { response } = await runSession({
-        type:    'email',
-        source:  message.from,
-        message: messageText,
-      });
+      const { response } = await runSession(
+        {
+          type:    'email',
+          source:  message.from,
+          message: messageText,
+        },
+        { role, intentRaw: JSON.stringify(classification) },
+      );
 
       await emailGateway.sendEmail({
         to:         message.from,

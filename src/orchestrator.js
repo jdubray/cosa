@@ -62,6 +62,57 @@ const OPERATOR_MAX_TOKENS = 8192;
 const CRON_MAX_TOKENS = 2048;
 
 /**
+ * Max tokens for the Audit Agent — its weekly report is longer than a cron
+ * summary but shorter than an operator diagnosis.
+ */
+const AUDIT_MAX_TOKENS = 4096;
+
+// ---------------------------------------------------------------------------
+// Per-role execution profiles (multi-agent harness, 2.0)
+// ---------------------------------------------------------------------------
+
+/** Model selected per agent role. */
+const MODEL_BY_ROLE = {
+  probe:  HAIKU_MODEL,
+  query:  SONNET_MODEL,
+  action: SONNET_MODEL,
+  audit:  HAIKU_MODEL,
+};
+
+/** Max output tokens per agent role. */
+const MAX_TOKENS_BY_ROLE = {
+  probe:  CRON_MAX_TOKENS,
+  query:  OPERATOR_MAX_TOKENS,
+  action: OPERATOR_MAX_TOKENS,
+  audit:  AUDIT_MAX_TOKENS,
+};
+
+/** Agent-loop iteration cap per agent role. */
+const MAX_ITER_BY_ROLE = {
+  probe:  MAX_ITERATIONS_CRON,
+  query:  MAX_ITERATIONS_EMAIL,
+  action: MAX_ITERATIONS_EMAIL,
+  audit:  10,
+};
+
+/**
+ * Resolve the agent role for a session.
+ *
+ * An explicit `options.role` always wins.  Otherwise the role is derived from
+ * the trigger type for backward compatibility: cron → probe, everything else
+ * (email, cli) → action (the safe, full-capability default).
+ *
+ * @param {{ type: string }} trigger
+ * @param {{ role?: string }} options
+ * @returns {string}
+ */
+function deriveRole(trigger, options) {
+  if (options.role) return options.role;
+  if (trigger.type === 'cron') return 'probe';
+  return 'action';
+}
+
+/**
  * Maximum byte length of a serialised tool output before it is truncated.
  * Keeps individual tool results from ballooning the context window.
  */
@@ -471,23 +522,47 @@ function makeCallClaudeNap(callClaudeIntent) {
  *   - Render: resolves the outer Promise when status reaches 'complete'
  *
  * @param {{ type: string, source: string, message: string }} trigger
+ * @param {{ role?: string, intentRaw?: string }} [options={}]
+ *   `role` selects the agent profile (model, tokens, iteration cap, tool set,
+ *   Layer-0 persona); derived from the trigger when omitted.  `intentRaw` is
+ *   the raw intent-classifier JSON, persisted for audit.
  * @returns {Promise<{ session_id: string, response: string }>}
  * @throws {Error} On Claude API failure or unhandled tool error.
  */
-async function runSession(trigger) {
+async function runSession(trigger, options = {}) {
   const { env } = getConfig();
   const sessionId = crypto.randomUUID();
 
+  let role = deriveRole(trigger, options);
+
+  if (!MODEL_BY_ROLE[role]) {
+    // Unknown role: normalise to the Action profile (Sonnet, full tools) so the
+    // model, token budget, tool set, Layer-0 persona, and stored agent_role all
+    // stay in lockstep — rather than mixing an action model with an all-tools
+    // schema and a personaless prompt.  Log so the gap is observable.
+    // eslint-disable-next-line no-console
+    console.warn(`[orchestrator] Unknown agent role "${role}" — defaulting to action profile`);
+    role = 'action';
+  }
+
+  const resolvedModel    = MODEL_BY_ROLE[role];
+  const resolvedTokens   = MAX_TOKENS_BY_ROLE[role];
+  const resolvedMaxIter  = MAX_ITER_BY_ROLE[role];
+
   try {
-    createSession(sessionId, { type: trigger.type, source: trigger.source });
+    createSession(
+      sessionId,
+      { type: trigger.type, source: trigger.source },
+      { agentRole: role, intentRaw: options.intentRaw ?? null },
+    );
   } catch (dbErr) {
     throw new Error(`Failed to create session record: ${dbErr.message}`);
   }
 
   const memory       = memoryManager.loadMemory();
   const skillIndex   = skillStore.listCompact();
-  const systemPrompt = contextBuilder.build({ memory, skillIndex });
-  const tools        = toolRegistry.getSchemas();
+  const systemPrompt = contextBuilder.build({ memory, skillIndex, role });
+  const tools        = toolRegistry.getSchemas(role);
 
   try {
     saveTurn(sessionId, 'user', trigger.message, null, null);
@@ -505,24 +580,16 @@ async function runSession(trigger) {
     // ── Initial model state ──────────────────────────────────────────────────
     const initialMessages = [{ role: 'user', content: trigger.message }];
 
-    const isCron = trigger.type === 'cron';
-
-    if (!isCron && trigger.type !== 'email') {
-      // New trigger types added without updating model routing will silently
-      // default to Sonnet.  Log so the gap is observable in production.
-      // eslint-disable-next-line no-console
-      console.warn(`[orchestrator] Unknown trigger type "${trigger.type}" — defaulting to Sonnet`);
-    }
-
     samApi.addInitialState({
       sessionId,
       systemPrompt,
       tools,
       apiKey:           env.anthropicApiKey,
       triggerType:      trigger.type,
-      model:            isCron ? HAIKU_MODEL : SONNET_MODEL,
-      maxTokens:        isCron ? CRON_MAX_TOKENS : OPERATOR_MAX_TOKENS,
-      maxIterations:    isCron ? MAX_ITERATIONS_CRON : MAX_ITERATIONS_EMAIL,
+      agentRole:        role,
+      model:            resolvedModel,
+      maxTokens:        resolvedTokens,
+      maxIterations:    resolvedMaxIter,
       messages:         initialMessages,
       iterations:       0,
       pendingToolCalls: [],
@@ -605,8 +672,8 @@ async function runSession(trigger) {
       tools,
       apiKey:       env.anthropicApiKey,
       sessionId,
-      model:        isCron ? HAIKU_MODEL : SONNET_MODEL,
-      maxTokens:    isCron ? CRON_MAX_TOKENS : OPERATOR_MAX_TOKENS,
+      model:        resolvedModel,
+      maxTokens:    resolvedTokens,
     }).catch(err => {
       if (!sessionClosed) {
         sessionClosed = true;
@@ -621,4 +688,11 @@ async function runSession(trigger) {
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = { runSession };
+module.exports = {
+  runSession,
+  // Exposed for unit testing of the role-routing tables.
+  deriveRole,
+  MODEL_BY_ROLE,
+  MAX_TOKENS_BY_ROLE,
+  MAX_ITER_BY_ROLE,
+};

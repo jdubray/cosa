@@ -21,6 +21,26 @@ const ajv = new Ajv({ allErrors: true });
 /** @type {Map<string, ToolEntry>} */
 const _registry = new Map();
 
+/**
+ * Risk levels each agent role is permitted to call (multi-agent harness, 2.0).
+ *
+ * `getSchemas(role)` filters the advertised tool set to these risk levels so a
+ * role's system prompt only ever lists tools it is allowed to use.
+ *
+ * Note: `query` deliberately excludes `'dynamic'` (i.e. `appliance_api_call`).
+ * A dynamic endpoint can resolve to a write at call time, which would trip the
+ * approval gate and leak that a read-only Query session attempted an action.
+ * Keeping Query strictly read-only avoids that. (See 2.0 plan §3, Q2.)
+ *
+ * @type {Record<string, string[]>}
+ */
+const ROLE_PERMITTED_RISK = {
+  probe:  ['read'],
+  query:  ['read'],
+  action: ['read', 'medium', 'high', 'critical', 'dynamic'],
+  audit:  ['read'],
+};
+
 // ---------------------------------------------------------------------------
 // Error helpers
 // ---------------------------------------------------------------------------
@@ -107,17 +127,26 @@ function getRiskLevel(name) {
 }
 
 /**
- * Return all registered tool definitions in the Anthropic API `tool_use`
- * format, ready to be passed directly to `messages.create({ tools: ... })`.
+ * Return registered tool definitions in the Anthropic API `tool_use` format,
+ * ready to be passed directly to `messages.create({ tools: ... })`.
  *
+ * When `role` is provided, the result is filtered to the risk levels that role
+ * is permitted to call (see {@link ROLE_PERMITTED_RISK}).  An unknown role
+ * applies no filter (returns all tools) — callers should pass a known role.
+ * Called with no argument the behaviour is unchanged: all tools are returned.
+ *
+ * @param {string} [role] - Optional agent role to filter by.
  * @returns {Array<{ name: string, description: string, input_schema: object }>}
  */
-function getSchemas() {
-  return Array.from(_registry.entries()).map(([name, { schema }]) => ({
-    name,
-    description:  schema.description,
-    input_schema: schema.inputSchema,
-  }));
+function getSchemas(role) {
+  const permitted = role ? (ROLE_PERMITTED_RISK[role] ?? null) : null;
+  return Array.from(_registry.entries())
+    .filter(([, { riskLevel }]) => !permitted || permitted.includes(riskLevel))
+    .map(([name, { schema }]) => ({
+      name,
+      description:  schema.description,
+      input_schema: schema.inputSchema,
+    }));
 }
 
 /**
@@ -153,4 +182,4 @@ function _reset() {
   _registry.clear();
 }
 
-module.exports = { register, getSchemas, dispatch, getRiskLevel, _reset };
+module.exports = { register, getSchemas, dispatch, getRiskLevel, ROLE_PERMITTED_RISK, _reset };

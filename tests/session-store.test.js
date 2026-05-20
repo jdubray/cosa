@@ -204,6 +204,36 @@ describe('AC5 — indexes', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 2.0 — sessions.agent_role + sessions.intent_raw columns
+// ---------------------------------------------------------------------------
+
+describe('2.0 — agent_role / intent_raw columns', () => {
+  beforeEach(() => runMigrations());
+
+  ['agent_role', 'intent_raw'].forEach(colName => {
+    it(`adds the ${colName} column to sessions`, () => {
+      const db = openDb();
+      const cols = db.prepare("PRAGMA table_info('sessions')").all().map(c => c.name);
+      db.close();
+      expect(cols).toContain(colName);
+    });
+  });
+
+  it('column-add migration is idempotent across a reopen', () => {
+    expect(() => {
+      closeDb();
+      _resetConfig();
+      runMigrations();
+    }).not.toThrow();
+
+    const db = openDb();
+    const cols = db.prepare("PRAGMA table_info('sessions')").all().map(c => c.name);
+    db.close();
+    expect(cols).toEqual(expect.arrayContaining(['agent_role', 'intent_raw']));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC6: Migrations are idempotent
 // ---------------------------------------------------------------------------
 

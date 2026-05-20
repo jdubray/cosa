@@ -140,6 +140,33 @@ describe('createSession()', () => {
 
     expect(row.trigger_source).toBeNull();
   });
+
+  // ── 2.0 multi-agent harness: agent_role + intent_raw ─────────────────────
+  it('persists agent_role and intent_raw when provided', () => {
+    createSession(
+      SESSION_A,
+      { type: 'email', source: 'owner@example.com' },
+      { agentRole: 'query', intentRaw: '{"intent":"query","confidence":0.9}' },
+    );
+
+    const db = openDb();
+    const row = db.prepare(`SELECT * FROM sessions WHERE session_id = ?`).get(SESSION_A);
+    db.close();
+
+    expect(row.agent_role).toBe('query');
+    expect(row.intent_raw).toBe('{"intent":"query","confidence":0.9}');
+  });
+
+  it('stores agent_role and intent_raw as NULL when opts omitted (backward compatible)', () => {
+    createSession(SESSION_A, { type: 'cron', source: 'health_check' });
+
+    const db = openDb();
+    const row = db.prepare(`SELECT * FROM sessions WHERE session_id = ?`).get(SESSION_A);
+    db.close();
+
+    expect(row.agent_role).toBeNull();
+    expect(row.intent_raw).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
