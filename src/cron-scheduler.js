@@ -51,6 +51,8 @@ const jwtSecretCheckTool             = require('./tools/jwt-secret-check');
 const pciAssessmentTool              = require('./tools/pci-assessment');
 const tokenRotationRemindTool        = require('./tools/token-rotation-remind');
 
+const applianceStateMachine          = require('./appliance-state-machine');
+
 const log = createLogger('cron-scheduler');
 
 // ---------------------------------------------------------------------------
@@ -767,6 +769,9 @@ async function runInternetIpWatchTask() {
     return;
   }
 
+  // Feed current network state into the persistent appliance state model.
+  applianceStateMachine.applyProbe('network', checkResult);
+
   const state = _readIpState();
 
   // ── 2. Internet is down ───────────────────────────────────────────────────
@@ -954,6 +959,9 @@ async function runHealthCheckTask() {
 
   const overall_status = healthResult.overall_status ?? 'unreachable';
   log.info(`Health check complete: ${overall_status}`);
+
+  // Feed result into the persistent appliance state model.
+  applianceStateMachine.applyProbe('health', healthResult);
 
   if (overall_status === 'healthy') {
     // ── Recovery notification: send once when transitioning from an alert ────
@@ -2133,6 +2141,13 @@ async function runCredentialAuditTask() {
     return;
   }
 
+  // Feed credential audit result into the persistent appliance state model.
+  applianceStateMachine.applyProbe('security', {
+    source:     'credential_audit',
+    ok:         (auditResult.findings ?? []).length === 0,
+    checked_at: new Date().toISOString(),
+  });
+
   const findings           = Array.isArray(auditResult.findings)           ? auditResult.findings           : [];
   const suppressedFindings = Array.isArray(auditResult.suppressedFindings) ? auditResult.suppressedFindings : [];
 
@@ -2204,6 +2219,13 @@ async function runComplianceVerifyTask() {
     log.error(`Compliance verify threw: ${err.message}`);
     return;
   }
+
+  // Feed compliance posture into the persistent appliance state model.
+  applianceStateMachine.applyProbe('security', {
+    source:     'compliance_verify',
+    passed:     (verifyResult.fail_count ?? 0) === 0,
+    checked_at: new Date().toISOString(),
+  });
 
   const failCount     = verifyResult.fail_count    ?? 0;
   const warningCount  = verifyResult.warning_count ?? 0;
@@ -2560,6 +2582,9 @@ async function runResourceThresholdTask() {
     return;
   }
 
+  // Feed result into the persistent appliance state model regardless of findings.
+  applianceStateMachine.applyProbe('resources', result);
+
   if (result.skipped || !result.findings || result.findings.length === 0) {
     log.info(`[rtm] complete: 0 findings`);
     return;
@@ -2786,6 +2811,102 @@ function _getRunningKeys() {
   return _runningKeys;
 }
 
+// ---------------------------------------------------------------------------
+// Application metrics task
+// ---------------------------------------------------------------------------
+
+/**
+ * Collect lightweight application-level metrics from the Baanbaan SQLite DB
+ * via SSH and feed them into the appliance state machine.
+ *
+ * Runs every 15 minutes. No alert email is sent — this is purely an ASM feed.
+ * Skipped silently when SSH is not connected.
+ *
+ * @returns {Promise<void>}
+ */
+async function runApplicationMetricsTask() {
+  if (!sshBackend.isConnected()) {
+    log.info('[app-metrics] SSH not connected — skipping');
+    return;
+  }
+
+  const { appliance } = getConfig();
+  const dbPath        = appliance.database?.path;
+
+  if (!dbPath) {
+    log.warn('[app-metrics] appliance.database.path not configured — skipping');
+    return;
+  }
+
+  const checkedAt    = new Date().toISOString();
+  const escapedPath  = dbPath.replace(/"/g, '\\"');
+  const cmd          = `sqlite3 -json -readonly "${escapedPath}"`;
+
+  // Single query returns three rows using UNION ALL — one exec via stdin.
+  const sql = [
+    `SELECT 'active_orders' AS k,`,
+    `  CAST(COUNT(*) AS TEXT) AS v`,
+    `  FROM orders WHERE status IN ('open','in_progress','ready')`,
+    `UNION ALL`,
+    `SELECT 'paused' AS k,`,
+    `  COALESCE((SELECT value FROM settings WHERE key='online_ordering_paused' LIMIT 1), '0') AS v`,
+    `UNION ALL`,
+    `SELECT 'bun_version' AS k,`,
+    `  COALESCE((SELECT value FROM settings WHERE key='bun_version' LIMIT 1), '') AS v`,
+  ].join(' ');
+
+  const data = {
+    active_orders:          null,
+    db_size_bytes:          null,
+    online_ordering_paused: null,
+    bun_version:            null,
+    checked_at:             checkedAt,
+    error:                  null,
+  };
+
+  // ── 1. SQL metrics ────────────────────────────────────────────────────────
+  try {
+    const { stdout, exitCode, stderr } = await sshBackend.exec(cmd, sql, 10000);
+    if (exitCode !== 0) {
+      data.error = `sqlite3 exited ${exitCode}: ${stderr.trim()}`;
+    } else {
+      const rows = stdout.trim() ? JSON.parse(stdout.trim()) : [];
+      for (const row of rows) {
+        if (row.k === 'active_orders') data.active_orders = parseInt(row.v, 10) || 0;
+        if (row.k === 'paused')        data.online_ordering_paused = row.v === '1' || row.v === 'true';
+        if (row.k === 'bun_version')   data.bun_version = row.v || null;
+      }
+    }
+  } catch (err) {
+    data.error = err.message;
+    log.warn(`[app-metrics] SQL query failed: ${err.message}`);
+  }
+
+  // ── 2. DB file size (stat is cheaper than PRAGMA page_count) ─────────────
+  if (!data.error) {
+    try {
+      const { stdout: szOut, exitCode: szCode } = await sshBackend.exec(
+        `stat -c %s "${escapedPath}"`,
+        undefined,
+        5000
+      );
+      if (szCode === 0) {
+        const bytes = parseInt(szOut.trim(), 10);
+        if (!isNaN(bytes)) data.db_size_bytes = bytes;
+      }
+    } catch (err) {
+      log.warn(`[app-metrics] stat failed: ${err.message}`);
+    }
+  }
+
+  applianceStateMachine.applyProbe('application', data);
+  log.info(`[app-metrics] complete — orders=${data.active_orders}, db=${data.db_size_bytes}`);
+}
+
+// ---------------------------------------------------------------------------
+// Archive-check task (includes ASM history pruning)
+// ---------------------------------------------------------------------------
+
 /**
  * Map of task name → runner function. Used both by start() for cron
  * registration and by fireCronTask() for manual one-shot invocation
@@ -2822,6 +2943,7 @@ function _taskRunnerMap() {
     resource_threshold_monitor: runResourceThresholdTask,
     auto_patch_appliance:      runAutoPatchApplianceTask,
     auto_patch_cosa:           runAutoPatchCosaTask,
+    application_metrics:       runApplicationMetricsTask,
   };
 }
 
@@ -2916,7 +3038,11 @@ function start() {
   schedule('health_check_dinner',  '0,30 17-20 * * *', runHealthCheckTask);
   schedule('backup',        '0 3 * * *',   runBackupTask);
   schedule('backup_verify', '5 3 * * *',   runBackupVerifyTask);
-  schedule('archive_check', '10 3 * * *',  runArchiveCheckTask);
+  schedule('archive_check', '10 3 * * *',  async () => {
+    await runArchiveCheckTask();
+    // Prune ASM history rows older than 7 days alongside the nightly archive pass.
+    applianceStateMachine.pruneOldHistory();
+  });
   schedule('shift_report',  '0 6 * * *',   runShiftReportTask);
   schedule('weekly_digest', '0 2 * * 1',   runWeeklyDigestTask);
 
@@ -2947,6 +3073,9 @@ function start() {
 
   // Resource threshold monitor — every 5 min during business hours
   schedule('resource_threshold_monitor', '*/5 8-21 * * *', runResourceThresholdTask);
+
+  // Application metrics — every 15 min, 24/7 (lightweight SSH query, no alerts)
+  schedule('application_metrics', '*/15 * * * *', runApplicationMetricsTask);
 
   // Auto-patch — runs once daily at fixed times, 13 hours apart so they
   // never run concurrently. Appliance at 01:00 (low-traffic window); COSA

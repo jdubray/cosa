@@ -1,8 +1,9 @@
 'use strict';
 
-const fs           = require('fs');
-const path         = require('path');
-const toolRegistry = require('./tool-registry');
+const fs                    = require('fs');
+const path                  = require('path');
+const toolRegistry          = require('./tool-registry');
+const applianceStateMachine = require('./appliance-state-machine');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -170,7 +171,14 @@ function build(options = {}) {
     });
   }
 
-  // Layer 8 — Cross-session recall: deferred to Phase 3.
+  // Layer 8 — Appliance state snapshot (fresh block; not cached across turns).
+  const asmSummary = applianceStateMachine.getSummary();
+  if (asmSummary) {
+    blocks.push({
+      type: 'text',
+      text: `## Appliance State\n\n${asmSummary}`,
+    });
+  }
 
   // Layer 9 — Current timestamp.
   // Accepts a `timestamp` override so callers can produce deterministic output

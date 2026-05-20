@@ -11,8 +11,9 @@ const cronScheduler    = require('./cron-scheduler');
 const { runSession }   = require('./orchestrator');
 const { createLogger } = require('./logger');
 const { startCli }     = require('./cli');
-const credentialStore  = require('./credential-store');
-const securityGate     = require('./security-gate');
+const credentialStore       = require('./credential-store');
+const securityGate          = require('./security-gate');
+const applianceStateMachine = require('./appliance-state-machine');
 
 const log = createLogger('main');
 
@@ -47,6 +48,7 @@ const watcherRemoveTool          = require('./tools/watcher-remove');
 const watcherSetEnabledTool      = require('./tools/watcher-set-enabled');
 const internetIpCheckTool        = require('./tools/internet-ip-check');
 const unitHealthTool             = require('./tools/unit-health');
+const readApplianceStateTool     = require('./tools/read-appliance-state');
 
 // ---------------------------------------------------------------------------
 // Credential store CLI subcommand
@@ -154,6 +156,16 @@ async function boot() {
     process.exit(1);
   }
 
+  // 2a-pre. Initialize the Appliance State Machine (runs its own migrations
+  //         against session.db, then warms from any saved snapshot).
+  try {
+    applianceStateMachine.init();
+    log.info('Appliance state machine initialized.');
+  } catch (err) {
+    log.error(`Appliance state machine init failed: ${err.message}`);
+    process.exit(1);
+  }
+
   // 2b. Run skills.db migrations and install seed skills on first run.
   try {
     skillStore.runMigrations();
@@ -191,7 +203,7 @@ async function boot() {
     tokenRotationRemindTool, pauseApplianceTool,
     applianceStatusPollTool, applianceApiCallTool,
     watcherRegisterTool, watcherListTool, watcherRemoveTool, watcherSetEnabledTool,
-    internetIpCheckTool, unitHealthTool,
+    internetIpCheckTool, unitHealthTool, readApplianceStateTool,
   ]) {
     toolRegistry.register(t.name, t.schema, t.handler, t.riskLevel);
   }
@@ -257,12 +269,13 @@ async function boot() {
  */
 function _shutdown(signal) {
   log.info(`Received ${signal} — shutting down gracefully`);
-  try { cronScheduler.stop(); }           catch { /* ignore */ }
-  try { emailGateway.stopPolling(); }     catch { /* ignore */ }
-  try { approvalEngine.stopExpiryCheck(); } catch { /* ignore */ }
-  try { skillStore.closeDb(); }           catch { /* ignore */ }
-  try { credentialStore.closeDb(); }      catch { /* ignore */ }
-  try { closeSessionDb(); }               catch { /* ignore */ }
+  try { cronScheduler.stop(); }              catch { /* ignore */ }
+  try { emailGateway.stopPolling(); }        catch { /* ignore */ }
+  try { approvalEngine.stopExpiryCheck(); }  catch { /* ignore */ }
+  try { applianceStateMachine.close(); }     catch { /* ignore */ }
+  try { skillStore.closeDb(); }              catch { /* ignore */ }
+  try { credentialStore.closeDb(); }         catch { /* ignore */ }
+  try { closeSessionDb(); }                  catch { /* ignore */ }
   process.exit(0);
 }
 
