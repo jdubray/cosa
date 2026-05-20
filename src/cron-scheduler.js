@@ -108,6 +108,7 @@ const BACKUP_VERIFY_CATEGORY      = 'backup-verify';
 const ARCHIVE_CHECK_CATEGORY      = 'archive_check';
 const SHIFT_REPORT_CATEGORY       = 'shift_report';
 const DIGEST_CATEGORY             = 'digest';
+const AUDIT_REPORT_CATEGORY       = 'audit_report';
 
 // Phase 3 categories
 const GIT_AUDIT_CATEGORY          = 'git_audit';
@@ -141,18 +142,22 @@ const UNIT_HEALTH_DEDUP_WINDOW_MS       = 30 * 60 * 1000;
  * promise rejects so the cron task can log and move on rather than hanging.
  *
  * @param {{ type: string, source: string, message: string }} trigger
- * @returns {Promise<{ session_id: string }>}
+ * @param {{ role?: string, intentRaw?: string }} [options={}]
+ *   Forwarded to `orchestrator.runSession` (e.g. `{ role: 'audit' }`).
+ * @returns {Promise<{ session_id: string, response: string }>}
  */
-function runSessionWithTimeout(trigger) {
-  return Promise.race([
-    orchestrator.runSession(trigger),
-    new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Cron session timed out after ${CRON_SESSION_TIMEOUT_MS / 1000}s (source: ${trigger.source})`)),
-        CRON_SESSION_TIMEOUT_MS
-      )
-    ),
-  ]);
+function runSessionWithTimeout(trigger, options = {}) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Cron session timed out after ${CRON_SESSION_TIMEOUT_MS / 1000}s (source: ${trigger.source})`)),
+      CRON_SESSION_TIMEOUT_MS
+    );
+  });
+  // clearTimeout on settle so a completed session does not leave the timeout
+  // timer pending (which would keep the event loop alive).
+  return Promise.race([orchestrator.runSession(trigger, options), timeout])
+    .finally(() => clearTimeout(timer));
 }
 
 // ---------------------------------------------------------------------------
@@ -1609,6 +1614,78 @@ async function runWeeklyDigestTask() {
   log.info(`Weekly digest sent: ${subject}`);
 }
 
+/**
+ * Audit Agent (2.0): a weekly Haiku session that mines COSA's own session
+ * telemetry and emails the operator a structured operational report.
+ *
+ * Unlike the per-incident alerts, this always sends — a weekly "all clear" is a
+ * valuable liveness signal (2.0 plan §3, Q4).  A 6-day dedup guard prevents a
+ * duplicate report if the task fires twice in the same week.
+ *
+ * @returns {Promise<void>}
+ */
+async function runAuditAgentTask() {
+  const { appliance } = getConfig();
+  const operatorEmail = appliance.operator.email;
+  const weekOf        = _getMondayDateString();
+  const subject       = `COSA Weekly Report — ${weekOf}`;
+
+  // Dedup: suppress if an audit report was sent in the last 6 days.
+  const sinceDedupIso = new Date(Date.now() - DIGEST_DEDUP_WINDOW_MS).toISOString();
+  const recent        = findRecentAlert(AUDIT_REPORT_CATEGORY, 'info', sinceDedupIso);
+  if (recent) {
+    log.info(`Suppressed duplicate audit report (last sent: ${recent.sent_at})`);
+    return;
+  }
+
+  const message =
+    `Generate the weekly COSA operational report for the past 7 days. ` +
+    `Call the session_telemetry tool once (days=7) to retrieve aggregate metrics, then ` +
+    `format a concise plain-text report with these sections:\n` +
+    `  - Sessions by role (and % of total)\n` +
+    `  - Tool usage (top 10)\n` +
+    `  - Approval outcomes (approved/denied/expired and approval rate)\n` +
+    `  - Top errors (tool name, count, most recent)\n` +
+    `  - One specific, actionable operational recommendation\n` +
+    `Do not call any other tool. Reply with the report body only.\n\n` +
+    `Current time: ${new Date().toISOString()}`;
+
+  let response;
+  try {
+    ({ response } = await runSessionWithTimeout(
+      { type: 'cron', source: 'audit-agent', message },
+      { role: 'audit' },
+    ));
+  } catch (err) {
+    log.error(`[audit-agent] session failed: ${err.message}`);
+    return;
+  }
+
+  if (!response || !response.trim()) {
+    log.warn('[audit-agent] empty report — not sending');
+    return;
+  }
+
+  const sentAt = new Date().toISOString();
+  await emailGateway.sendEmail({
+    to:      operatorEmail,
+    subject,
+    text:    response,
+  });
+
+  createAlert({
+    session_id: null,
+    severity:   'info',
+    category:   AUDIT_REPORT_CATEGORY,
+    title:      subject,
+    body:       response,
+    sent_at:    sentAt,
+    email_to:   operatorEmail,
+  });
+
+  log.info(`[audit-agent] weekly report sent: ${subject}`);
+}
+
 // ---------------------------------------------------------------------------
 // Phase 3 cron tasks
 // ---------------------------------------------------------------------------
@@ -2944,6 +3021,7 @@ function _taskRunnerMap() {
     auto_patch_appliance:      runAutoPatchApplianceTask,
     auto_patch_cosa:           runAutoPatchCosaTask,
     application_metrics:       runApplicationMetricsTask,
+    audit_report:              runAuditAgentTask,
   };
 }
 
@@ -3045,6 +3123,8 @@ function start() {
   });
   schedule('shift_report',  '0 6 * * *',   runShiftReportTask);
   schedule('weekly_digest', '0 2 * * 1',   runWeeklyDigestTask);
+  // Audit Agent — weekly operational report, Mondays 08:00 appliance-local.
+  schedule('audit_report',  '0 8 * * 1',   runAuditAgentTask);
 
   // Phase 3 — every 6 hours
   schedule('git_audit',       '0 */8 * * *', runGitAuditTask);
@@ -3109,6 +3189,7 @@ module.exports = {
   runShiftReportTask,
   formatShiftReportBody,
   runWeeklyDigestTask,
+  runAuditAgentTask,
   // Phase 3 task runners
   runGitAuditTask,
   runProcessMonitorTask,

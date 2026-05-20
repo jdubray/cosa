@@ -170,6 +170,7 @@ const {
   runPciAssessmentTask,
   runTokenRotationRemindTask,
   runResourceThresholdTask,
+  runAuditAgentTask,
   buildGitAuditTrigger,
   buildProcessMonitorTrigger,
   buildNetworkScanTrigger,
@@ -1376,5 +1377,65 @@ describe('unit_health cron task', () => {
     start();
     const calls = mockCronSchedule.mock.calls.filter((c) => c[0] === '*/10 8-21 * * *');
     expect(calls.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2.0 — Audit Agent weekly report
+// ---------------------------------------------------------------------------
+
+describe('runAuditAgentTask', () => {
+  test('runs an audit-role session and emails the report', async () => {
+    mockRunSession.mockResolvedValue({ session_id: 'audit-1', response: 'Weekly report body.' });
+
+    await runAuditAgentTask();
+
+    // session ran with role: 'audit'
+    expect(mockRunSession).toHaveBeenCalledTimes(1);
+    const [trigger, options] = mockRunSession.mock.calls[0];
+    expect(trigger).toMatchObject({ type: 'cron', source: 'audit-agent' });
+    expect(options).toEqual({ role: 'audit' });
+
+    // report emailed to the operator
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    const email = mockSendEmail.mock.calls[0][0];
+    expect(email.to).toBe('ops@restaurant.com');
+    expect(email.subject).toMatch(/COSA Weekly Report/);
+    expect(email.text).toBe('Weekly report body.');
+
+    // logged as an audit_report alert for dedup
+    expect(mockCreateAlert).toHaveBeenCalledTimes(1);
+    expect(mockCreateAlert.mock.calls[0][0]).toMatchObject({ category: 'audit_report', severity: 'info' });
+  });
+
+  test('suppresses a duplicate report within the dedup window', async () => {
+    mockFindRecentAlert.mockReturnValue({ sent_at: '2026-05-18T08:00:00Z' });
+
+    await runAuditAgentTask();
+
+    expect(mockRunSession).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  test('does not send when the session returns an empty report', async () => {
+    mockRunSession.mockResolvedValue({ session_id: 'audit-1', response: '   ' });
+
+    await runAuditAgentTask();
+
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockCreateAlert).not.toHaveBeenCalled();
+  });
+
+  test('does not throw or email when the session fails', async () => {
+    mockRunSession.mockRejectedValue(new Error('claude down'));
+
+    await expect(runAuditAgentTask()).resolves.toBeUndefined();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  test('start() registers audit_report on Mondays at 08:00', () => {
+    start();
+    const calls = mockCronSchedule.mock.calls.filter((c) => c[0] === '0 8 * * 1');
+    expect(calls.length).toBeGreaterThanOrEqual(1);
   });
 });
