@@ -252,7 +252,7 @@ describe('watcher_set_enabled tool', () => {
 
   test('exports correct name and riskLevel', () => {
     expect(setEnabledTool.name).toBe('watcher_set_enabled');
-    expect(setEnabledTool.riskLevel).toBe('read');
+    expect(setEnabledTool.riskLevel).toBe('medium');
   });
 
   test('schema requires id and enabled', () => {

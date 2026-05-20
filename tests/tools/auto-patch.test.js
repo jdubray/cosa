@@ -65,7 +65,7 @@ beforeEach(() => {
 describe('auto_patch tool — metadata', () => {
   test('exports name and risk level', () => {
     expect(name).toBe('auto_patch');
-    expect(riskLevel).toBe('destructive');
+    expect(riskLevel).toBe('high');
   });
 });
 
