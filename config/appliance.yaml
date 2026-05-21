@@ -99,9 +99,9 @@ operator:
 # for each watcher that fires. Disabled by default — enable only after soaking.
 watchers:
   # Master switch. When false, the watcher_eval tick is a no-op.
-  evaluation_enabled: false
+  evaluation_enabled: true
   # When true, log intended runbook/probe actions without executing them.
-  dry_run: false
+  dry_run: true
 
 cron:
   # Public IP monitor — runs every 2 minutes, 24/7.
