@@ -43,7 +43,10 @@ function interpolateCredentials(template) {
  * @throws {Error} `code:'APPLIANCE_AUTH_FAILED'` when no token field is found
  */
 function _storeTokens(authConfig, data, context) {
-  const newAccessToken = data.accessToken ?? data.token ?? data.access_token ?? null;
+  // Appliance returns { user, tokens: { accessToken, refreshToken } } — read from
+  // the nested `tokens` object when present, else fall back to top-level fields.
+  const src = (data && typeof data.tokens === 'object' && data.tokens) ? data.tokens : data;
+  const newAccessToken = src.accessToken ?? src.token ?? src.access_token ?? null;
   if (!newAccessToken) {
     const err  = new Error(
       `Could not extract access token from ${context} response ` +
@@ -54,7 +57,7 @@ function _storeTokens(authConfig, data, context) {
   }
   credentialStore.set(authConfig.access_token_credential_key, newAccessToken);
 
-  const newRefreshToken = data.refreshToken ?? data.refresh_token ?? null;
+  const newRefreshToken = src.refreshToken ?? src.refresh_token ?? null;
   if (newRefreshToken) {
     credentialStore.set(authConfig.refresh_token_credential_key, newRefreshToken);
   }
@@ -73,7 +76,8 @@ function buildAuthHeaders(authConfig) {
   if (!type || type === 'none') return {};
 
   if (type === 'api_key') {
-    const key = credentialStore.get(authConfig.api_key_credential_key);
+    let key = null;
+    try { key = credentialStore.get(authConfig.api_key_credential_key); } catch { key = null; }
     if (!key) {
       const err  = new Error(`Required credential "${authConfig.api_key_credential_key}" is not set in the credential store`);
       err.code   = 'CREDENTIAL_NOT_FOUND';
@@ -84,7 +88,8 @@ function buildAuthHeaders(authConfig) {
   }
 
   if (type === 'jwt') {
-    const token = credentialStore.get(authConfig.access_token_credential_key);
+    let token = null;
+    try { token = credentialStore.get(authConfig.access_token_credential_key); } catch { token = null; }
     // No token yet (first boot / not yet logged in) — return empty headers so
     // the first API request receives a proper 401 and the normal refresh → login
     // flow fires.  Sending "Bearer null" would also trigger a 401 but via a
@@ -207,11 +212,23 @@ function _ensureRefresh(baseUrl, authConfig, timeoutMs) {
   if (_refreshInFlight) return _refreshInFlight;
 
   _refreshInFlight = (async () => {
+    // First boot (or a cleared store) has no refresh token — go straight to a
+    // full login instead of letting doRefresh throw CREDENTIAL_NOT_FOUND.
+    let hasRefreshToken = false;
+    try { hasRefreshToken = !!credentialStore.get(authConfig.refresh_token_credential_key); }
+    catch { hasRefreshToken = false; }
+
+    if (!hasRefreshToken) {
+      await doLogin(baseUrl, authConfig, timeoutMs);
+      return;
+    }
+
     try {
       await doRefresh(baseUrl, authConfig, timeoutMs);
     } catch (refreshErr) {
-      if (refreshErr.code !== 'APPLIANCE_REFRESH_FAILED') throw refreshErr;
-      log.warn('Refresh token rejected — attempting full re-login');
+      // 401 (refresh rejected) or a missing/invalid refresh token → full re-login.
+      if (refreshErr.code !== 'APPLIANCE_REFRESH_FAILED' && refreshErr.code !== 'CREDENTIAL_NOT_FOUND') throw refreshErr;
+      log.warn('Refresh failed — attempting full re-login');
       try {
         await doLogin(baseUrl, authConfig, timeoutMs);
       } catch {

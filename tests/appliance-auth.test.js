@@ -467,3 +467,64 @@ describe('withApplianceAuth — refresh deduplication', () => {
     expect(r2.status).toBe(200);
   });
 });
+
+// ===========================================================================
+// Regression: real credential-store throws on missing keys (the mock above
+// returns '' which masked three first-boot bugs). These tests simulate the
+// real behavior. 2026-05-21.
+// ===========================================================================
+
+/** Mock get() to THROW on absent keys (like the real store); set() adds. */
+function setupCredStoreThrowing(initial) {
+  const store = { ...initial };
+  credentialStore.get.mockImplementation((key) => {
+    if (!(key in store)) throw new Error(`Credential not found: ${key}`);
+    return store[key];
+  });
+  credentialStore.set.mockImplementation((key, val) => { store[key] = val; });
+}
+
+describe('first-boot auth (credential-store throws on missing)', () => {
+  test('buildAuthHeaders does not throw when access token is absent — request proceeds', async () => {
+    setConfig(makeJwtConfig());
+    setupCredStoreThrowing({ appliance_email: 'e@x.com', appliance_password: 'pw' });
+    const apiFn = jest.fn().mockResolvedValue({ status: 200, body: { ok: true } });
+
+    const res = await withApplianceAuth(apiFn);
+
+    expect(res.status).toBe(200);
+    // First attempt used empty headers (no token yet), not a thrown CREDENTIAL_NOT_FOUND.
+    expect(apiFn).toHaveBeenCalledWith({});
+  });
+
+  test('no refresh token → goes straight to login (not refresh) on 401', async () => {
+    setConfig(makeJwtConfig());
+    setupCredStoreThrowing({ appliance_email: 'e@x.com', appliance_password: 'pw' });
+    mockFetch([{ status: 200, body: { user: {}, tokens: { accessToken: 'A', refreshToken: 'R' } } }]);
+    const apiFn = jest.fn()
+      .mockResolvedValueOnce({ status: 401 })            // attempt 1: no token
+      .mockResolvedValue({ status: 200, body: { ok: true } }); // attempt 2: after login
+
+    const res = await withApplianceAuth(apiFn);
+
+    expect(res.status).toBe(200);
+    // The single auth fetch must be the LOGIN endpoint, never refresh.
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toContain('/api/auth/login');
+    expect(url).not.toContain('/api/auth/refresh');
+  });
+
+  test('_storeTokens reads tokens nested under data.tokens (appliance response shape)', async () => {
+    setConfig(makeJwtConfig());
+    setupCredStoreThrowing({ appliance_email: 'e@x.com', appliance_password: 'pw' });
+    mockFetch([{ status: 200, body: { user: { id: 'u1' }, tokens: { accessToken: 'NEST_A', refreshToken: 'NEST_R' } } }]);
+    const apiFn = jest.fn()
+      .mockResolvedValueOnce({ status: 401 })
+      .mockResolvedValue({ status: 200, body: { ok: true } });
+
+    await withApplianceAuth(apiFn);
+
+    expect(credentialStore.set).toHaveBeenCalledWith('appliance_access_token', 'NEST_A');
+    expect(credentialStore.set).toHaveBeenCalledWith('appliance_refresh_token', 'NEST_R');
+  });
+});

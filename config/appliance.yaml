@@ -14,7 +14,7 @@ ssh:
   command_timeout_ms: 30000
 
 appliance_api:
-  base_url: "http://192.168.1.248:3000"
+  base_url: "https://hanuman-thai-cafe.baanbaan.org"
   health_endpoint: "/health"
   health_ready_endpoint: "/health/ready"
   request_timeout_ms: 10000
