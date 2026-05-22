@@ -984,3 +984,104 @@ describe('top command failure', () => {
     await expect(handler()).rejects.toThrow(/top failed/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// decodeThrottled — vcgencmd get_throttled bitmask decoding (2026-05-22)
+// ---------------------------------------------------------------------------
+
+describe('decodeThrottled', () => {
+  const { decodeThrottled } = rtm;
+
+  it('treats 0x0 as clean (no conditions, no severity)', () => {
+    const r = decodeThrottled('throttled=0x0');
+    expect(r.parsed).toBe(true);
+    expect(r.value).toBe(0);
+    expect(r.conditions).toEqual([]);
+    expect(r.severity).toBe(null);
+  });
+
+  it('flags current under-voltage (bit 0) as critical', () => {
+    const r = decodeThrottled('throttled=0x1');
+    expect(r.severity).toBe('critical');
+    expect(r.conditions.join(' ')).toMatch(/under-voltage detected \(now\)/);
+  });
+
+  it('flags currently-throttled (bit 2) as critical', () => {
+    const r = decodeThrottled('throttled=0x4');
+    expect(r.severity).toBe('critical');
+    expect(r.conditions.join(' ')).toMatch(/currently throttled/);
+  });
+
+  it('flags only-occurred bits (e.g. 0x50000) as high, not critical', () => {
+    // 0x50000 = bit 16 (under-voltage occurred) + bit 18 (throttling occurred)
+    const r = decodeThrottled('throttled=0x50000');
+    expect(r.severity).toBe('high');
+    expect(r.conditions).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/under-voltage has occurred/),
+        expect.stringMatching(/throttling has occurred/),
+      ])
+    );
+    expect(r.conditions.join(' ')).not.toMatch(/\(now\)/);
+  });
+
+  it('a mix of now + occurred bits is critical', () => {
+    // 0x10001 = under-voltage now (0x1) + under-voltage occurred (0x10000)
+    const r = decodeThrottled('throttled=0x10001');
+    expect(r.severity).toBe('critical');
+  });
+
+  it('returns parsed:false on unrecognised output', () => {
+    const r = decodeThrottled('command not found');
+    expect(r.parsed).toBe(false);
+    expect(r.severity).toBe(null);
+  });
+
+  it('tolerates surrounding whitespace/newlines', () => {
+    const r = decodeThrottled('  throttled=0x1\n');
+    expect(r.severity).toBe('critical');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handler — throttle finding integration (2026-05-22)
+// ---------------------------------------------------------------------------
+
+describe('handler — under-voltage/throttle finding', () => {
+  // A minimal healthy top output (no process findings) so we isolate throttle.
+  const CLEAN_TOP =
+    'top - 10:00:00 up 1 day\n%Cpu(s):  1.0 us,  0.5 sy,  0.0 ni, 98.0 id\n' +
+    '  PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND\n' +
+    ' 1000 baan 20  0 1000 1024 512 S  0.0  0.1 0:01 bun\n';
+
+  function wireExec({ throttledOut, throttledExit = 0 }) {
+    mockExec.mockReset();
+    mockExec.mockImplementation((cmd) => {
+      if (cmd.includes('top'))            return Promise.resolve({ stdout: CLEAN_TOP, stderr: '', exitCode: 0 });
+      if (cmd.includes('etimes'))         return Promise.resolve({ stdout: '1000 100 bun', stderr: '', exitCode: 0 });
+      if (cmd.includes('meminfo'))        return Promise.resolve({ stdout: 'MemAvailable:  900000 kB', stderr: '', exitCode: 0 });
+      if (cmd.includes('get_throttled'))  return Promise.resolve({ stdout: throttledOut, stderr: '', exitCode: throttledExit });
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    });
+  }
+
+  it('adds NO throttle finding when throttled=0x0', async () => {
+    wireExec({ throttledOut: 'throttled=0x0' });
+    const r = await handler();
+    expect(r.findings.find(f => f.kind === 'undervoltage_throttle')).toBeUndefined();
+  });
+
+  it('adds a critical finding on live under-voltage', async () => {
+    wireExec({ throttledOut: 'throttled=0x1' });
+    const r = await handler();
+    const f = r.findings.find(f => f.kind === 'undervoltage_throttle');
+    expect(f).toBeDefined();
+    expect(f.severity).toBe('critical');
+    expect(f.throttled).toBe('0x1');
+  });
+
+  it('does not throw if vcgencmd fails (graceful degrade)', async () => {
+    wireExec({ throttledOut: '', throttledExit: 1 });
+    await expect(handler()).resolves.toBeDefined();
+  });
+});

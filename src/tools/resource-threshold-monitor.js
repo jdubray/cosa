@@ -268,6 +268,52 @@ function groupPidsByMatchedPattern(perPid, cfg, ageByPid) {
 }
 
 // ---------------------------------------------------------------------------
+// Under-voltage / throttle decoding (vcgencmd get_throttled)
+// ---------------------------------------------------------------------------
+
+/**
+ * Bit meanings of the Raspberry Pi `vcgencmd get_throttled` bitmask.
+ * "now" bits are active conditions; the high bits are sticky "has occurred
+ * since boot" markers.
+ */
+const THROTTLE_BITS = [
+  { bit: 0,  now: true,  label: 'under-voltage detected (now)' },
+  { bit: 1,  now: true,  label: 'ARM frequency capped (now)' },
+  { bit: 2,  now: true,  label: 'currently throttled' },
+  { bit: 3,  now: true,  label: 'soft temperature limit active (now)' },
+  { bit: 16, now: false, label: 'under-voltage has occurred since boot' },
+  { bit: 17, now: false, label: 'ARM frequency capping has occurred' },
+  { bit: 18, now: false, label: 'throttling has occurred' },
+  { bit: 19, now: false, label: 'soft temperature limit has occurred' },
+];
+
+/**
+ * Parse `vcgencmd get_throttled` output (e.g. "throttled=0x50005") into a
+ * decoded result. Any active "now" bit is critical (live brownout/throttle);
+ * only-occurred bits are high (a past event worth knowing — e.g. the PSU
+ * brownout loop). 0x0 is clean.
+ *
+ * @param {string} raw
+ * @returns {{ parsed: boolean, hex: string|null, value: number|null,
+ *             conditions: string[], severity: 'critical'|'high'|null }}
+ */
+function decodeThrottled(raw) {
+  const m = String(raw).match(/throttled=0x([0-9a-fA-F]+)/);
+  if (!m) return { parsed: false, hex: null, value: null, conditions: [], severity: null };
+  const value  = parseInt(m[1], 16);
+  const active = THROTTLE_BITS.filter(b => (value & (1 << b.bit)) !== 0);
+  const hasNow = active.some(b => b.now);
+  const severity = active.length === 0 ? null : (hasNow ? 'critical' : 'high');
+  return {
+    parsed:     true,
+    hex:        '0x' + value.toString(16),
+    value,
+    conditions: active.map(b => b.label),
+    severity,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 
@@ -430,6 +476,29 @@ async function handler() {
     }
   }
 
+  // ── 9. Under-voltage / throttle — direct vcgencmd, independent of the API
+  //       snapshot (which doesn't carry throttle data). Degrades gracefully.
+  try {
+    const thr = await sshBackend.exec('vcgencmd get_throttled');
+    if (thr.exitCode === 0) {
+      const decoded = decodeThrottled(thr.stdout);
+      if (decoded.parsed && decoded.conditions.length > 0) {
+        findings.push({
+          kind:       'undervoltage_throttle',
+          throttled:  decoded.hex,
+          conditions: decoded.conditions,
+          severity:   decoded.severity,
+        });
+      } else if (!decoded.parsed) {
+        log.warn(`[rtm] could not parse vcgencmd get_throttled: ${(thr.stdout || '').trim()}`);
+      }
+    } else {
+      log.warn(`[rtm] vcgencmd get_throttled exit ${thr.exitCode} — skipping throttle check`);
+    }
+  } catch (err) {
+    log.warn(`[rtm] vcgencmd get_throttled failed: ${err.message} — skipping throttle check`);
+  }
+
   return {
     summary: findings.length === 0
       ? 'All processes within resource thresholds.'
@@ -452,6 +521,7 @@ module.exports = {
   riskLevel: RISK_LEVEL,
   // Exported for unit testing:
   parseTopBatch,
+  decodeThrottled,
   parseMemInfo,
   parsePsEtimes,
   matchProfile,

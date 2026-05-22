@@ -2610,6 +2610,11 @@ function buildRtmEmailBody(result, appName, alertRef) {
       case 'system_memory_low':
         lines.push(`  • SYSTEM  system_memory_low  samples_mib=[${(f.samples_mib ?? []).map(v => v == null ? 'null' : v.toFixed(0)).join(', ')}]  floor=${f.floor_mib} MiB  severity=${f.severity}`);
         break;
+      case 'undervoltage_throttle':
+        lines.push(`  • SYSTEM  undervoltage_throttle  throttled=${f.throttled}  severity=${f.severity}`);
+        for (const cond of f.conditions ?? []) lines.push(`      - ${cond}`);
+        lines.push('      → check the PSU / power supply');
+        break;
       case 'singleton_orphan':
         lines.push(`  • PID ${f.pid} [${f.command}]  singleton_orphan  pattern="${f.pattern}"  age=${f.age_seconds}s  rss=${f.rss_mb != null ? f.rss_mb.toFixed(0) : '?'} MB`);
         lines.push(`      active PID=${f.active_pid}  active_age=${f.active_age_seconds}s`);
