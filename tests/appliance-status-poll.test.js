@@ -2,6 +2,7 @@
 
 jest.mock('../config/cosa.config');
 jest.mock('../src/appliance-auth');
+jest.mock('../src/ssh-backend');
 jest.mock('../src/watcher-registry');
 jest.mock('../src/session-store', () => ({ createAlert: jest.fn() }));
 jest.mock('../src/logger', () => ({
@@ -10,6 +11,7 @@ jest.mock('../src/logger', () => ({
 
 const { getConfig }         = require('../config/cosa.config');
 const { withApplianceAuth } = require('../src/appliance-auth');
+const sshBackend            = require('../src/ssh-backend');
 const watcherRegistry       = require('../src/watcher-registry');
 const { handler }           = require('../src/tools/appliance-status-poll');
 
@@ -46,11 +48,15 @@ function setConfig(overrides = {}) {
  * and have global.fetch return the given HTTP response.
  */
 function mockHttpSuccess({ status = 200, body = SNAPSHOT } = {}) {
-  withApplianceAuth.mockImplementation(async (apiFn) => apiFn({}));
-  global.fetch = jest.fn().mockResolvedValue({
-    status,
-    ok:   status >= 200 && status < 300,
-    json: async () => body,
+  // The poll now curls the appliance loopback over SSH (Cloudflare blocks
+  // /api/status at the edge), so mock sshBackend.exec returning curl's
+  // body + the HTTP_STATUS=<code> suffix the tool parses.
+  withApplianceAuth.mockImplementation(async (apiFn) => apiFn({ Authorization: 'Bearer test-token' }));
+  sshBackend.exec = jest.fn().mockResolvedValue({
+    stdout:   `${JSON.stringify(body)}
+HTTP_STATUS=${status}`,
+    stderr:   '',
+    exitCode: 0,
   });
 }
 
@@ -88,15 +94,15 @@ describe('AC1 — successful poll returns snapshot', () => {
     expect(result.polled_at).toBeTruthy();
   });
 
-  test('calls correct URL', async () => {
+  test('curls the appliance loopback status endpoint over SSH', async () => {
     mockHttpSuccess();
 
     await handler({});
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      `${BASE_URL}${STATUS_ENDPOINT}`,
-      expect.any(Object)
-    );
+    const cmd = sshBackend.exec.mock.calls[0][0];
+    expect(cmd).toMatch(/curl/);
+    expect(cmd).toContain('/api/status');
+    expect(cmd).toContain('127.0.0.1:3000');
   });
 
   test('includes watchers_run count', async () => {
@@ -240,16 +246,17 @@ describe('AC6 — config defaults', () => {
         appliance_api: { base_url: BASE_URL, request_timeout_ms: TIMEOUT_MS },
       },
     });
-    withApplianceAuth.mockImplementation(async (apiFn) => apiFn({}));
-    global.fetch = jest.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => SNAPSHOT,
+    withApplianceAuth.mockImplementation(async (apiFn) => apiFn({ Authorization: 'Bearer test-token' }));
+    sshBackend.exec = jest.fn().mockResolvedValue({
+      stdout:   `${JSON.stringify(SNAPSHOT)}
+HTTP_STATUS=200`,
+      stderr:   '',
+      exitCode: 0,
     });
 
     await handler({});
 
-    const url = global.fetch.mock.calls[0][0];
-    expect(url).toContain('/api/status');
+    const cmd = sshBackend.exec.mock.calls[0][0];
+    expect(cmd).toContain('/api/status');
   });
 });

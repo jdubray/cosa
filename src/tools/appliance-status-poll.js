@@ -5,6 +5,7 @@ const { withApplianceAuth }  = require('../appliance-auth');
 const watcherRegistry        = require('../watcher-registry');
 const { createAlert }        = require('../session-store');
 const { createLogger }       = require('../logger');
+const sshBackend             = require('../ssh-backend');
 
 const WATCHER_ERROR_CATEGORY = 'watcher_error';
 
@@ -42,28 +43,44 @@ const SCHEMA = {
 // ---------------------------------------------------------------------------
 
 /**
- * Perform an authenticated GET to the appliance status endpoint.
+ * Perform an authenticated GET to the appliance status endpoint via SSH loopback.
  *
- * @param {string} url
+ * /api/status is blocked at the Cloudflare tunnel level — it is only reachable
+ * from the appliance's own loopback (127.0.0.1:3000). We run curl on the appliance
+ * over SSH so the request originates from localhost.
+ *
+ * @param {string} endpoint  e.g. '/api/status'
  * @param {number} timeoutMs
  * @returns {Promise<{ status: number, body: object|null }>}
  */
-async function fetchStatus(url, timeoutMs) {
+async function fetchStatus(endpoint, timeoutMs) {
+  const toolCfg      = getConfig().appliance?.appliance_api ?? {};
+  const internalBase = toolCfg.internal_base_url ?? 'http://127.0.0.1:3000';
+  const url          = `${internalBase}${endpoint}`;
+  const curlTimeout  = Math.ceil(timeoutMs / 1000);
+
   return withApplianceAuth(async (authHeaders) => {
-    const controller = new AbortController();
-    const timer      = setTimeout(() => controller.abort(), timeoutMs);
+    const bearer = authHeaders.Authorization ?? '';
+    const cmd    = `curl -sS --max-time ${curlTimeout} -w '\nHTTP_STATUS=%{http_code}' -H 'Authorization: ${bearer}' '${url}'`;
+
+    let result;
     try {
-      const res  = await fetch(url, {
-        method:  'GET',
-        headers: { ...authHeaders },
-        signal:  controller.signal,
-      });
-      let body = null;
-      try { body = await res.json(); } catch { /* non-JSON body — leave null */ }
-      return { status: res.status, body };
-    } finally {
-      clearTimeout(timer);
+      result = await sshBackend.exec(cmd);
+    } catch (err) {
+      const netErr = new Error(err.message || 'SSH exec failed');
+      netErr.code  = 'APPLIANCE_NETWORK_ERROR';
+      throw netErr;
     }
+
+    const lines      = (result.stdout ?? '').split('\n');
+    const statusLine = lines.find(l => l.startsWith('HTTP_STATUS='));
+    const httpStatus = statusLine ? parseInt(statusLine.replace('HTTP_STATUS=', ''), 10) : 0;
+    const bodyStr    = lines.filter(l => !l.startsWith('HTTP_STATUS=')).join('\n').trim();
+
+    let body = null;
+    try { body = JSON.parse(bodyStr); } catch { /* non-JSON body */ }
+
+    return { status: httpStatus || 200, body };
   });
 }
 
@@ -83,12 +100,10 @@ async function handler(input) {
   const endpoint = apiCfg.status_endpoint  ?? '/api/status';
   const timeout  = apiCfg.request_timeout_ms ?? 10000;
 
-  const url = `${baseUrl}${endpoint}`;
-
   // ── 1. Fetch snapshot ──────────────────────────────────────────────────────
   let httpResult;
   try {
-    httpResult = await fetchStatus(url, timeout);
+    httpResult = await fetchStatus(endpoint, timeout);
   } catch (err) {
     log.warn(`Status poll failed: ${err.message} (code=${err.code})`);
     return {
