@@ -16,6 +16,7 @@ const credentialStore       = require('./credential-store');
 const securityGate          = require('./security-gate');
 const applianceStateMachine = require('./appliance-state-machine');
 const runbookStore          = require('./runbook-store');
+const watcherRegistry       = require('./watcher-registry');
 
 const log = createLogger('main');
 
@@ -191,6 +192,14 @@ async function boot() {
   } catch (err) {
     log.error(`Skills setup failed: ${err.message}`);
     process.exit(1);
+  }
+
+  // 2c. Install seed watchers (version-controlled defaults) on first run.
+  try {
+    const { installed: w } = await watcherRegistry.installSeedWatchers();
+    if (w.length > 0) log.info(`Seed watchers installed: ${w.join(', ')}`);
+  } catch (err) {
+    log.warn(`Watcher seed install failed: ${err.message}`);
   }
 
   // 2c. Validate credential store — fails fast if COSA_CREDENTIAL_KEY is absent.

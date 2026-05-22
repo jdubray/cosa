@@ -363,6 +363,47 @@ class WatcherRegistry {
    * Invalidate the statement cache (for use in tests after DB is swapped).
    * @internal
    */
+  /**
+   * Install version-controlled watcher definitions from config/watcher-seeds.js
+   * for any watcher id not already present. Existing watchers — and their
+   * enabled/disabled state and any live edits — are left untouched, so this
+   * repopulates a fresh/rebuilt session.db without clobbering a running system.
+   * Idempotent.
+   *
+   * @returns {Promise<{ installed: string[] }>}
+   */
+  async installSeedWatchers() {
+    let seeds;
+    try {
+      seeds = require('../config/watcher-seeds');
+    } catch (err) {
+      log.warn(`Watcher seeds not loaded: ${err.message}`);
+      return { installed: [] };
+    }
+    if (!Array.isArray(seeds)) {
+      log.warn('config/watcher-seeds.js did not export an array — skipping');
+      return { installed: [] };
+    }
+
+    const existing  = new Set(this._stmtCache().listAll.all().map(w => w.id));
+    const installed = [];
+    for (const seed of seeds) {
+      if (existing.has(seed.id)) continue;   // preserve live watcher + its state
+      await this.register({
+        id:           seed.id,
+        name:         seed.name,
+        description:  seed.description,
+        code:         seed.code,
+        runbook_name: seed.runbook_name ?? null,
+      });
+      // register() enables by default; honor a seed that ships disabled.
+      if (seed.enabled === false) await this.setEnabled(seed.id, false);
+      installed.push(seed.id);
+      log.info(`Seeded watcher: ${seed.id} (enabled=${seed.enabled !== false})`);
+    }
+    return { installed };
+  }
+
   _resetCache() {
     this._stmts = null;
   }

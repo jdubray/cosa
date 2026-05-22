@@ -543,3 +543,40 @@ describe('VM sandbox isolation', () => {
     expect(snapshot.injected).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// installSeedWatchers — version-controlled defaults (2026-05-22)
+// ---------------------------------------------------------------------------
+
+describe('installSeedWatchers', () => {
+  it('installs all seed watchers into an empty registry', async () => {
+    const { installed } = await watcherRegistry.installSeedWatchers();
+    expect(installed).toEqual(
+      expect.arrayContaining(['seed_admin_cpu_spike', 'pi_undervoltage', 'music_server_outside_morning'])
+    );
+    expect((await watcherRegistry.list()).length).toBe(3);
+  });
+
+  it('seeds music_server_outside_morning DISABLED', async () => {
+    await watcherRegistry.installSeedWatchers();
+    const w = (await watcherRegistry.list()).find(x => x.id === 'music_server_outside_morning');
+    expect(w.enabled).toBe(0);
+  });
+
+  it('seeds seed_admin_cpu_spike enabled, reading the corrected cpu_1m_avg field', async () => {
+    await watcherRegistry.installSeedWatchers();
+    const w = (await watcherRegistry.list()).find(x => x.id === 'seed_admin_cpu_spike');
+    expect(w.enabled).toBe(1);
+    expect(w.code).toContain('cpu_1m_avg');
+    expect(w.code).not.toContain('cpu_load_1m');
+  });
+
+  it('is idempotent — never re-installs or re-enables an existing (operator-disabled) watcher', async () => {
+    await watcherRegistry.installSeedWatchers();
+    await watcherRegistry.setEnabled('seed_admin_cpu_spike', false); // operator disables it
+    const { installed } = await watcherRegistry.installSeedWatchers(); // boot again
+    expect(installed).toEqual([]);
+    const w = (await watcherRegistry.list()).find(x => x.id === 'seed_admin_cpu_spike');
+    expect(w.enabled).toBe(0); // preserved, not clobbered back to enabled
+  });
+});
