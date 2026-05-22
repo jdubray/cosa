@@ -6,6 +6,18 @@ node_modules/
 .env.local
 .env.*.local
 .env_baanbaan
+.env.bak*
+.env.*.bak
+
+# Credential / key material (defense in depth)
+.cosa/
+*.enc.db
+*.pem
+*.key
+id_rsa
+id_ed25519
+*-creds.json
+*credentials*.json
 
 # Runtime data
 data/
