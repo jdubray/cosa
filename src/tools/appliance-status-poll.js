@@ -6,6 +6,7 @@ const watcherRegistry        = require('../watcher-registry');
 const { createAlert }        = require('../session-store');
 const { createLogger }       = require('../logger');
 const sshBackend             = require('../ssh-backend');
+const { shEscape }           = require('../shell-utils');
 
 const WATCHER_ERROR_CATEGORY = 'watcher_error';
 
@@ -60,8 +61,12 @@ async function fetchStatus(endpoint, timeoutMs) {
   const curlTimeout  = Math.ceil(timeoutMs / 1000);
 
   return withApplianceAuth(async (authHeaders) => {
-    const bearer = authHeaders.Authorization ?? '';
-    const cmd    = `curl -sS --max-time ${curlTimeout} -w '\nHTTP_STATUS=%{http_code}' -H 'Authorization: ${bearer}' '${url}'`;
+    const bearer    = authHeaders.Authorization ?? '';
+    // Defense-in-depth: escape interpolated values so the single-quoted
+    // curl args are safe regardless of token/url content (2026-05-22).
+    const headerArg = shEscape(`Authorization: ${bearer}`);
+    const safeUrl   = shEscape(url);
+    const cmd    = `curl -sS --max-time ${curlTimeout} -w '\nHTTP_STATUS=%{http_code}' -H '${headerArg}' '${safeUrl}'`;
 
     let result;
     try {

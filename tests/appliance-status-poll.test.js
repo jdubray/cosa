@@ -260,3 +260,30 @@ HTTP_STATUS=200`,
     expect(cmd).toContain('/api/status');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Hardening: shell-escape interpolated curl args (2026-05-22 security review)
+// ---------------------------------------------------------------------------
+
+const { shEscape } = require('../src/shell-utils');
+
+describe('fetchStatus — shell-escapes interpolated values', () => {
+  it('a single quote in the bearer token is escaped, not a shell break-out', async () => {
+    // Hypothetical quote-bearing token: must be neutralised inside the
+    // single-quoted curl arg so it cannot terminate the quoting / inject.
+    withApplianceAuth.mockImplementation(async (apiFn) => apiFn({ Authorization: "Bearer ab'cd" }));
+    sshBackend.exec = jest.fn().mockResolvedValue({
+      stdout: `${JSON.stringify(SNAPSHOT)}\nHTTP_STATUS=200`, stderr: '', exitCode: 0,
+    });
+
+    await handler({});
+
+    const cmd = sshBackend.exec.mock.calls[0][0];
+    // The header value appears as shEscape()'s own output, wrapped in quotes …
+    const escapedHeader = shEscape("Authorization: Bearer ab'cd");
+    expect(cmd).toContain(`'${escapedHeader}'`);
+    expect(escapedHeader).not.toEqual("Authorization: Bearer ab'cd"); // proves escaping happened
+    // … and never the bare break-out form (a dangling quote right after token).
+    expect(cmd).not.toContain("Authorization: Bearer ab'cd'");
+  });
+});
