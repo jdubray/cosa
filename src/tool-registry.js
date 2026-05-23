@@ -164,6 +164,16 @@ function getSchemas(role) {
  *   validation; the error includes a `validationErrors` array of AJV error
  *   objects.
  */
+/**
+ * Return true if a tool with this name is currently registered.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+function has(name) {
+  return _registry.has(name);
+}
+
 async function dispatch(name, input) {
   const tool = _registry.get(name);
   if (!tool) throw unknownToolError(name);
@@ -182,4 +192,4 @@ function _reset() {
   _registry.clear();
 }
 
-module.exports = { register, getSchemas, dispatch, getRiskLevel, ROLE_PERMITTED_RISK, _reset };
+module.exports = { register, getSchemas, dispatch, getRiskLevel, has, ROLE_PERMITTED_RISK, _reset };

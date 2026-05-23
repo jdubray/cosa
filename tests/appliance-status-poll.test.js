@@ -201,6 +201,19 @@ describe('AC4 — network and auth errors', () => {
     expect(result.code).toBe('APPLIANCE_NETWORK_ERROR');
   });
 
+  test('treats a missing HTTP_STATUS line as a network error (not a fake 200)', async () => {
+    // curl can resolve with exitCode 0 but no status line (connection refused
+    // on loopback, or killed by --max-time). The tool must surface this rather
+    // than reporting success with a null body.
+    withApplianceAuth.mockImplementation(async (apiFn) => apiFn({ Authorization: 'Bearer test-token' }));
+    sshBackend.exec = jest.fn().mockResolvedValue({ stdout: 'curl: (7) Connection refused', stderr: '', exitCode: 0 });
+
+    const result = await handler({});
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('APPLIANCE_NETWORK_ERROR');
+  });
+
   test('returns success:false on APPLIANCE_AUTH_FAILED', async () => {
     mockAuthError('APPLIANCE_AUTH_FAILED', 'All authentication attempts failed');
 

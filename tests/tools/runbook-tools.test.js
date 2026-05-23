@@ -17,6 +17,7 @@ const runbookStore     = require('../../src/runbook-store');
 const upsertTool  = require('../../src/tools/runbook-upsert');
 const listTool    = require('../../src/tools/runbook-list');
 const triggerTool = require('../../src/tools/runbook-trigger');
+const toolRegistry = require('../../src/tool-registry');
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -69,9 +70,14 @@ beforeEach(() => {
 
   sessionStore.runMigrations();
   runbookStore.runMigrations();
+
+  // runbook_upsert validates tool names via toolRegistry.has(); stub it so
+  // 'health_check' (used by STEPS) is known and unknown names are rejected.
+  jest.spyOn(toolRegistry, 'has').mockImplementation(n => n === 'health_check');
 });
 
 afterEach(() => {
+  jest.restoreAllMocks();
   sessionStore.closeDb();
   process.cwd = originalCwd;
   restoreEnv();
@@ -111,6 +117,24 @@ describe('runbook_upsert', () => {
     const res = await upsertTool.handler({ name: 'Bad Name', description: 'd', steps: STEPS });
     expect(res.success).toBe(false);
     expect(res.code).toBe('RUNBOOK_INVALID');
+  });
+
+  it('rejects a step referencing an unregistered tool', async () => {
+    const res = await upsertTool.handler({
+      name: 'rb_bad_tool', description: 'd',
+      steps: [{ tool_name: 'no_such_tool', input: {} }],
+    });
+    expect(res).toMatchObject({ success: false, code: 'RUNBOOK_UNKNOWN_TOOL' });
+    expect(res.error).toContain('no_such_tool');
+    expect(runbookStore.get('rb_bad_tool')).toBeNull();
+  });
+
+  it('rejects an unregistered convergence tool', async () => {
+    const res = await upsertTool.handler({
+      name: 'rb_bad_conv', description: 'd', steps: STEPS,
+      convergence: { tool_name: 'no_such_tool', check_field: 'x', expect_value: 1 },
+    });
+    expect(res).toMatchObject({ success: false, code: 'RUNBOOK_UNKNOWN_TOOL' });
   });
 });
 

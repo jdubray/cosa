@@ -1,6 +1,7 @@
 'use strict';
 
 const { spawn }        = require('child_process');
+const vm               = require('node:vm');
 const path             = require('path');
 const { getDb }        = require('./session-store');
 const { getConfig }    = require('../config/cosa.config');
@@ -210,6 +211,14 @@ class WatcherRegistry {
         `(got ${Buffer.byteLength(code, 'utf8')} bytes)`
       );
       err.code   = 'WATCHER_INVALID';
+      throw err;
+    }
+
+    try {
+      new vm.Script(`(${code})(status)`, { filename: 'watcher.js' });
+    } catch (parseErr) {
+      const err = new Error(`Watcher code is not parseable: ${parseErr.message}`);
+      err.code  = 'WATCHER_INVALID';
       throw err;
     }
     if (typeof name !== 'string' || name.length === 0 || name.length > MAX_LABEL_CHARS) {

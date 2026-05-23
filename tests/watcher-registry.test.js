@@ -284,6 +284,14 @@ describe('register', () => {
     ).rejects.toMatchObject({ code: 'WATCHER_INVALID' });
   });
 
+  test('rejects code that is not parseable JavaScript', async () => {
+    // Caught once at registration instead of throwing inside the sandbox on
+    // every scheduled tick forever.
+    await expect(
+      watcherRegistry.register({ id: 'w1', name: 'N', description: 'd', code: 's => { return s.x' })
+    ).rejects.toMatchObject({ code: 'WATCHER_INVALID' });
+  });
+
   test('rejects empty name', async () => {
     await expect(
       watcherRegistry.register({ id: 'w1', name: '', description: 'd', code: NEVER_TRIGGER })

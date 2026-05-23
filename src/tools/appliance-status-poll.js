@@ -58,7 +58,7 @@ async function fetchStatus(endpoint, timeoutMs) {
   const toolCfg      = getConfig().appliance?.appliance_api ?? {};
   const internalBase = toolCfg.internal_base_url ?? 'http://127.0.0.1:3000';
   const url          = `${internalBase}${endpoint}`;
-  const curlTimeout  = Math.ceil(timeoutMs / 1000);
+  const curlTimeout  = Math.max(1, Math.ceil(Number(timeoutMs) / 1000)) || 10;
 
   return withApplianceAuth(async (authHeaders) => {
     const bearer    = authHeaders.Authorization ?? '';
@@ -79,13 +79,21 @@ async function fetchStatus(endpoint, timeoutMs) {
 
     const lines      = (result.stdout ?? '').split('\n');
     const statusLine = lines.find(l => l.startsWith('HTTP_STATUS='));
-    const httpStatus = statusLine ? parseInt(statusLine.replace('HTTP_STATUS=', ''), 10) : 0;
+    if (!statusLine) {
+      // curl resolved but emitted no status line: connection refused or
+      // --max-time kill. Surface as a network error instead of masking it
+      // as 200 with a null body (which watchers would then evaluate).
+      const netErr = new Error('curl emitted no HTTP_STATUS line — appliance unreachable or curl failed');
+      netErr.code  = 'APPLIANCE_NETWORK_ERROR';
+      throw netErr;
+    }
+    const httpStatus = parseInt(statusLine.replace('HTTP_STATUS=', ''), 10);
     const bodyStr    = lines.filter(l => !l.startsWith('HTTP_STATUS=')).join('\n').trim();
 
     let body = null;
     try { body = JSON.parse(bodyStr); } catch { /* non-JSON body */ }
 
-    return { status: httpStatus || 200, body };
+    return { status: httpStatus, body };
   });
 }
 

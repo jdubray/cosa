@@ -181,8 +181,17 @@ async function executeRunbook(name, triggerCtx) {
     throw err;
   }
 
-  const steps = JSON.parse(runbook.steps);
-  const conv  = runbook.convergence ? JSON.parse(runbook.convergence) : null;
+  let steps, conv;
+  try {
+    steps = JSON.parse(runbook.steps);
+    conv  = runbook.convergence ? JSON.parse(runbook.convergence) : null;
+  } catch (parseErr) {
+    // Stored steps/convergence are written via JSON.stringify, so this only
+    // fires on row corruption — fail with a clear, coded error.
+    const err = new Error(`Runbook "${name}" has corrupt JSON: ${parseErr.message}`);
+    err.code  = 'RUNBOOK_CORRUPT';
+    throw err;
+  }
   const autoApproved = runbook.auto_approved === 1;
   const maxIterations = runbook.max_iterations;
 

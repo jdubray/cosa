@@ -1,6 +1,7 @@
 'use strict';
 
 const runbookStore     = require('../runbook-store');
+const toolRegistry     = require('../tool-registry');
 const { createLogger } = require('../logger');
 
 const log = createLogger('runbook-upsert');
@@ -73,6 +74,22 @@ const SCHEMA = {
  */
 async function handler(input) {
   try {
+    // Reject unknown tool names at write time rather than letting the runbook
+    // fail mid-execution with TOOL_NOT_FOUND on a step that should never have
+    // been stored. Convergence is checked too.
+    const referenced = [
+      ...(Array.isArray(input.steps) ? input.steps.map(s => s && s.tool_name) : []),
+      input.convergence && input.convergence.tool_name,
+    ].filter(Boolean);
+    const unknown = [...new Set(referenced)].filter(n => !toolRegistry.has(n));
+    if (unknown.length > 0) {
+      return {
+        success: false,
+        error:   `Unknown tool(s): ${unknown.join(', ')}`,
+        code:    'RUNBOOK_UNKNOWN_TOOL',
+      };
+    }
+
     const { name, version } = runbookStore.upsert({
       name:          input.name,
       description:   input.description,
