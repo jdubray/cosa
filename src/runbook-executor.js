@@ -66,18 +66,38 @@ function resolveRisk(toolName, input) {
  * @returns {string|null}
  */
 /**
- * Current hour (0–23) in the configured appliance timezone. Mirrors the
- * approval-engine helper (hourCycle 'h23' avoids the "24"-at-midnight quirk on
- * some runtimes; falls back to UTC if the tz is invalid).
+ * Parse a business-hours bound into minutes-since-midnight. Accepts "HH:MM",
+ * "HH", or a bare hour number. Returns null if unparseable.
+ *
+ * @param {string|number|undefined} v
+ * @returns {number|null}
+ */
+function _toMinutes(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v * 60 : null;
+  const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(String(v).trim());
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2] ?? '0', 10) : null;
+}
+
+/**
+ * Minutes since midnight in the given timezone. Mirrors the approval-engine
+ * hour helper (hourCycle 'h23' avoids the "24"-at-midnight quirk; falls back to
+ * UTC if the tz is invalid).
  *
  * @param {string} tz
  * @returns {number}
  */
-function _localHour(tz) {
+function _localMinutes(tz) {
   try {
-    return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(new Date()), 10);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour: 'numeric', minute: 'numeric', hourCycle: 'h23',
+    }).formatToParts(new Date());
+    const h = parseInt(parts.find(p => p.type === 'hour').value, 10);
+    const min = parseInt(parts.find(p => p.type === 'minute').value, 10);
+    return h * 60 + min;
   } catch {
-    return new Date().getUTCHours();
+    const d = new Date();
+    return d.getUTCHours() * 60 + d.getUTCMinutes();
   }
 }
 
@@ -85,17 +105,19 @@ function _localHour(tz) {
  * True when the POS is within its configured business hours, during which the
  * operator policy forbids any non-read action against the appliance — even an
  * auto_approved one. Driven by `appliance.business_hours { start, end }`
- * (local 24-h clock, [start, end) with overnight wrap). Absent or start===end
- * disables the gate (back-compat / tests).
+ * ("HH:MM" local time, [start, end) with overnight wrap), evaluated in the
+ * appliance timezone. Absent or start===end disables the gate.
  *
  * @returns {boolean}
  */
 function _withinBusinessHours() {
   const { appliance } = getConfig();
   const bh = appliance.appliance?.business_hours;
-  if (!bh || bh.start == null || bh.end == null || bh.start === bh.end) return false;
-  const h = _localHour(appliance.appliance?.timezone ?? 'UTC');
-  return bh.start < bh.end ? (h >= bh.start && h < bh.end) : (h >= bh.start || h < bh.end);
+  const start = _toMinutes(bh?.start);
+  const end   = _toMinutes(bh?.end);
+  if (start == null || end == null || start === end) return false;
+  const m = _localMinutes(appliance.appliance?.timezone ?? 'UTC');
+  return start < end ? (m >= start && m < end) : (m >= start || m < end);
 }
 
 function checkRunbookRisk(steps, conv, autoApproved) {

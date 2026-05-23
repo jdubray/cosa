@@ -160,8 +160,8 @@ it('aborts a non-read step during business hours even when auto_approved', async
 appliance:
   name: "Test POS"
   business_hours:
-    start: 0
-    end: 24
+    start: "00:00"
+    end: "24:00"
 ssh:
   host: "192.168.1.10"
   port: 22
