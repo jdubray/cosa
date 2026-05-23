@@ -139,7 +139,10 @@ function getRiskLevel(name) {
  * @returns {Array<{ name: string, description: string, input_schema: object }>}
  */
 function getSchemas(role) {
-  const permitted = role ? (ROLE_PERMITTED_RISK[role] ?? null) : null;
+  // No role → unfiltered (internal / no-agent contexts). A known role filters
+  // to its permitted risk levels. An UNKNOWN role fails CLOSED to read-only so
+  // a typo'd or unrecognised role can never be advertised a mutating tool.
+  const permitted = role == null ? null : (ROLE_PERMITTED_RISK[role] ?? ['read']);
   return Array.from(_registry.entries())
     .filter(([, { riskLevel }]) => !permitted || permitted.includes(riskLevel))
     .map(([name, { schema }]) => ({
@@ -164,16 +167,6 @@ function getSchemas(role) {
  *   validation; the error includes a `validationErrors` array of AJV error
  *   objects.
  */
-/**
- * Return true if a tool with this name is currently registered.
- *
- * @param {string} name
- * @returns {boolean}
- */
-function has(name) {
-  return _registry.has(name);
-}
-
 async function dispatch(name, input) {
   const tool = _registry.get(name);
   if (!tool) throw unknownToolError(name);
@@ -185,6 +178,37 @@ async function dispatch(name, input) {
 }
 
 /**
+ * Return true if a tool with this name is currently registered.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+function has(name) {
+  return _registry.has(name);
+}
+
+/**
+ * Execution-time enforcement of the role→risk boundary (multi-agent harness).
+ *
+ * `getSchemas(role)` only controls which tools a role is *advertised*; this is
+ * the hard gate that decides whether a tool may actually be dispatched, so the
+ * boundary holds even if a tool_use block names a tool outside the role's set
+ * (model hallucination or prompt injection). Uses the tool's STATIC risk level
+ * (including `'dynamic'`) so a read-only role can never run `appliance_api_call`.
+ * An unknown role fails closed to read-only. A null/absent role is unfiltered
+ * (back-compat for direct, non-agent callers).
+ *
+ * @param {string|undefined} role
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isToolPermittedForRole(role, name) {
+  const permitted = role == null ? null : (ROLE_PERMITTED_RISK[role] ?? ['read']);
+  if (!permitted) return true;
+  return permitted.includes(getRiskLevel(name));
+}
+
+/**
  * Clear all registered tools.
  * **For use in tests only.**
  */
@@ -192,4 +216,4 @@ function _reset() {
   _registry.clear();
 }
 
-module.exports = { register, getSchemas, dispatch, getRiskLevel, has, ROLE_PERMITTED_RISK, _reset };
+module.exports = { register, getSchemas, dispatch, getRiskLevel, has, isToolPermittedForRole, ROLE_PERMITTED_RISK, _reset };

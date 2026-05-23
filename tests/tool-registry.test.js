@@ -17,7 +17,7 @@ jest.mock('../config/cosa.config', () => ({
 // Module under test
 // ---------------------------------------------------------------------------
 
-const { register, getSchemas, dispatch, ROLE_PERMITTED_RISK, _reset } = require('../src/tool-registry');
+const { register, getSchemas, dispatch, ROLE_PERMITTED_RISK, _reset, isToolPermittedForRole } = require('../src/tool-registry');
 
 // ---------------------------------------------------------------------------
 // Config fixture helpers
@@ -405,8 +405,24 @@ describe('getSchemas(role) — role-based risk filtering', () => {
     );
   });
 
-  it('an unknown role applies no filter (returns all tools)', () => {
-    expect(getSchemas('bogus')).toHaveLength(5);
+  it('an unknown role fails closed to read-only', () => {
+    expect(getSchemas('bogus').map(s => s.name)).toEqual(['read_tool']);
+  });
+
+  it('isToolPermittedForRole enforces the role→risk boundary at execution', () => {
+    // Read-only roles may only run read tools …
+    expect(isToolPermittedForRole('query', 'read_tool')).toBe(true);
+    expect(isToolPermittedForRole('query', 'high_tool')).toBe(false);
+    expect(isToolPermittedForRole('query', 'dynamic_tool')).toBe(false);
+    expect(isToolPermittedForRole('probe', 'medium_tool')).toBe(false);
+    // … action may run every risk level …
+    expect(isToolPermittedForRole('action', 'critical_tool')).toBe(true);
+    expect(isToolPermittedForRole('action', 'dynamic_tool')).toBe(true);
+    // … an unknown role fails closed to read-only …
+    expect(isToolPermittedForRole('bogus', 'read_tool')).toBe(true);
+    expect(isToolPermittedForRole('bogus', 'high_tool')).toBe(false);
+    // … and a null role is unfiltered (back-compat for direct callers).
+    expect(isToolPermittedForRole(null, 'critical_tool')).toBe(true);
   });
 
   it('ROLE_PERMITTED_RISK exposes the four roles', () => {

@@ -152,6 +152,47 @@ it('runs a non-read step when the runbook IS auto_approved', async () => {
   expect(restartHandler).toHaveBeenCalledTimes(1);
 });
 
+it('aborts a non-read step during business hours even when auto_approved', async () => {
+  // Business-hours policy: while the POS serves customers no non-read action
+  // may run, auto_approved or not. A 0-24 window makes the gate fire regardless
+  // of the wall-clock time the test runs at.
+  const BIZ_YAML = `
+appliance:
+  name: "Test POS"
+  business_hours:
+    start: 0
+    end: 24
+ssh:
+  host: "192.168.1.10"
+  port: 22
+  user: "baanbaan"
+  key_path: "/home/cosa/.ssh/id_test"
+operator:
+  email: "owner@example.com"
+  approval_timeout_minutes: 30
+tools:
+  health_check:
+    enabled: true
+  restart_appliance:
+    enabled: true
+`;
+  fs.writeFileSync(path.join(tmpDir, 'config', 'appliance.yaml'), BIZ_YAML, 'utf8');
+  _resetConfig();
+  toolRegistry.register('restart_appliance', SCHEMA, restartHandler, 'high');
+
+  runbookStore.upsert({
+    name:         'restart_biz_hours',
+    description:  'restart during open hours',
+    steps:        [{ tool_name: 'restart_appliance', input: {} }],
+    autoApproved: true,
+  });
+
+  const result = await executeRunbook('restart_biz_hours', { source: 'test' });
+
+  expect(result.outcome).toBe('aborted');
+  expect(restartHandler).not.toHaveBeenCalled();           // critical: nothing ran
+});
+
 // ---------------------------------------------------------------------------
 // G9/G10 — run logging + max-iteration guard
 // ---------------------------------------------------------------------------

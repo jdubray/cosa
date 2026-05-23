@@ -153,11 +153,27 @@ function extractFinalText(contentBlocks) {
  * @returns {Promise<{ type: 'tool_result', tool_use_id: string,
  *                     content: string, is_error?: boolean }>}
  */
-async function processToolUse(sessionId, toolUse, triggerType) {
+async function processToolUse(sessionId, toolUse, triggerType, role) {
   const { name, id, input } = toolUse;
   let riskLevel             = toolRegistry.getRiskLevel(name);
   let approvalId            = null;
   const toolCallRecord      = { tool_name: name, input };
+
+  // ── 0. Role gate ────────────────────────────────────────────────────────────
+  // Hard execution-time enforcement of the role→risk boundary. getSchemas(role)
+  // only filters what each role is *shown*; this ensures a read-only role
+  // (query/probe/audit) can never actually run a mutating tool even if one
+  // appears in a tool_use block (hallucination or prompt injection).
+  if (!toolRegistry.isToolPermittedForRole(role, name)) {
+    const reason = `tool "${name}" (risk: ${riskLevel}) is not permitted for the "${role}" role`;
+    recordBlockedToolCall(sessionId, toolCallRecord, reason);
+    return {
+      type:        'tool_result',
+      tool_use_id: id,
+      content:     `Tool call blocked: ${reason}`,
+      is_error:    true,
+    };
+  }
 
   // Dynamic risk resolution: appliance_api_call stores 'dynamic' in the
   // registry because the actual risk level depends on the endpoint chosen
@@ -167,10 +183,10 @@ async function processToolUse(sessionId, toolUse, triggerType) {
     const entry = (getConfig().appliance?.appliance_api?.api_endpoints ?? [])
       .find(e => e.name === endpointName);
     if (!entry) {
-      // Endpoint not in allowlist — the handler will reject it immediately with
-      // APPLIANCE_ENDPOINT_NOT_ALLOWED before any HTTP call is made.  Use 'read'
-      // (auto-approve) so a spurious approval email is not sent to the operator.
-      riskLevel = 'read';
+      // Endpoint not in the allowlist — fail closed. The handler will reject it,
+      // but the risk decision must not auto-approve an unknown endpoint: treat
+      // it as 'high' so it cannot slip through if the handler ever changes.
+      riskLevel = 'high';
     } else {
       riskLevel = entry.risk ?? 'high';
     }
@@ -349,8 +365,8 @@ async function callClaudeAction({ messages, systemPrompt, tools, apiKey, session
  * @param {{ toolUse: object, sessionId: string }} data
  * @returns {Promise<object>} proposal containing `{ toolResult }`
  */
-async function processToolAction({ toolUse, sessionId, triggerType }) {
-  const toolResult = await processToolUse(sessionId, toolUse, triggerType);
+async function processToolAction({ toolUse, sessionId, triggerType, role }) {
+  const toolResult = await processToolUse(sessionId, toolUse, triggerType, role);
   return { toolResult };
 }
 
@@ -474,7 +490,7 @@ function makeProcessToolNap(processToolIntent) {
       model.processingIndex < model.pendingToolCalls.length
     ) {
       const toolUse = model.pendingToolCalls[model.processingIndex];
-      processToolIntent({ toolUse, sessionId: model.sessionId, triggerType: model.triggerType });
+      processToolIntent({ toolUse, sessionId: model.sessionId, triggerType: model.triggerType, role: model.agentRole });
       return true; // suppress render
     }
   };
@@ -695,4 +711,6 @@ module.exports = {
   MODEL_BY_ROLE,
   MAX_TOKENS_BY_ROLE,
   MAX_ITER_BY_ROLE,
+  // Exposed for unit testing of the execution-time role gate.
+  processToolUse,
 };

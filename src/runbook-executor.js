@@ -45,8 +45,8 @@ function resolveRisk(toolName, input) {
   const endpointName = input?.endpoint_name;
   const entry = (getConfig().appliance?.appliance_api?.api_endpoints ?? [])
     .find(e => e.name === endpointName);
-  // Unknown endpoint → the handler will reject it; treat as read here.
-  return entry ? (entry.risk ?? 'high') : 'read';
+  // Unknown endpoint → fail closed (treat as high), never auto-approve.
+  return entry ? (entry.risk ?? 'high') : 'high';
 }
 
 /**
@@ -65,11 +65,47 @@ function resolveRisk(toolName, input) {
  * @param {boolean} autoApproved
  * @returns {string|null}
  */
+/**
+ * Current hour (0–23) in the configured appliance timezone. Mirrors the
+ * approval-engine helper (hourCycle 'h23' avoids the "24"-at-midnight quirk on
+ * some runtimes; falls back to UTC if the tz is invalid).
+ *
+ * @param {string} tz
+ * @returns {number}
+ */
+function _localHour(tz) {
+  try {
+    return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(new Date()), 10);
+  } catch {
+    return new Date().getUTCHours();
+  }
+}
+
+/**
+ * True when the POS is within its configured business hours, during which the
+ * operator policy forbids any non-read action against the appliance — even an
+ * auto_approved one. Driven by `appliance.business_hours { start, end }`
+ * (local 24-h clock, [start, end) with overnight wrap). Absent or start===end
+ * disables the gate (back-compat / tests).
+ *
+ * @returns {boolean}
+ */
+function _withinBusinessHours() {
+  const { appliance } = getConfig();
+  const bh = appliance.appliance?.business_hours;
+  if (!bh || bh.start == null || bh.end == null || bh.start === bh.end) return false;
+  const h = _localHour(appliance.appliance?.timezone ?? 'UTC');
+  return bh.start < bh.end ? (h >= bh.start && h < bh.end) : (h >= bh.start || h < bh.end);
+}
+
 function checkRunbookRisk(steps, conv, autoApproved) {
   for (const step of steps) {
     const risk = resolveRisk(step.tool_name, step.input ?? {});
     if (risk === 'critical') {
       return `step "${step.tool_name}" is critical-risk and may never run in a runbook`;
+    }
+    if (risk !== 'read' && _withinBusinessHours()) {
+      return `step "${step.tool_name}" is non-read (risk: ${risk}) but the POS is within business hours — actions are forbidden in the read-only window`;
     }
     if (risk !== 'read' && !autoApproved) {
       return `step "${step.tool_name}" is non-read (risk: ${risk}) but the runbook is not auto_approved`;
