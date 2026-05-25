@@ -40,6 +40,8 @@ const gitAuditTool           = require('./tools/git-audit');
 const backupRunTool          = require('./tools/backup-run');
 const processMonitorTool     = require('./tools/process-monitor');
 const finixLatencyMonitorTool = require('./tools/finix-latency-monitor');
+const observationMonitor      = require('./observation-monitor');
+const observationMonitorDefs  = require('../config/observation-monitors');
 const networkScanTool        = require('./tools/network-scan');
 const accessLogScanTool      = require('./tools/access-log-scan');
 const shiftReportTool                = require('./tools/shift-report');
@@ -119,6 +121,9 @@ const AUDIT_REPORT_CATEGORY       = 'audit_report';
 const GIT_AUDIT_CATEGORY          = 'git_audit';
 const PROCESS_MONITOR_CATEGORY    = 'process_monitor';
 const FINIX_LATENCY_CATEGORY      = 'finix_latency';
+const OBSERVATION_MONITOR_CATEGORY = 'observation_monitor';
+/** Suppress repeat observation-monitor alerts (per monitor) within this window. */
+const OBSERVATION_DEDUP_WINDOW_MS = 3 * 60 * 60 * 1000;
 /** Suppress repeat Finix-latency alerts within this window (a sustained spike = one email). */
 const FINIX_LATENCY_DEDUP_WINDOW_MS = 3 * 60 * 60 * 1000;
 const NETWORK_SCAN_CATEGORY       = 'network_scan';
@@ -1863,6 +1868,74 @@ async function runFinixLatencyMonitorTask() {
 }
 
 /**
+ * Evaluate the data-driven observation monitors (config/observation-monitors.js)
+ * and email the operator (templated) on medium/high, deduped per monitor. This
+ * is the Phase-1 self-extending-monitoring substrate: monitors are data rows,
+ * not code, so new ones need no deploy.
+ * @returns {Promise<void>}
+ */
+async function runObservationMonitorsTask() {
+  const enabled = (observationMonitorDefs ?? []).filter(d => d && d.enabled);
+  if (enabled.length === 0) {
+    log.info('[observation] no enabled monitors');
+    return;
+  }
+  if (!sshBackend.isConnected()) {
+    log.warn('[observation] SSH not connected — skipping this tick');
+    return;
+  }
+
+  const { appliance } = getConfig();
+  const operatorEmail = appliance.operator?.email ?? null;
+  const applianceName = appliance.appliance?.name ?? 'appliance';
+
+  for (const def of enabled) {
+    let res;
+    try {
+      res = await observationMonitor.evaluateMonitor(def);
+    } catch (err) {
+      log.error(`[observation] "${def.id}" failed: ${err.message}`);
+      continue;
+    }
+
+    if (!['medium', 'high', 'critical'].includes(res.severity)) {
+      log.info(`[observation] ${def.id} ok — severity=${res.severity} value=${res.value}`);
+      continue;
+    }
+
+    // Per-monitor dedup: one email per sustained episode.
+    const category = `${OBSERVATION_MONITOR_CATEGORY}:${def.id}`;
+    const sinceIso = new Date(Date.now() - OBSERVATION_DEDUP_WINDOW_MS).toISOString();
+    const recent   = findMostRecentAlertByCategories([category]);
+    if (recent && recent.sent_at >= sinceIso) {
+      log.info(`[observation] ${def.id} suppressed duplicate (last sent: ${recent.sent_at})`);
+      continue;
+    }
+
+    const title = `${applianceName} — ${def.id} (${res.severity})`;
+    const body  = res.report ?? JSON.stringify(res);
+    try {
+      if (operatorEmail) {
+        await emailGateway.sendEmail({ to: operatorEmail, subject: `[COSA Alert] ${title}`, text: body });
+      }
+    } catch (err) {
+      log.error(`[observation] ${def.id} failed to send operator email: ${err.message}`);
+    }
+
+    createAlert({
+      session_id: null,
+      severity:   res.severity,
+      category,
+      title,
+      body,
+      sent_at:    new Date().toISOString(),
+      email_to:   operatorEmail,
+    });
+    log.info(`[observation] Alert sent: ${title}`);
+  }
+}
+
+/**
  * Run network_scan every 6 hours.  If an unknown device is found,
  * Claude is instructed to call ips_alert within the session.
  * @returns {Promise<void>}
@@ -3195,6 +3268,7 @@ function _taskRunnerMap() {
     git_audit:                 runGitAuditTask,
     process_monitor:           runProcessMonitorTask,
     finix_latency_monitor:     runFinixLatencyMonitorTask,
+    observation_monitors:      runObservationMonitorsTask,
     network_scan:              runNetworkScanTask,
     access_log_scan:           runAccessLogScanTask,
     tunnel_health_check:       runTunnelHealthCheckTask,
@@ -3325,6 +3399,9 @@ function start() {
 
   // Finix transfer-latency log scan — hourly during open hours (Pi clock is Pacific).
   schedule('finix_latency_monitor', '0 10-22 * * *', runFinixLatencyMonitorTask);
+
+  // Data-driven observation monitors — every 15 min (no-op until a monitor is enabled).
+  schedule('observation_monitors', '*/15 * * * *', runObservationMonitorsTask);
   schedule('access_log_scan', '0 */8 * * *', runAccessLogScanTask);
 
   // Hourly — public ingress reachability via cloudflared tunnel
@@ -3390,6 +3467,7 @@ module.exports = {
   runGitAuditTask,
   runProcessMonitorTask,
   runFinixLatencyMonitorTask,
+  runObservationMonitorsTask,
   runNetworkScanTask,
   runAccessLogScanTask,
   runTunnelHealthCheckTask,
