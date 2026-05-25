@@ -33,6 +33,7 @@ const restartApplianceTool  = require('./tools/restart-appliance');
 const sessionSearchTool     = require('./tools/session-search');
 const jwtSecretCheckTool    = require('./tools/jwt-secret-check');
 const processMonitorTool    = require('./tools/process-monitor');
+const finixLatencyMonitorTool = require('./tools/finix-latency-monitor');
 const cloudflareKillTool    = require('./tools/cloudflare-kill');
 const networkScanTool       = require('./tools/network-scan');
 const webhookHmacVerifyTool  = require('./tools/webhook-hmac-verify');
@@ -223,6 +224,7 @@ async function boot() {
     archiveSearchTool, backupRunTool, backupVerifyTool, settingsWriteTool,
     restartApplianceTool, sessionSearchTool, jwtSecretCheckTool, processMonitorTool,
     cloudflareKillTool, networkScanTool, webhookHmacVerifyTool, complianceVerifyTool,
+    finixLatencyMonitorTool,
     pciAssessmentTool, credentialAuditTool, accessLogScanTool, ipsAlertTool,
     tokenRotationRemindTool, pauseApplianceTool,
     applianceStatusPollTool, applianceApiCallTool,

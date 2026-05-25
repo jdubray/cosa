@@ -39,6 +39,7 @@ const backupVerifyTool       = require('./tools/backup-verify');
 const gitAuditTool           = require('./tools/git-audit');
 const backupRunTool          = require('./tools/backup-run');
 const processMonitorTool     = require('./tools/process-monitor');
+const finixLatencyMonitorTool = require('./tools/finix-latency-monitor');
 const networkScanTool        = require('./tools/network-scan');
 const accessLogScanTool      = require('./tools/access-log-scan');
 const shiftReportTool                = require('./tools/shift-report');
@@ -117,6 +118,9 @@ const AUDIT_REPORT_CATEGORY       = 'audit_report';
 // Phase 3 categories
 const GIT_AUDIT_CATEGORY          = 'git_audit';
 const PROCESS_MONITOR_CATEGORY    = 'process_monitor';
+const FINIX_LATENCY_CATEGORY      = 'finix_latency';
+/** Suppress repeat Finix-latency alerts within this window (a sustained spike = one email). */
+const FINIX_LATENCY_DEDUP_WINDOW_MS = 3 * 60 * 60 * 1000;
 const NETWORK_SCAN_CATEGORY       = 'network_scan';
 const ACCESS_LOG_CATEGORY         = 'access_log_scan';
 const SEC_DIGEST_CATEGORY         = 'security_digest';
@@ -1774,6 +1778,91 @@ async function runProcessMonitorTask() {
 }
 
 /**
+ * Scan baanbaan.service logs for Finix card-transfer latency (30s timeouts /
+ * slow calls). The /api/status snapshot has no transfer-latency field, so this
+ * reads the logs directly. On medium/high severity, emails the operator once
+ * per dedup window (a sustained spike yields one email, not one per hour).
+ * @returns {Promise<void>}
+ */
+async function runFinixLatencyMonitorTask() {
+  let res;
+  try {
+    res = await finixLatencyMonitorTool.handler({});
+  } catch (err) {
+    log.error(`[finix-latency] tool threw: ${err.message}`);
+    return;
+  }
+
+  const severity = res.severity ?? 'none';
+  if (!['medium', 'high', 'critical'].includes(severity)) {
+    log.info(`[finix-latency] ok — severity=${severity} (${res.timeouts}/${res.transfer_calls} timeouts, ${res.timeout_rate_pct}%)`);
+    return;
+  }
+
+  // Dedup: one email per sustained episode, not one per hourly tick.
+  const sinceIso = new Date(Date.now() - FINIX_LATENCY_DEDUP_WINDOW_MS).toISOString();
+  const recent   = findMostRecentAlertByCategories([FINIX_LATENCY_CATEGORY]);
+  if (recent && recent.sent_at >= sinceIso) {
+    log.info(`[finix-latency] Suppressed duplicate alert (last sent: ${recent.sent_at})`);
+    return;
+  }
+
+  const { appliance } = getConfig();
+  const operatorEmail = appliance.operator?.email ?? null;
+  const applianceName = appliance.appliance?.name ?? 'appliance';
+  const title = `${applianceName} — Finix transfer latency ${severity} ` +
+    `(${res.timeouts} timeout(s), ${res.timeout_rate_pct}% over ${res.window_minutes}m)`;
+  const body =
+    `Finix card-transfer latency is elevated on ${applianceName}.
+
+` +
+    `Window:             last ${res.window_minutes} min
+` +
+    `Transfer calls:     ${res.transfer_calls}
+` +
+    `30s timeouts:       ${res.timeouts}
+` +
+    `Slow (non-timeout): ${res.slow_calls}
+` +
+    `Timeout rate:       ${res.timeout_rate_pct}%
+` +
+    `Succeeded:          ${res.succeeded}
+` +
+    `422 duplicates:     ${res.duplicate_422} (idempotency retries of timed-out originals)
+` +
+    `Max call duration:  ${res.max_duration_ms} ms
+
+` +
+    `Timed-out transfers usually still settle via the idempotency retry (hence the 422 ` +
+    `duplicates), so this is a payment-latency signal rather than lost revenue — but a ` +
+    `sustained spike is worth raising with Finix or checking the appliance network path.
+
+` +
+    `Detected at ${res.checked_at}.`;
+  const sentAt = new Date().toISOString();
+
+  try {
+    if (operatorEmail) {
+      await emailGateway.sendEmail({ to: operatorEmail, subject: `[COSA Alert] ${title}`, text: body });
+    }
+  } catch (err) {
+    log.error(`[finix-latency] failed to send operator email: ${err.message}`);
+  }
+
+  createAlert({
+    session_id: null,
+    severity,
+    category:   FINIX_LATENCY_CATEGORY,
+    title,
+    body,
+    sent_at:    sentAt,
+    email_to:   operatorEmail,
+  });
+
+  log.info(`[finix-latency] Alert sent: ${title}`);
+}
+
+/**
  * Run network_scan every 6 hours.  If an unknown device is found,
  * Claude is instructed to call ips_alert within the session.
  * @returns {Promise<void>}
@@ -3105,6 +3194,7 @@ function _taskRunnerMap() {
     weekly_digest:             runWeeklyDigestTask,
     git_audit:                 runGitAuditTask,
     process_monitor:           runProcessMonitorTask,
+    finix_latency_monitor:     runFinixLatencyMonitorTask,
     network_scan:              runNetworkScanTask,
     access_log_scan:           runAccessLogScanTask,
     tunnel_health_check:       runTunnelHealthCheckTask,
@@ -3232,6 +3322,9 @@ function start() {
   schedule('git_audit',       '0 */8 * * *', runGitAuditTask);
   schedule('process_monitor', '0 */8 * * *', runProcessMonitorTask);
   schedule('network_scan',    '0 */8 * * *', runNetworkScanTask);
+
+  // Finix transfer-latency log scan — hourly during open hours (Pi clock is Pacific).
+  schedule('finix_latency_monitor', '0 10-22 * * *', runFinixLatencyMonitorTask);
   schedule('access_log_scan', '0 */8 * * *', runAccessLogScanTask);
 
   // Hourly — public ingress reachability via cloudflared tunnel
@@ -3296,6 +3389,7 @@ module.exports = {
   // Phase 3 task runners
   runGitAuditTask,
   runProcessMonitorTask,
+  runFinixLatencyMonitorTask,
   runNetworkScanTask,
   runAccessLogScanTask,
   runTunnelHealthCheckTask,

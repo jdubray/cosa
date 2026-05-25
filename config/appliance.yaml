@@ -126,6 +126,20 @@ cron:
   appliance_status_poll: "*/5 8-21 * * *"
 
 tools:
+  finix_latency_monitor:
+    enabled: true
+    # Rolling window (minutes) of baanbaan.service logs to scan each run.
+    window_minutes: 60
+    # A non-timeout transfer call slower than this (ms) counts as "slow".
+    slow_call_ms: 10000
+    # Severity thresholds over the window.
+    medium_timeout_count: 4
+    high_timeout_count: 10
+    medium_slow_count: 8
+    medium_rate_pct: 20
+    high_rate_pct: 40
+    # Don't apply the rate thresholds until at least this many calls occurred.
+    min_sample: 5
   health_check:
     enabled: true
     http_check: false  # BaanBaan API binds to 127.0.0.1:3000 (localhost only); unreachable from COSA
