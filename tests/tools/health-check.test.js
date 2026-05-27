@@ -55,34 +55,10 @@ const HEALTHY_SYSTEMCTL =
   'ActiveState=active\nSubState=running\n' +
   'ExecMainStartTimestamp=Mon 2024-01-15 10:30:00 UTC\nNRestarts=0\n';
 
-/**
- * Build a `systemctl show` timestamp string for a moment `secondsAgo` in the
- * past, in the `Ddd YYYY-MM-DD HH:MM:SS UTC` format the parser expects.
- */
-function systemctlTimestamp(secondsAgo) {
-  const d = new Date(Date.now() - secondsAgo * 1000);
-  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()];
-  const iso = d.toISOString().slice(0, 19).replace('T', ' ');
-  return `${wd} ${iso} UTC`;
-}
-
-/**
- * Systemctl output showing a single restart, but with the unit having long
- * since settled (old start timestamp) — a benign deploy-style restart.
- */
+/** Systemctl output showing the service has restarted once. */
 const RESTARTED_SYSTEMCTL =
   'ActiveState=active\nSubState=running\n' +
   'ExecMainStartTimestamp=Mon 2024-01-15 10:30:00 UTC\nNRestarts=1\n';
-
-/** Systemctl output: one restart, unit started 60s ago — still settling. */
-const RECENT_RESTART_SYSTEMCTL =
-  'ActiveState=active\nSubState=running\n' +
-  `ExecMainStartTimestamp=${systemctlTimestamp(60)}\nNRestarts=1\n`;
-
-/** Systemctl output: restart count at the crash-loop bound, even if up a while. */
-const CRASHLOOP_SYSTEMCTL =
-  'ActiveState=active\nSubState=running\n' +
-  `ExecMainStartTimestamp=${systemctlTimestamp(3600)}\nNRestarts=3\n`;
 
 /** Systemctl output for a stopped service. */
 const STOPPED_SYSTEMCTL =
@@ -348,34 +324,12 @@ describe("AC7 — overall_status: 'degraded'", () => {
     expect(result.overall_status).toBe('degraded');
   });
 
-  it("returns 'degraded' when the process restarted recently (still settling)", async () => {
-    mockExec.mockResolvedValue({ stdout: RECENT_RESTART_SYSTEMCTL, stderr: '', exitCode: 0 });
-
-    const result = await handler();
-    expect(result.overall_status).toBe('degraded');
-    expect(result.errors).toEqual(
-      expect.arrayContaining([expect.stringMatching(/restarted .* settling/)])
-    );
-  });
-
-  it("returns 'degraded' when restart count reaches the crash-loop bound", async () => {
-    mockExec.mockResolvedValue({ stdout: CRASHLOOP_SYSTEMCTL, stderr: '', exitCode: 0 });
-
-    const result = await handler();
-    expect(result.overall_status).toBe('degraded');
-    expect(result.errors).toEqual(
-      expect.arrayContaining([expect.stringMatching(/crash-loop bound/)])
-    );
-  });
-
-  it("returns 'healthy' for a single restart once the unit has settled", async () => {
-    // A graceful deploy-style restart that happened long ago must not keep the
-    // appliance flagged as degraded indefinitely (systemd NRestarts is sticky).
+  it("returns 'degraded' when the process has recent restarts", async () => {
     mockExec.mockResolvedValue({ stdout: RESTARTED_SYSTEMCTL, stderr: '', exitCode: 0 });
 
     const result = await handler();
-    expect(result.overall_status).toBe('healthy');
-    expect(result.errors).toEqual([]);
+    expect(result.overall_status).toBe('degraded');
+    expect(result.errors).toEqual(expect.arrayContaining([expect.stringMatching(/restarted/)]));
   });
 
   it("returns 'degraded' when systemd unit is not running", async () => {

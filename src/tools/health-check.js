@@ -134,30 +134,19 @@ function parseStartTimestamp(timestamp) {
  * 1. `unreachable` — SSH not connected, or (when http_check is enabled) either
  *                    HTTP endpoint is unreachable.
  * 2. `healthy`     — SSH up + (http_check enabled → both endpoints return 200)
- *                    + process is active/running and restarts are tolerable.
+ *                    + process is active/running with zero restarts.
  * 3. `degraded`    — Everything reachable, but at least one check is not ideal.
- *
- * Restart tolerance: systemd's NRestarts counter persists until `reset-failed`,
- * so a single graceful restart (e.g. a deploy) would otherwise keep the unit
- * "degraded" indefinitely. We only treat restarts as unhealthy when the unit
- * hasn't yet proven stable (uptime below `restart_settling_seconds`) or the
- * cumulative count has reached the crash-loop bound (`max_restarts`).
  *
  * @param {{
  *   sshConnected:    boolean,
  *   httpCheckEnabled: boolean,
  *   httpHealth: { reachable: boolean, status_code: number|null, body: object|null },
  *   httpReady:  { reachable: boolean, status_code: number|null, body: object|null },
- *   procInfo:   object|null,
- *   restartSettlingSeconds: number,
- *   maxRestarts: number
+ *   procInfo:   object|null
  * }} checks
  * @returns {'healthy'|'degraded'|'unreachable'}
  */
-function determineOverallStatus({
-  sshConnected, httpCheckEnabled, httpHealth, httpReady, procInfo,
-  restartSettlingSeconds, maxRestarts,
-}) {
+function determineOverallStatus({ sshConnected, httpCheckEnabled, httpHealth, httpReady, procInfo }) {
   if (!sshConnected) return 'unreachable';
   if (httpCheckEnabled && (httpHealth.reachable === false || httpReady.reachable === false)) {
     return 'unreachable';
@@ -167,38 +156,14 @@ function determineOverallStatus({
     (httpHealth.status_code === 200 && httpHealth.body !== null);
   const httpReadyOk  = !httpCheckEnabled ||
     (httpReady.status_code === 200 && httpReady.body !== null);
-
-  const restartsOk = restartsAreTolerable(procInfo, restartSettlingSeconds, maxRestarts);
   const processOk =
     procInfo !== null &&
     procInfo.active_state === 'active' &&
     procInfo.sub_state   === 'running' &&
-    restartsOk;
+    procInfo.restarts    === 0;
 
   if (httpHealthOk && httpReadyOk && processOk) return 'healthy';
   return 'degraded';
-}
-
-/**
- * Decide whether a unit's restart count is benign.
- *
- * Zero restarts is always fine. A non-zero count is tolerated only when the
- * unit has been up at least `settlingSeconds` (it has proven stable since the
- * last restart) AND the cumulative count is below `maxRestarts` (not looping).
- * A null restart count (couldn't be parsed) is treated as benign so a parsing
- * gap doesn't masquerade as a crash loop.
- *
- * @param {object|null} procInfo
- * @param {number} settlingSeconds
- * @param {number} maxRestarts
- * @returns {boolean}
- */
-function restartsAreTolerable(procInfo, settlingSeconds, maxRestarts) {
-  if (procInfo === null) return false;
-  const { restarts, uptime_seconds: uptimeSeconds } = procInfo;
-  if (restarts === null || restarts === 0) return true;
-  if (restarts >= maxRestarts) return false;
-  return uptimeSeconds !== null && uptimeSeconds >= settlingSeconds;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,8 +196,6 @@ async function handler() {
   const checkedAt       = new Date().toISOString();
   const errors          = [];
   const httpCheckEnabled = appliance.tools?.health_check?.http_check !== false;
-  const restartSettlingSeconds = appliance.process_supervisor?.restart_settling_seconds ?? 900;
-  const maxRestarts            = appliance.process_supervisor?.max_restarts ?? 3;
 
   // ── Step 1: SSH connectivity ──────────────────────────────────────────────
   const sshConnected = await ensureSshConnected();
@@ -278,12 +241,8 @@ async function handler() {
           `systemd unit not running: ActiveState=${procInfo.active_state} SubState=${procInfo.sub_state}`
         );
       }
-      if (restarts !== null && restarts > 0 &&
-          !restartsAreTolerable(procInfo, restartSettlingSeconds, maxRestarts)) {
-        const reason = restarts >= maxRestarts
-          ? `at/above crash-loop bound (${maxRestarts})`
-          : `still settling (uptime ${uptimeSeconds}s < ${restartSettlingSeconds}s)`;
-        errors.push(`systemd unit has restarted ${restarts} time(s) — ${reason}`);
+      if (restarts !== null && restarts > 0) {
+        errors.push(`systemd unit has restarted ${restarts} time(s)`);
       }
     } catch (err) {
       errors.push(`Process supervisor check failed: ${err.message}`);
@@ -291,10 +250,7 @@ async function handler() {
   }
 
   // ── Status determination ──────────────────────────────────────────────────
-  const overallStatus = determineOverallStatus({
-    sshConnected, httpCheckEnabled, httpHealth, httpReady, procInfo,
-    restartSettlingSeconds, maxRestarts,
-  });
+  const overallStatus = determineOverallStatus({ sshConnected, httpCheckEnabled, httpHealth, httpReady, procInfo });
 
   return {
     overall_status: overallStatus,

@@ -74,12 +74,6 @@ database:
 process_supervisor:
   type: "systemd"
   service_name: "baanbaan"
-  # A single graceful restart (e.g. a deploy) bumps systemd's NRestarts counter,
-  # which persists until `systemctl reset-failed`. Don't treat that as degraded
-  # forever: only flag restarts as unhealthy if the unit hasn't yet proven stable
-  # (uptime below the settling window) or the count crosses the crash-loop bound.
-  restart_settling_seconds: 900   # < 15 min uptime after a restart → still degraded
-  max_restarts: 3                 # cumulative restarts at/above this → degraded (crash loop)
 
 operator:
   email: "jdubray@gmail.com"
