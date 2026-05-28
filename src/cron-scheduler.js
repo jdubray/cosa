@@ -1800,7 +1800,7 @@ async function runFinixLatencyMonitorTask() {
 
   const severity = res.severity ?? 'none';
   if (!['medium', 'high', 'critical'].includes(severity)) {
-    log.info(`[finix-latency] ok — severity=${severity} (${res.timeouts}/${res.transfer_calls} timeouts, ${res.timeout_rate_pct}%)`);
+    log.info(`[finix-latency] ok — severity=${severity} (${res.timeouts_unrecovered}/${res.transfer_calls} unrecovered timeouts, ${res.timeouts_recovered} recovered, ${res.timeout_rate_pct}%)`);
     return;
   }
 
@@ -1816,31 +1816,36 @@ async function runFinixLatencyMonitorTask() {
   const operatorEmail = appliance.operator?.email ?? null;
   const applianceName = appliance.appliance?.name ?? 'appliance';
   const title = `${applianceName} — Finix transfer latency ${severity} ` +
-    `(${res.timeouts} timeout(s), ${res.timeout_rate_pct}% over ${res.window_minutes}m)`;
+    `(${res.timeouts_unrecovered} unrecovered timeout(s), ${res.timeout_rate_pct}% over ${res.window_minutes}m)`;
   const body =
     `Finix card-transfer latency is elevated on ${applianceName}.
 
 ` +
-    `Window:             last ${res.window_minutes} min
+    `Window:                 last ${res.window_minutes} min
 ` +
-    `Transfer calls:     ${res.transfer_calls}
+    `Transfer calls:         ${res.transfer_calls}
 ` +
-    `30s timeouts:       ${res.timeouts}
+    `30s timeouts (total):   ${res.timeouts}
 ` +
-    `Slow (non-timeout): ${res.slow_calls}
+    `  recovered:            ${res.timeouts_recovered} (idempotency-retry succeeded — no payment impact)
 ` +
-    `Timeout rate:       ${res.timeout_rate_pct}%
+    `  unrecovered:          ${res.timeouts_unrecovered} (genuine latency — drives this alert)
 ` +
-    `Succeeded:          ${res.succeeded}
+    `Slow (non-timeout):     ${res.slow_calls}
 ` +
-    `422 duplicates:     ${res.duplicate_422} (idempotency retries of timed-out originals)
+    `Unrecovered rate:       ${res.timeout_rate_pct}%
 ` +
-    `Max call duration:  ${res.max_duration_ms} ms
+    `Succeeded:              ${res.succeeded}
+` +
+    `422 duplicates:         ${res.duplicate_422}
+` +
+    `Max call duration:      ${res.max_duration_ms} ms
 
 ` +
-    `Timed-out transfers usually still settle via the idempotency retry (hence the 422 ` +
-    `duplicates), so this is a payment-latency signal rather than lost revenue — but a ` +
-    `sustained spike is worth raising with Finix or checking the appliance network path.
+    `Recovered timeouts (transfer ultimately SUCCEEDED via the 422-idempotency-retry + ` +
+    `webhook flow) are excluded from severity — they usually mean a slow customer card-tap, ` +
+    `not a Finix or network problem. An alert here means timeouts that did NOT recover, or a ` +
+    `pattern of slow calls — worth raising with Finix or checking the appliance network path.
 
 ` +
     `Detected at ${res.checked_at}.`;
