@@ -303,6 +303,26 @@ tools:
     enabled: false
     log_path: "/var/log/nginx/access.log"
     lookback_minutes: 380
+  host_ssh_audit:
+    # Audit COSA's OWN inbound SSH (the box running COSA), read from the local
+    # systemd journal — NOT the appliance. Baseline on this host is zero failed
+    # logins and logins from exactly one laptop, so any deviation is high-signal.
+    enabled: true
+    # Scanned hourly by cron over the last 90 min (slight overlap so nothing is
+    # missed at the boundary); repeat same-severity alerts suppressed for 3h.
+    # Raise this for a wider on-demand audit (the journal is persistent).
+    lookback_minutes: 90
+    # The ONLY source IP(s) that should ever log in successfully. An accepted
+    # login from anything else → untrusted_accepted_login (critical). If the
+    # laptop's DHCP lease changes, update this list.
+    trusted_ips:
+      - "192.168.1.122"   # CognitiveFab — owner laptop
+    # The ONLY account(s) that should ever log in. A login as any other user
+    # (even from a trusted IP) → unexpected_user_login (critical).
+    trusted_users:
+      - "cosa"
+    # Upper bound on journal lines read per scan; filtered to lookback client-side.
+    max_lines: 5000
   git_audit:
     enabled: true
     repo_path: "/home/baanbaan/baan-baan-merchant/v2"

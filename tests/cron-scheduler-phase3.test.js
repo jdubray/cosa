@@ -785,6 +785,27 @@ describe('AC6 – credential_audit Monday 2:00 AM', () => {
     }));
   });
 
+  // Regression: alerts.session_id is a FK into sessions(session_id). The ips
+  // alertRef is not a session, so passing it as session_id threw FOREIGN KEY
+  // constraint failed and silently dropped every credential_audit alert. The
+  // alert row MUST use session_id:null and carry the ref in the body instead.
+  test('createAlert uses session_id:null and keeps the ips alertRef in the body', async () => {
+    mockIpsAlertHandler.mockResolvedValue({ sent: true, alertRef: 'IPS-CRED-XYZ' });
+    mockCredentialAuditHandler.mockResolvedValue({
+      findings: [{
+        file: 'src/x.ts', line: 10, pattern: 'password_assignment', severity: 'high',
+        description: 'pwd', snippet: '[REDACTED]',
+        fingerprint: 'password_assignment:src/x.ts:10',
+      }],
+      suppressedFindings: [],
+      gitignoreCoverage:  { coversEnv: true, coversSecrets: true },
+    });
+    await runCredentialAuditTask();
+    const alertArg = mockCreateAlert.mock.calls[0][0];
+    expect(alertArg.session_id).toBeNull();
+    expect(JSON.parse(alertArg.body).ipsAlertRef).toBe('IPS-CRED-XYZ');
+  });
+
   test('uses critical severity when any active finding is critical', async () => {
     mockCredentialAuditHandler.mockResolvedValue({
       findings: [
