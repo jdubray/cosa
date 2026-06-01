@@ -41,6 +41,7 @@ const complianceVerifyTool   = require('./tools/compliance-verify');
 const pciAssessmentTool      = require('./tools/pci-assessment');
 const credentialAuditTool    = require('./tools/credential-audit');
 const accessLogScanTool      = require('./tools/access-log-scan');
+const hostSshAuditTool       = require('./tools/host-ssh-audit');
 const ipsAlertTool           = require('./tools/ips-alert');
 const tokenRotationRemindTool = require('./tools/token-rotation-remind');
 const pauseApplianceTool         = require('./tools/pause-appliance');
@@ -225,7 +226,7 @@ async function boot() {
     restartApplianceTool, sessionSearchTool, jwtSecretCheckTool, processMonitorTool,
     cloudflareKillTool, networkScanTool, webhookHmacVerifyTool, complianceVerifyTool,
     finixLatencyMonitorTool,
-    pciAssessmentTool, credentialAuditTool, accessLogScanTool, ipsAlertTool,
+    pciAssessmentTool, credentialAuditTool, accessLogScanTool, hostSshAuditTool, ipsAlertTool,
     tokenRotationRemindTool, pauseApplianceTool,
     applianceStatusPollTool, applianceApiCallTool,
     watcherRegisterTool, watcherListTool, watcherRemoveTool, watcherSetEnabledTool,
