@@ -408,6 +408,21 @@ tools:
     service_names:
       - baanbaan
       - marketing-engine
+  home_ip_update:
+    # Operator-driven home-IP allowlist update over email. The operator emails
+    # COSA the keyword HOME-IP followed by their new home IPv4 and/or IPv6; COSA
+    # replaces ONLY the home entries in ALLOWED_MERCHANT_IPS (the restaurant's
+    # auto-managed entry from internet_ip_watch is preserved) and restarts the
+    # services. Sender is authenticated by email-gateway (From + DKIM).
+    enabled: true
+    # .env path, key, and services default to the internet_ip_watch settings
+    # above; override here only if they should differ.
+    # env_file_path: "/home/baanbaan/baan-baan-merchant/v2/.env"
+    allowlist_key: ALLOWED_MERCHANT_IPS
+    restart_service_on_change: true
+    service_names:
+      - baanbaan
+      - marketing-engine
   resource_threshold_monitor:
     enabled: true
     # Aggregate-CPU ceiling. Alert when K-of-N samples report (us+sy+ni) > pct.

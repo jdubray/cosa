@@ -44,6 +44,13 @@ const APPROVAL_RE = /\bAPPROVE-[0-9A-F]{8}\b|\bDENY\b/i;
 const SUPPRESS_RE = /\bSUPPRESS\s+\S+:\S+:\d+/i;
 
 /**
+ * Pattern that identifies a home-IP allowlist update reply.
+ * Matches the keyword "HOME-IP" / "HOMEIP"; the address(es) are parsed by
+ * home-ip-allowlist. Kept in sync with home-ip-allowlist.HOME_IP_RE.
+ */
+const HOME_IP_RE = /\bHOME-?IP\b/i;
+
+/**
  * Path where the daily outbound send count is persisted.
  * Survives process restarts within the same calendar day (UTC).
  */
@@ -233,6 +240,15 @@ async function _dispatchMessage(msg) {
   if (SUPPRESS_LOOSE_RE.test(text)) {
     log.warn(`Received SUPPRESS reply with unrecognised format from ${msg.from}`);
     await _sendSuppressionFormatError(msg);
+    return;
+  }
+
+  // Home-IP allowlist update — operator emails their new home IP so COSA can
+  // refresh the home entry in ALLOWED_MERCHANT_IPS (the home-side equivalent of
+  // internet_ip_watch). Sender is already verified (From + DKIM) by _runPoll.
+  if (HOME_IP_RE.test(text)) {
+    const { handleHomeIpEmail } = require('./home-ip-allowlist');
+    await handleHomeIpEmail(msg);
     return;
   }
 
