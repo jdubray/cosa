@@ -225,7 +225,13 @@ tools:
   pci_assessment:
     enabled: true
   settings_write:
-    enabled: true
+    # DISABLED 2026-06-08: this tool reads/writes the `station_info` table, which
+    # no longer exists in merchant.db (the key/value store was renamed to
+    # `system_metadata`). It therefore fails for every valid key. Disabled until
+    # the correct target — and whether COSA should write those keys into a
+    # BaanBaan-owned table at all — is confirmed. See
+    # docs/settings_write_station_info_mismatch_spec.md.
+    enabled: false
     allowed_keys:
       - operator_name
       - operator_email
