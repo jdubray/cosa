@@ -307,6 +307,45 @@ describe('AC6 — return shape', () => {
 });
 
 // ---------------------------------------------------------------------------
+// "no such table" → enrich error with the available table list (self-correction)
+// ---------------------------------------------------------------------------
+
+describe('missing-table self-correction hint', () => {
+  it('appends the available tables when a query hits a missing table', async () => {
+    mockExec
+      .mockResolvedValueOnce({ stdout: '', stderr: 'Parse error: no such table: station_info', exitCode: 1 })
+      .mockResolvedValueOnce(execResult([{ name: 'orders' }, { name: 'payments' }, { name: 'system_metadata' }]));
+
+    await expect(handler({ query: 'SELECT * FROM station_info' }))
+      .rejects.toThrow(/Available tables \(3\): orders, payments, system_metadata/);
+  });
+
+  it('runs the sqlite_master lookup as a follow-up read', async () => {
+    mockExec
+      .mockResolvedValueOnce({ stdout: '', stderr: 'no such table: foo', exitCode: 1 })
+      .mockResolvedValueOnce(execResult([{ name: 'orders' }]));
+
+    await expect(handler({ query: 'SELECT * FROM foo' })).rejects.toThrow();
+    expect(mockExec.mock.calls[1][1]).toMatch(/sqlite_master/);
+  });
+
+  it('falls back to the base error when the schema lookup itself fails', async () => {
+    mockExec
+      .mockResolvedValueOnce({ stdout: '', stderr: 'no such table: foo', exitCode: 1 })
+      .mockResolvedValueOnce({ stdout: '', stderr: 'disk I/O error', exitCode: 1 });
+
+    await expect(handler({ query: 'SELECT * FROM foo' }))
+      .rejects.toThrow(/sqlite3 exited with code 1: no such table: foo$/);
+  });
+
+  it('does not run a schema lookup for non-missing-table errors', async () => {
+    mockExec.mockResolvedValueOnce({ stdout: '', stderr: 'near "bad": syntax error', exitCode: 1 });
+    await expect(handler({ query: 'SELECT bad bad' })).rejects.toThrow(/syntax error/);
+    expect(mockExec).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC7 — truncated: true when row_count === effective limit
 // ---------------------------------------------------------------------------
 
