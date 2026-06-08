@@ -152,6 +152,29 @@ function parseRows(stdout) {
   return JSON.parse(trimmed);
 }
 
+/** Lists user tables in the database — used to enrich "no such table" errors. */
+const SCHEMA_LIST_SQL =
+  "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name";
+
+/**
+ * Best-effort lookup of the available table names, run as a follow-up read
+ * after a query fails with "no such table".  Returns [] if the lookup itself
+ * fails so the original error is never masked by a secondary failure.
+ *
+ * @param {string} cmd - The already-built sqlite3 -json -readonly command.
+ * @param {number} timeoutMs
+ * @returns {Promise<string[]>}
+ */
+async function listAvailableTables(cmd, timeoutMs) {
+  try {
+    const { stdout, exitCode } = await sshBackend.exec(cmd, SCHEMA_LIST_SQL, timeoutMs);
+    if (exitCode !== 0) return [];
+    return parseRows(stdout).map(r => r.name).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tool handler
 // ---------------------------------------------------------------------------
@@ -209,7 +232,17 @@ async function handler({ query, limit = DEFAULT_LIMIT }) {
   const queryTimeMs = Date.now() - startTime;
 
   if (exitCode !== 0) {
-    throw new Error(`sqlite3 exited with code ${exitCode}: ${stderr.trim()}`);
+    const base = `sqlite3 exited with code ${exitCode}: ${stderr.trim()}`;
+    // Self-correction aid: when the query references a table that doesn't exist,
+    // append the real table list so the caller can retry with a valid name
+    // instead of blindly guessing (e.g. station_info → system_metadata).
+    if (/no such table/i.test(stderr)) {
+      const tables = await listAvailableTables(cmd, timeoutMs);
+      if (tables.length > 0) {
+        throw new Error(`${base}. Available tables (${tables.length}): ${tables.join(', ')}`);
+      }
+    }
+    throw new Error(base);
   }
 
   // ── AC6 + AC7: Build result ───────────────────────────────────────────────
