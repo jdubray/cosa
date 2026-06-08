@@ -45,10 +45,11 @@ const SUPPRESS_RE = /\bSUPPRESS\s+\S+:\S+:\d+/i;
 
 /**
  * Pattern that identifies a home-IP allowlist update reply.
- * Matches the keyword "HOME-IP" / "HOMEIP"; the address(es) are parsed by
- * home-ip-allowlist. Kept in sync with home-ip-allowlist.HOME_IP_RE.
+ * Matches "HOME-IP", "HOMEIP", or "home IP" (any spaces/hyphens between the
+ * words); the address(es) are parsed by home-ip-allowlist. Kept in sync with
+ * home-ip-allowlist.HOME_IP_RE.
  */
-const HOME_IP_RE = /\bHOME-?IP\b/i;
+const HOME_IP_RE = /\bHOME[-\s]*IP\b/i;
 
 /**
  * Path where the daily outbound send count is persisted.
