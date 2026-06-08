@@ -38,9 +38,12 @@ const DEFAULT_ALLOWLIST_KEY = 'ALLOWED_MERCHANT_IPS';
 /**
  * Command keyword that marks an inbound email as a home-IP update request.
  * Matched against `${subject} ${body}` by email-gateway, mirroring how the
- * APPROVE-/SUPPRESS commands are detected. Accepts "HOME-IP" or "HOMEIP".
+ * APPROVE-/SUPPRESS commands are detected. Accepts the natural phrasings the
+ * operator actually writes: "HOME-IP", "HOMEIP", and "home IP" (any spaces or
+ * hyphens between the two words). Punctuation between them (e.g. "home. IP")
+ * does NOT match, which keeps incidental prose from hijacking the handler.
  */
-const HOME_IP_RE = /\bHOME-?IP\b/i;
+const HOME_IP_RE = /\bHOME[-\s]*IP\b/i;
 
 /** Valid .env key: letter/underscore then alphanumerics/underscore (mirrors cron-scheduler). */
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;

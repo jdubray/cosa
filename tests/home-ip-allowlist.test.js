@@ -127,8 +127,15 @@ describe('HOME_IP_RE', () => {
     expect(HOME_IP_RE.test('home-ip 1.2.3.4')).toBe(true);
     expect(HOME_IP_RE.test('Subject: HOMEIP update')).toBe(true);
   });
+  it('matches the natural "home IP" phrasing with a space (the real-world case)', () => {
+    expect(HOME_IP_RE.test('please update my home IP address to 172.56.108.188')).toBe(true);
+    expect(HOME_IP_RE.test('My Home IP changed')).toBe(true);
+  });
   it('does not match unrelated text', () => {
     expect(HOME_IP_RE.test('please restart the POS')).toBe(false);
+  });
+  it('does not match when punctuation separates the words', () => {
+    expect(HOME_IP_RE.test('I am home. IP stuff later.')).toBe(false);
   });
 });
 
@@ -330,6 +337,19 @@ describe('handleHomeIpEmail', () => {
     expect(sent.subject).toMatch(/Home IP updated/);
     expect(sent.text).toContain('198.51.100.10,172.56.108.188,2607:fb90::2');
     expect(sent.inReplyTo).toBe('<abc@mail>');
+  });
+
+  it('parses an IP out of a natural-language prose body', async () => {
+    wireHappyExec();
+    await handleHomeIpEmail({
+      from: 'operator@gmail.com',
+      subject: '',
+      body: 'Hi COSA, my home IP address changed to 172.56.108.188 — please update it. Thanks!',
+      messageId: null,
+    });
+    const sent = mockSendEmail.mock.calls[0][0];
+    expect(sent.subject).toMatch(/Home IP updated/);
+    expect(sent.text).toContain('198.51.100.10,172.56.108.188');
   });
 
   it('replies with guidance when no valid IP is found', async () => {
