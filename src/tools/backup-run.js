@@ -15,6 +15,9 @@ const RISK_LEVEL = 'read';
 
 const DEFAULT_TIMEOUT_S  = 120;
 const DEFAULT_BACKUP_DIR = '/tmp/cosa-backups';
+// PCI-DSS 10.7 retention: purge backup artifacts older than this after each run.
+// Override via appliance.yaml tools.backup_run.retention_days; 0 disables purging.
+const DEFAULT_RETENTION_DAYS = 30;
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -154,9 +157,12 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr, filePrefix 
       `sqlite3 -json ${qDb} 'SELECT * FROM ${qTable}' > "$TMPJSON"`,
       `"$JSRT" -e ${jsTransformCode} < "$TMPJSON" > ${qBackup}`,
       `rm -f "$TMPJSON"`,
+      // Backups may contain payment-adjacent rows — lock to owner-only at rest.
+      `chmod 600 ${qBackup}`,
       `ROW_COUNT=$(wc -l < ${qBackup} | tr -d ' ')`,
       `CHECKSUM=$(sha256sum ${qBackup} | awk '{print $1}')`,
       `printf '%s  ${backupFile}\\n' "$CHECKSUM" > ${qSidecar}`,
+      `chmod 600 ${qSidecar}`,
       `printf '%s\\n%s\\n' "$ROW_COUNT" "$CHECKSUM"`,
     ].join('\n');
   });
@@ -165,7 +171,9 @@ function buildScript(dbPath, backupDir, tables, fileTs, runtimeExpr, filePrefix 
     'set -euo pipefail',
     `JSRT=${runtimeExpr}`,
     `[ -z "$JSRT" ] && { echo "No JS runtime (bun/node) found in PATH" >&2; exit 1; }`,
-    `mkdir -p ${qDir}`,
+    // Create the backup dir owner-only. Default is /tmp/cosa-backups; without this
+    // the dir inherits the world-readable default umask under the sticky /tmp.
+    `mkdir -p ${qDir} && chmod 700 ${qDir}`,
     ...tableSteps,
   ].join('\n');
 }
@@ -242,11 +250,42 @@ function execWithTimeout(command, stdin, timeoutMs) {
  *   error?:       string,
  * }>}
  */
+/**
+ * Delete backup artifacts (*.jsonl and *.sha256) older than `retentionDays` from
+ * the backup directory. Best-effort: a purge failure is logged, never thrown, so
+ * it cannot fail an otherwise-successful backup. Runs over SSH on the appliance,
+ * where the files live.
+ *
+ * @param {string} backupDir
+ * @param {number} retentionDays
+ * @param {number} timeoutMs
+ * @returns {Promise<void>}
+ */
+async function _purgeOldBackups(backupDir, retentionDays, timeoutMs) {
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) return;
+  const qDir = `'${shEscape(backupDir)}'`;
+  // Anchor to the backup dir and only our own artifact extensions so a
+  // misconfigured backup_dir can never mass-delete unrelated files.
+  const cmd =
+    `find ${qDir} -maxdepth 1 -type f ` +
+    `\\( -name '*.jsonl' -o -name '*.jsonl.sha256' \\) ` +
+    `-mtime +${Math.floor(retentionDays)} -delete`;
+  try {
+    const result = await sshBackend.exec(cmd, undefined, timeoutMs);
+    if (result.exitCode !== 0) {
+      log.warn(`Backup retention purge exited ${result.exitCode}: ${result.stderr?.trim() ?? ''}`);
+    }
+  } catch (err) {
+    log.warn(`Backup retention purge failed: ${err.message}`);
+  }
+}
+
 async function handler() {
   const { appliance } = getConfig();
   const backupDir = appliance.tools?.backup_run?.backup_dir ?? DEFAULT_BACKUP_DIR;
   const timeoutMs = (appliance.tools?.backup_run?.timeout_s ?? DEFAULT_TIMEOUT_S) * 1000;
   const jsRuntime = appliance.tools?.backup_run?.js_runtime ?? null;
+  const retentionDays = appliance.tools?.backup_run?.retention_days ?? DEFAULT_RETENTION_DAYS;
 
   const databases = resolveDatabases(appliance);
 
@@ -292,6 +331,9 @@ async function handler() {
       dbErrors.push(`[${db.name}] ${dbResult.error}`);
     }
   }
+
+  // Enforce retention after the backup loop (PCI-DSS 10.7). Best-effort.
+  await _purgeOldBackups(backupDir, retentionDays, timeoutMs);
 
   const completedAt = new Date().toISOString();
   const durationMs  = Date.now() - startMs;

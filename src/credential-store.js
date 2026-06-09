@@ -96,9 +96,13 @@ function decrypt({ iv, authTag, ciphertext }, key) {
  */
 function openDatabase() {
   const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   const db = new Database(DB_PATH);
+  // Lock the encrypted credential DB to owner-only. Defence-in-depth: records are
+  // already AES-256-GCM encrypted, but the file should not be world-readable on a
+  // multi-process Pi. No-op on Windows; effective on the Linux deployment target.
+  try { fs.chmodSync(DB_PATH, 0o600); } catch (err) { log.warn(`Could not chmod ${DB_PATH}: ${err.message}`); }
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 

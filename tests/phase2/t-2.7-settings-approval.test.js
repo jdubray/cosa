@@ -119,6 +119,38 @@ describe('T-2.7 — Settings change approval flow', () => {
     expect(policy).toBe('once');
   });
 
+  it('requiresApproval forces "once" for an auto_approved runbook_upsert even on an email trigger', () => {
+    // Without the unattended-automation guard this would auto-approve (medium+email),
+    // letting a watcher later run mutating steps with no human in the loop.
+    const policy = approvalEngine.requiresApproval({
+      tool_name:   'runbook_upsert',
+      input:       { name: 'rb', auto_approved: true, steps: [{ tool_name: 'restart_appliance' }] },
+      riskLevel:   'medium',
+      triggerType: 'email',
+    });
+    expect(policy).toBe('once');
+  });
+
+  it('requiresApproval forces "once" for a watcher_register bound to a runbook on an email trigger', () => {
+    const policy = approvalEngine.requiresApproval({
+      tool_name:   'watcher_register',
+      input:       { name: 'w', runbook_name: 'rb' },
+      riskLevel:   'medium',
+      triggerType: 'email',
+    });
+    expect(policy).toBe('once');
+  });
+
+  it('requiresApproval still auto-approves an ordinary medium tool on an email trigger', () => {
+    const policy = approvalEngine.requiresApproval({
+      tool_name:   'runbook_upsert',
+      input:       { name: 'rb', auto_approved: false, steps: [{ tool_name: 'health_check' }] },
+      riskLevel:   'medium',
+      triggerType: 'email',
+    });
+    expect(policy).toBe('auto');
+  });
+
   it.skip('sends an approval-request email when settings_write is proposed', async () => {
     // Claude proposes settings_write; approval engine intercepts and sends email.
     mockMessagesCreate

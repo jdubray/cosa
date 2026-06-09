@@ -144,14 +144,21 @@ function makeEnvelope({ from = 'owner@restaurant.com', subject = 'Hello', messag
  *   dkimDomain — when set, injects a valid Authentication-Results header so the
  *                DKIM check passes for that domain (e.g. 'gmail.com').
  */
-function makeFetched({ from = 'owner@restaurant.com', subject = 'Hello', body = '', messageId = '<msg-1@gmail.com>', dkimDomain = null } = {}) {
+function makeFetched({ from = 'owner@restaurant.com', subject = 'Hello', body = '', messageId = '<msg-1@gmail.com>', dkimDomain = null, authResults = null } = {}) {
   const headerLines = [
     `From: ${from}`,
     `To: cosa@gmail.com`,
     `Subject: ${subject}`,
     `Message-ID: ${messageId}`,
   ];
-  if (dkimDomain) {
+  // authResults: array of raw Authentication-Results values, emitted in order so
+  // the FIRST is the topmost (MTA-added) header. Used to exercise the
+  // header-smuggling defence. dkimDomain is the simple single-header shortcut.
+  if (Array.isArray(authResults)) {
+    for (const val of authResults) {
+      headerLines.push(`Authentication-Results: ${val}`);
+    }
+  } else if (dkimDomain) {
     headerLines.push(
       `Authentication-Results: mx.google.com;\r\n dkim=pass header.d=${dkimDomain}`
     );
@@ -780,6 +787,81 @@ describe('AC-DKIM — DKIM check config and non-Gmail providers', () => {
     await _runPoll();
 
     // Default-on DKIM check + no auth header in source → message dropped
+    expect(mockHandler).not.toHaveBeenCalled();
+  });
+
+  it('processes a message with a domain-aligned dkim=pass in the trusted header', async () => {
+    mockGetConfig.mockReturnValue({
+      ...BASE_CONFIG,
+      appliance: {
+        operator: { email: 'owner@gmail.com' },
+        security: { dkim_check: true },
+      },
+    });
+
+    mockImapSearch.mockResolvedValue([1]);
+    mockImapFetchOne.mockResolvedValue(
+      makeFetched({ from: 'owner@gmail.com', subject: 'Hello', body: 'hi', dkimDomain: 'gmail.com' })
+    );
+
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+    await _runPoll();
+
+    expect(mockHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a message whose dkim=pass aligns to a DIFFERENT domain than the operator', async () => {
+    mockGetConfig.mockReturnValue({
+      ...BASE_CONFIG,
+      appliance: {
+        operator: { email: 'owner@gmail.com' },
+        security: { dkim_check: true },
+      },
+    });
+
+    mockImapSearch.mockResolvedValue([1]);
+    // dkim=pass, but signed by attacker.com — not aligned to the operator domain.
+    mockImapFetchOne.mockResolvedValue(
+      makeFetched({
+        from: 'owner@gmail.com', subject: 'Hello', body: 'hi',
+        authResults: ['mx.google.com; dkim=pass header.d=attacker.com'],
+      })
+    );
+
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+    await _runPoll();
+
+    expect(mockHandler).not.toHaveBeenCalled();
+  });
+
+  it('ignores a forged lower Authentication-Results header (smuggling) — only the topmost MTA header is trusted', async () => {
+    mockGetConfig.mockReturnValue({
+      ...BASE_CONFIG,
+      appliance: {
+        operator: { email: 'owner@gmail.com' },
+        security: { dkim_check: true },
+      },
+    });
+
+    mockImapSearch.mockResolvedValue([1]);
+    // Topmost (real, MTA-added) header says dkim=fail; a forged second header below
+    // claims dkim=pass header.d=gmail.com. The forged one must be ignored.
+    mockImapFetchOne.mockResolvedValue(
+      makeFetched({
+        from: 'owner@gmail.com', subject: 'Hello', body: 'hi',
+        authResults: [
+          'mx.google.com; dkim=fail header.d=gmail.com',
+          'mx.google.com; dkim=pass header.d=gmail.com',
+        ],
+      })
+    );
+
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+    await _runPoll();
+
     expect(mockHandler).not.toHaveBeenCalled();
   });
 });

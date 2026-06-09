@@ -98,24 +98,33 @@ function loadConfig() {
     );
   }
 
-  return {
-    env: {
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-      email: {
-        address:     process.env.COSA_EMAIL_ADDRESS,
-        imapHost:    process.env.COSA_EMAIL_IMAP_HOST,
-        imapPort:    parseInt(process.env.COSA_EMAIL_IMAP_PORT, 10),
-        smtpHost:    process.env.COSA_EMAIL_SMTP_HOST,
-        smtpPort:    parseInt(process.env.COSA_EMAIL_SMTP_PORT, 10),
-        username:    process.env.COSA_EMAIL_USERNAME,
-        appPassword: process.env.COSA_EMAIL_APP_PASSWORD,
-      },
-      dataDir:  process.env.COSA_DATA_DIR  || './data',
-      logLevel: process.env.COSA_LOG_LEVEL || 'info',
-      nodeEnv:  process.env.NODE_ENV       || 'development',
+  const env = {
+    email: {
+      address:  process.env.COSA_EMAIL_ADDRESS,
+      imapHost: process.env.COSA_EMAIL_IMAP_HOST,
+      imapPort: parseInt(process.env.COSA_EMAIL_IMAP_PORT, 10),
+      smtpHost: process.env.COSA_EMAIL_SMTP_HOST,
+      smtpPort: parseInt(process.env.COSA_EMAIL_SMTP_PORT, 10),
+      username: process.env.COSA_EMAIL_USERNAME,
+      // appPassword defined as a non-enumerable property below.
     },
-    appliance: applianceConfig,
+    dataDir:  process.env.COSA_DATA_DIR  || './data',
+    logLevel: process.env.COSA_LOG_LEVEL || 'info',
+    nodeEnv:  process.env.NODE_ENV       || 'development',
+    // anthropicApiKey defined as a non-enumerable property below.
   };
+
+  // Secrets are present and accessible by property name, but kept non-enumerable
+  // so they never leak through JSON.stringify(), console.log(), or util.inspect()
+  // if the config object is ever serialised or dumped to a log / error response.
+  Object.defineProperty(env, 'anthropicApiKey', {
+    value: process.env.ANTHROPIC_API_KEY, enumerable: false, writable: false, configurable: false,
+  });
+  Object.defineProperty(env.email, 'appPassword', {
+    value: process.env.COSA_EMAIL_APP_PASSWORD, enumerable: false, writable: false, configurable: false,
+  });
+
+  return { env, appliance: applianceConfig };
 }
 
 /** @type {{ env: object, appliance: object } | null} */
