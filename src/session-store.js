@@ -4,6 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
 const { getConfig } = require('../config/cosa.config');
+const { createLogger } = require('./logger');
+
+const log = createLogger('session-store');
 
 /** @type {import('better-sqlite3').Database | null} */
 let _db = null;
@@ -171,12 +174,15 @@ function getDb() {
 
   const { env } = getConfig();
   const dbDir = path.resolve(process.cwd(), env.dataDir);
-  fs.mkdirSync(dbDir, { recursive: true });
+  fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
 
   const dbPath = path.join(dbDir, 'session.db');
   _db = new Database(dbPath);
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
+  // session.db holds full LLM transcripts and tool I/O — lock to owner-only.
+  // No-op on Windows; effective on the Linux deployment target.
+  try { fs.chmodSync(dbPath, 0o600); } catch (err) { log.warn(`Could not chmod ${dbPath}: ${err.message}`); }
   return _db;
 }
 

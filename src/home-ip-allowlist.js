@@ -373,6 +373,35 @@ async function handleHomeIpEmail(msg) {
   const operatorEmail = appliance.operator?.email;
 
   const text = `${msg.subject ?? ''} ${msg.body ?? ''}`;
+
+  // ── Second factor (opt-in) ──────────────────────────────────────────────────
+  // HOME-IP opens the merchant firewall, so it warrants more than a passing DKIM
+  // check (which only proves the mail came from the operator's mailbox — not that
+  // the operator authorised THIS action if that mailbox is compromised). When
+  // appliance.security.home_ip_secret is configured, the email must contain that
+  // shared secret token; otherwise the request is refused. If it is NOT set we
+  // proceed (preserving existing behaviour) but warn the operator to enable it.
+  const homeIpSecret = appliance.security?.home_ip_secret;
+  if (homeIpSecret) {
+    if (!text.includes(String(homeIpSecret))) {
+      log.warn(`[home-ip] HOME-IP email from ${msg.from} rejected — missing/invalid shared secret`);
+      if (operatorEmail) {
+        await emailGateway.sendEmail({
+          to:      operatorEmail,
+          subject: '[COSA] Home IP update — authorization failed',
+          text:
+            'COSA received a HOME-IP request but it did not include the configured ' +
+            'shared secret, so no change was made.\n\n' +
+            'Resend the request including your HOME-IP secret token.',
+        }).catch(err => log.warn(`[home-ip] reply failed: ${err.message}`));
+      }
+      return;
+    }
+  } else {
+    log.warn('[home-ip] No home_ip_secret configured — HOME-IP updates are gated by DKIM only. ' +
+      'Set appliance.security.home_ip_secret to require a second factor.');
+  }
+
   const newHome = parseHomeIps(text);
 
   if (!newHome.v4 && !newHome.v6) {

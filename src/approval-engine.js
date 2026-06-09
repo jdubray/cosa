@@ -86,10 +86,12 @@ let _expiryInterval = null;
 /**
  * Generate a cryptographically secure approval token.
  *
- * @returns {string} `APPROVE-XXXXXXXX` where X is an uppercase hex digit.
+ * @returns {string} `APPROVE-<32 uppercase hex digits>`.
  */
 function generateToken() {
-  return `APPROVE-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  // 128 bits of entropy. The previous 32-bit token was guessable by an online
+  // attacker replying with candidate tokens against a known-pending approval.
+  return `APPROVE-${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
 }
 
 /**
@@ -292,8 +294,31 @@ function _isRateLimited(policy, operatorCfg) {
  */
 function requiresApproval(toolCall) {
   if (toolCall.riskLevel === 'read') return 'auto';
+  // Self-authored automation that will later run mutating steps UNATTENDED must
+  // always get explicit operator approval — even on an email-triggered session.
+  // The triggering email proves the message came from the operator's mailbox; it
+  // is NOT evidence the operator authorised these specific actions to run without
+  // a human in the loop later. Without this, an email-triggered medium-risk
+  // runbook_upsert(auto_approved:true) would auto-approve and a watcher could then
+  // fire high-risk steps with no approval gate (privilege escalation over time).
+  if (_grantsUnattendedAutomation(toolCall)) return 'once';
   if (toolCall.riskLevel === 'medium' && toolCall.triggerType === 'email') return 'auto';
   return 'once';
+}
+
+/**
+ * True when a tool call would persist automation that can later execute mutating
+ * tools deterministically (no LLM, no per-step approval): a runbook authored with
+ * auto_approved, or a watcher bound to a stored runbook.
+ *
+ * @param {{ tool_name?: string, input?: object }} toolCall
+ * @returns {boolean}
+ */
+function _grantsUnattendedAutomation(toolCall) {
+  const input = toolCall.input ?? {};
+  if (toolCall.tool_name === 'runbook_upsert' && input.auto_approved === true) return true;
+  if (toolCall.tool_name === 'watcher_register' && input.runbook_name) return true;
+  return false;
 }
 
 /**
@@ -411,7 +436,7 @@ async function processInboundReply(msg) {
   // Uppercase the full text so the regex works regardless of operator casing.
   const upperText = `${msg.subject ?? ''} ${msg.body ?? ''}`.trim().toUpperCase();
 
-  const tokenMatch = upperText.match(/\bAPPROVE-[0-9A-F]{8}\b/);
+  const tokenMatch = upperText.match(/\bAPPROVE-[0-9A-F]{8,64}\b/);
   if (!tokenMatch) {
     return { action: 'ambiguous', approvalId: null };
   }
@@ -470,7 +495,7 @@ async function processInboundReply(msg) {
   if (isDeny) {
     // Preserve operator note from original (un-uppercased) text.
     const original  = `${msg.subject ?? ''} ${msg.body ?? ''}`.trim();
-    const noteMatch = original.match(/DENY\s+APPROVE-[0-9A-F]{8}\s*(.*)/i);
+    const noteMatch = original.match(/DENY\s+APPROVE-[0-9A-F]{8,64}\s*(.*)/i);
     const note      = noteMatch && noteMatch[1].trim() ? noteMatch[1].trim() : null;
 
     // FSM first — ensures the transition is legal before committing to DB.

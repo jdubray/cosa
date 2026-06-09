@@ -265,10 +265,17 @@ async function processToolUse(sessionId, toolUse, triggerType, role) {
     rawOutput = { error: err.message, code: err.code ?? 'TOOL_ERROR' };
   }
 
+  // ── 4. Sanitize FIRST, then persist the sanitized form ───────────────────────
+  // Redaction must happen before the value touches durable storage: session.db is
+  // reachable via session_search / archive_search, so persisting raw output would
+  // leak any secret a tool emits (e.g. in an error string) even though the copy
+  // returned to the model is clean.
+  const sanitized = securityGate.sanitizeOutput(rawOutput);
+
   const toolCallId = saveToolCall(
     sessionId,
     { tool_name: name, input, risk_level: riskLevel, approval_id: approvalId ?? null },
-    rawOutput,
+    sanitized,
     'executed'
   );
 
@@ -276,9 +283,6 @@ async function processToolUse(sessionId, toolUse, triggerType, role) {
   if (approvalId) {
     updateApprovalToolCallId(approvalId, toolCallId);
   }
-
-  // ── 4. Sanitize and size-cap output before it enters the conversation history ──
-  const sanitized = securityGate.sanitizeOutput(rawOutput);
 
   // Guard against runaway tool output bloating the context window.
   const content =

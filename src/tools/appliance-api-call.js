@@ -243,7 +243,9 @@ async function handler(input) {
   }
 
   const url = `${baseUrl}${resolvedPath}`;
-  log.info(`${entry.method} ${url} (endpoint: ${entry.name})`);
+  // Log the endpoint name and base host only — the resolved path may embed
+  // credential-derived params (e.g. merchant id) which must not reach the logs.
+  log.info(`${entry.method} ${baseUrl} (endpoint: ${entry.name})`);
 
   let httpResult;
   try {

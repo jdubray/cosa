@@ -50,6 +50,21 @@ function _memoryPath() {
   return path.resolve(process.cwd(), env.dataDir, 'MEMORY.md');
 }
 
+/**
+ * Write MEMORY.md atomically-ish and lock it to owner-only. MEMORY.md can hold
+ * operational state and content derived from appliance output, so it must not be
+ * world-readable. chmod is a no-op on Windows; effective on the Linux Pi target.
+ *
+ * @param {string} filePath
+ * @param {string} content
+ * @returns {void}
+ */
+function _writeMemoryFile(filePath, content) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(filePath, content, { encoding: 'utf8', mode: 0o600 });
+  try { fs.chmodSync(filePath, 0o600); } catch (_) { /* best-effort; Windows ignores */ }
+}
+
 // ---------------------------------------------------------------------------
 // Empty template
 // ---------------------------------------------------------------------------
@@ -263,8 +278,7 @@ function writeMemory(content) {
   }
 
   const filePath = _memoryPath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, final, 'utf8');
+  _writeMemoryFile(filePath, final);
 }
 
 /**
@@ -328,8 +342,7 @@ function updateMemory(patch) {
   const final = _enforceLimit(sections, timestamp);
 
   const filePath = _memoryPath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, final, 'utf8');
+  _writeMemoryFile(filePath, final);
 }
 
 // ---------------------------------------------------------------------------

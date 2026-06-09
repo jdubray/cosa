@@ -32,9 +32,16 @@ const POLL_INTERVAL_MS = 60 * 1000;
 
 /**
  * Pattern that identifies an approval-related reply.
- * Matches an 8-hex approval token or a bare DENY keyword.
+ * Matches an APPROVE token (8–64 hex chars — tolerant of the token-length change
+ * from 32-bit to 128-bit so in-flight tokens still route) or a bare DENY keyword.
  */
-const APPROVAL_RE = /\bAPPROVE-[0-9A-F]{8}\b|\bDENY\b/i;
+const APPROVAL_RE = /\bAPPROVE-[0-9A-F]{8,64}\b|\bDENY\b/i;
+
+/**
+ * Maximum unseen messages processed in a single poll cycle. Bounds resource and
+ * Claude-budget exposure to an inbox flood; the remainder are handled next poll.
+ */
+const MAX_MESSAGES_PER_POLL = 25;
 
 /**
  * Pattern that identifies a finding-suppression reply.
@@ -141,23 +148,48 @@ let _onNewSession = null;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/** Escape a string for safe interpolation into a RegExp. */
+function _escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Return true if the parsed email's Authentication-Results header indicates
- * DKIM passed for the given domain.
+ * DKIM passed *and is domain-aligned* with the operator's domain.
  *
  * Gmail injects this header before delivering to IMAP:
  *   "Authentication-Results: mx.google.com; dkim=pass header.d=gmail.com ..."
  *
- * A spoofed email routed through a third-party server will either lack the
- * header or show dkim=fail/dkim=none. A legitimate Gmail send always passes.
+ * Security: only the FIRST Authentication-Results header is trusted — that is
+ * the one prepended by the receiving MTA (Gmail) reflecting its own verification.
+ * Any Authentication-Results lines below it were present in the message as it
+ * arrived and may have been forged by the sender, so they are ignored. We also
+ * require that the dkim=pass result is aligned to the operator's domain via
+ * header.d / header.i rather than merely appearing somewhere in the string — a
+ * naive substring match is trivially defeated by a crafted header.
  *
  * @param {import('mailparser').ParsedMail} parsed
  * @param {string} domain - operator's email domain, e.g. "gmail.com"
  * @returns {boolean}
  */
 function _dkimPasses(parsed, domain) {
-  const authHeader = (parsed.headers.get('authentication-results') ?? '').toLowerCase();
-  return /dkim=pass/i.test(authHeader) && authHeader.includes(domain.toLowerCase());
+  const dom = String(domain).toLowerCase();
+  if (!dom) return false;
+
+  const authLines = (parsed.headerLines ?? [])
+    .filter(h => h.key === 'authentication-results')
+    .map(h => String(h.line).toLowerCase());
+  if (authLines.length === 0) return false;
+
+  // Trust only the topmost (MTA-added) header.
+  const trusted = authLines[0];
+  if (!/dkim\s*=\s*pass/.test(trusted)) return false;
+
+  const d = _escapeRe(dom);
+  const aligned =
+    new RegExp(`header\\.d\\s*=\\s*${d}\\b`).test(trusted) ||
+    new RegExp(`header\\.i\\s*=\\s*@?[^;\\s]*${d}\\b`).test(trusted);
+  return aligned;
 }
 
 /**
@@ -444,7 +476,17 @@ async function _runPoll() {
     // near midnight depending on timezone offsets between the Pi and Gmail's IMAP
     // server.  The per-message BOOT_TIME guard below handles stale messages.
     const since2d = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-    const seqs = await client.search({ seen: false, since: since2d });
+    let seqs = await client.search({ seen: false, since: since2d });
+
+    // Bound work per poll cycle. Each non-approval message can spawn a full
+    // orchestrator session (Claude calls + tool runs), so an inbox flood — e.g.
+    // spoofed-From messages before the DKIM gate rejects them — could exhaust
+    // resources and Claude budget. Process at most MAX_MESSAGES_PER_POLL now; the
+    // remainder stay unseen and are picked up on the next poll.
+    if (Array.isArray(seqs) && seqs.length > MAX_MESSAGES_PER_POLL) {
+      log.warn(`Inbox has ${seqs.length} unseen messages; processing first ${MAX_MESSAGES_PER_POLL} this cycle (rate limit)`);
+      seqs = seqs.slice(0, MAX_MESSAGES_PER_POLL);
+    }
 
     for (const seq of seqs) {
       try {
