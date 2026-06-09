@@ -31,6 +31,7 @@ jest.mock('../src/logger', () => ({
 
 const {
   parseHomeIps,
+  ipv6Prefix64,
   computeAllowlist,
   readHomeIpState,
   writeHomeIpState,
@@ -88,24 +89,28 @@ describe('parseHomeIps', () => {
     expect(parseHomeIps('HOME-IP 172.56.108.188')).toEqual({ v4: '172.56.108.188', v6: null });
   });
 
-  it('extracts a bare IPv6', () => {
+  it('normalises a bare IPv6 host address to its /64 prefix', () => {
     expect(parseHomeIps('HOME-IP 2607:fb90:b280:7739:9484:6ed3:28d7:dcb0'))
-      .toEqual({ v4: null, v6: '2607:fb90:b280:7739:9484:6ed3:28d7:dcb0' });
+      .toEqual({ v4: null, v6: '2607:fb90:b280:7739::/64' });
   });
 
-  it('extracts both families from one message', () => {
+  it('extracts both families from one message (v6 as /64)', () => {
     const r = parseHomeIps('HOMEIP 172.56.108.188 and 2607:fb90:b280:7739:9484:6ed3:28d7:dcb0');
-    expect(r).toEqual({ v4: '172.56.108.188', v6: '2607:fb90:b280:7739:9484:6ed3:28d7:dcb0' });
+    expect(r).toEqual({ v4: '172.56.108.188', v6: '2607:fb90:b280:7739::/64' });
+  });
+
+  it('accepts an explicit IPv6 /64 CIDR and keeps it as the /64', () => {
+    expect(parseHomeIps('HOME-IP 2607:fb90:b280:7739::/64').v6).toBe('2607:fb90:b280:7739::/64');
   });
 
   it('handles comma-separated addresses', () => {
-    const r = parseHomeIps('HOME-IP: 10.0.0.5, fe80::1');
+    const r = parseHomeIps('HOME-IP: 10.0.0.5, 2001:db8:abcd:1234::5');
     expect(r.v4).toBe('10.0.0.5');
-    expect(r.v6).toBe('fe80::1');
+    expect(r.v6).toBe('2001:db8:abcd:1234::/64');
   });
 
   it('strips brackets around an IPv6 literal', () => {
-    expect(parseHomeIps('HOME-IP [2607:fb90::dcb0]').v6).toBe('2607:fb90::dcb0');
+    expect(parseHomeIps('HOME-IP [2607:fb90:b280:7739:1:2:3:4]').v6).toBe('2607:fb90:b280:7739::/64');
   });
 
   it('ignores invalid / out-of-range addresses and prose', () => {
@@ -119,6 +124,26 @@ describe('parseHomeIps', () => {
   it('takes the first valid address of each family', () => {
     const r = parseHomeIps('1.2.3.4 5.6.7.8');
     expect(r.v4).toBe('1.2.3.4');
+  });
+});
+
+describe('ipv6Prefix64', () => {
+  it('reduces a full host address to its /64 prefix', () => {
+    expect(ipv6Prefix64('2607:fb90:b280:7739:127:2d21:c79:94ea')).toBe('2607:fb90:b280:7739::/64');
+  });
+  it('reduces a rotated host in the same /64 to the same prefix', () => {
+    // The two addresses that churned in production were both in :7739::/64.
+    expect(ipv6Prefix64('2607:fb90:b280:7739:a9c7:6987:ab8e:e6d4')).toBe('2607:fb90:b280:7739::/64');
+  });
+  it('is idempotent on an existing /64 CIDR', () => {
+    expect(ipv6Prefix64('2607:fb90:b280:7739::/64')).toBe('2607:fb90:b280:7739::/64');
+  });
+  it('strips a zone id', () => {
+    expect(ipv6Prefix64('2001:db8:1:2:3:4:5:6%eth0')).toBe('2001:db8:1:2::/64');
+  });
+  it('returns null for a non-IPv6 value', () => {
+    expect(ipv6Prefix64('172.56.108.188')).toBeNull();
+    expect(ipv6Prefix64('not-an-ip')).toBeNull();
   });
 });
 
@@ -327,7 +352,7 @@ describe('handleHomeIpEmail', () => {
     await handleHomeIpEmail({
       from: 'operator@gmail.com',
       subject: 'HOME-IP',
-      body: '172.56.108.188 2607:fb90::2',
+      body: '172.56.108.188 2607:fb90:b280:7739:1:2:3:4',
       messageId: '<abc@mail>',
     });
 
@@ -335,7 +360,7 @@ describe('handleHomeIpEmail', () => {
     const sent = mockSendEmail.mock.calls[0][0];
     expect(sent.to).toBe('operator@gmail.com');
     expect(sent.subject).toMatch(/Home IP updated/);
-    expect(sent.text).toContain('198.51.100.10,172.56.108.188,2607:fb90::2');
+    expect(sent.text).toContain('198.51.100.10,172.56.108.188,2607:fb90:b280:7739::/64');
     expect(sent.inReplyTo).toBe('<abc@mail>');
   });
 
