@@ -68,11 +68,47 @@ function _stripToken(token) {
 }
 
 /**
- * Extract the home IPv4 and IPv6 addresses from free-form email text.
+ * Reduce an IPv6 address (host address or a `…/NN` CIDR) to its canonical
+ * /64 prefix, e.g. `2607:fb90:b280:7739:127:2d21:c79:94ea` →
+ * `2607:fb90:b280:7739::/64`.
  *
- * Tokenises on whitespace/commas and validates each token with net.isIP, so
- * only genuine addresses are picked up (no fragile regex). The first valid
- * address of each family wins; families with no valid address are returned null.
+ * IPv6 hosts on a SLAAC LAN pick rotating addresses within their delegated /64,
+ * so the stable unit to allowlist is the /64 prefix — which is also the form the
+ * existing ALLOWED_MERCHANT_IPS entries use. A single /128 host address would
+ * not reliably match and would churn on every reconnect.
+ *
+ * @param {string} input - An IPv6 address, optionally with a `/NN` suffix.
+ * @returns {string|null} `"<prefix>::/64"`, or null if not a valid IPv6.
+ */
+function ipv6Prefix64(input) {
+  const addr = String(input).split('/')[0].split('%')[0].trim();
+  if (net.isIP(addr) !== 6) return null;
+
+  let head, tail;
+  if (addr.includes('::')) {
+    const [h, t] = addr.split('::');
+    head = h ? h.split(':') : [];
+    tail = t ? t.split(':') : [];
+  } else {
+    head = addr.split(':');
+    tail = [];
+  }
+  const missing = 8 - (head.length + tail.length);
+  if (missing < 0) return null;
+  const groups = [...head, ...Array(missing).fill('0'), ...tail];
+
+  // Canonicalise the first four hextets (strip leading zeros, lowercase).
+  const prefix = groups.slice(0, 4).map(g => parseInt(g || '0', 16).toString(16));
+  return `${prefix.join(':')}::/64`;
+}
+
+/**
+ * Extract the home IPv4 and IPv6 from free-form email text.
+ *
+ * Tokenises on whitespace/commas; a trailing CIDR suffix (`…/64`) is stripped
+ * before validation so both host addresses and explicit prefixes are accepted.
+ * IPv4 is taken as the host address; IPv6 is normalised to its /64 prefix (see
+ * ipv6Prefix64). The first valid address of each family wins.
  *
  * @param {string} text - Combined subject + body of the inbound email.
  * @returns {{ v4: string|null, v6: string|null }}
@@ -82,11 +118,15 @@ function parseHomeIps(text) {
   if (typeof text !== 'string') return result;
 
   for (const rawToken of text.split(/[\s,]+/)) {
-    const token = _stripToken(rawToken);
+    const [addrPart] = rawToken.split('/');          // drop any CIDR suffix
+    const token = _stripToken(addrPart);
     if (!token) continue;
     const kind = net.isIP(token);
-    if (kind === 4 && result.v4 === null) result.v4 = token;
-    else if (kind === 6 && result.v6 === null) result.v6 = token;
+    if (kind === 4 && result.v4 === null) {
+      result.v4 = token;
+    } else if (kind === 6 && result.v6 === null) {
+      result.v6 = ipv6Prefix64(token);               // always store the /64 prefix
+    }
   }
   return result;
 }
@@ -413,6 +453,7 @@ async function handleHomeIpEmail(msg) {
 module.exports = {
   HOME_IP_RE,
   parseHomeIps,
+  ipv6Prefix64,
   computeAllowlist,
   readHomeIpState,
   writeHomeIpState,
