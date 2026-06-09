@@ -2,6 +2,7 @@
 
 const sshBackend = require('../ssh-backend');
 const { getConfig } = require('../../config/cosa.config');
+const { SAFE_SERVICE_NAME } = require('../shell-utils');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -89,9 +90,6 @@ async function fetchUptimeMs(serviceName) {
     return null;
   }
 }
-
-/** Allowable characters for a systemd service name (prevents command injection). */
-const SAFE_SERVICE_NAME = /^[a-zA-Z0-9_\-.]+$/;
 
 /**
  * Issue `systemctl restart <serviceName>` via SSH.

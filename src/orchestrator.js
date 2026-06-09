@@ -193,7 +193,9 @@ async function processToolUse(sessionId, toolUse, triggerType, role) {
   }
 
   // ── 1. Security gate ────────────────────────────────────────────────────────
-  const gateResult = await securityGate.check(toolCallRecord);
+  // Pass the resolved risk so scanner_required mode can fail closed on high-risk
+  // calls when the pre-execution scanner is unavailable.
+  const gateResult = await securityGate.check({ ...toolCallRecord, risk_level: riskLevel });
   if (gateResult.blocked) {
     const blockReason = gateResult.pattern
       ? `${gateResult.reason} [pattern: ${gateResult.pattern}]`

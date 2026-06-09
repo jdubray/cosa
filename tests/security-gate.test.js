@@ -52,7 +52,7 @@ function noSecurityConfig() {
 // Module under test
 // ---------------------------------------------------------------------------
 
-const { check, sanitizeOutput } = require('../src/security-gate');
+const { check, sanitizeOutput, getMalformedPatternCount } = require('../src/security-gate');
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -498,5 +498,64 @@ describe('sanitizeOutput()', () => {
     it('handles an array', () => {
       expect(typeof sanitizeOutput(['a', 'b'])).toBe('string');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H5 — scanner_required fail-closed + degraded-denylist visibility
+// (Tirith is not installed in the test env, so tirithAvailable=false.)
+// ---------------------------------------------------------------------------
+
+describe('H5 — scanner_required fail-closed policy', () => {
+  function scannerRequiredConfig() {
+    return { appliance: { security: { scanner_required: true, dangerous_commands: ALL_PATTERNS } } };
+  }
+
+  it('blocks a high-risk call when scanner_required and no scanner is installed', async () => {
+    mockGetConfig.mockReturnValue(scannerRequiredConfig());
+    const result = await check({ tool_name: 'restart_appliance', input: { service: 'baanbaan' }, risk_level: 'high' });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toMatch(/scanner required but not installed/i);
+  });
+
+  it('blocks a critical-risk call when scanner_required and no scanner is installed', async () => {
+    mockGetConfig.mockReturnValue(scannerRequiredConfig());
+    const result = await check({ tool_name: 'auto_patch', input: {}, risk_level: 'critical' });
+    expect(result.blocked).toBe(true);
+  });
+
+  it('does NOT block a read-risk call under scanner_required (no scanner)', async () => {
+    mockGetConfig.mockReturnValue(scannerRequiredConfig());
+    const result = await check({ tool_name: 'health_check', input: {}, risk_level: 'read' });
+    expect(result.blocked).toBe(false);
+  });
+
+  it('does NOT fail closed for a high-risk call when scanner_required is absent (default)', async () => {
+    mockGetConfig.mockReturnValue(fullConfig());
+    const result = await check({ tool_name: 'restart_appliance', input: { service: 'baanbaan' }, risk_level: 'high' });
+    expect(result.blocked).toBe(false);
+  });
+
+  it('still applies the denylist under scanner_required (high-risk dangerous input blocked by pattern)', async () => {
+    mockGetConfig.mockReturnValue(scannerRequiredConfig());
+    // Even read-risk: the dangerous-command pattern must still catch it.
+    const result = await check({ tool_name: 'ssh_exec', input: { command: 'rm -rf /' }, risk_level: 'read' });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toBe('Recursive delete');
+  });
+});
+
+describe('H5 — degraded denylist visibility', () => {
+  it('counts a malformed dangerous_commands pattern and keeps enforcing the rest', async () => {
+    const before = getMalformedPatternCount();
+    mockGetConfig.mockReturnValue({
+      appliance: { security: { dangerous_commands: [
+        { pattern: '(', reason: 'malformed' },          // invalid regex
+        { pattern: 'rm -rf', reason: 'Recursive delete' },
+      ] } },
+    });
+    const result = await check({ tool_name: 'ssh_exec', input: { command: 'rm -rf /' }, risk_level: 'read' });
+    expect(result.blocked).toBe(true);                  // valid rule still enforced
+    expect(getMalformedPatternCount()).toBeGreaterThan(before);
   });
 });

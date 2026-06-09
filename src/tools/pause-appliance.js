@@ -4,6 +4,7 @@ const sshBackend                  = require('../ssh-backend');
 const { getConfig }               = require('../../config/cosa.config');
 const { createAlert }             = require('../session-store');
 const { createLogger }            = require('../logger');
+const { SAFE_SERVICE_NAME }       = require('../shell-utils');
 
 const log = createLogger('pause-appliance');
 
@@ -39,9 +40,6 @@ const SCHEMA = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Allowable characters for a service name (prevents SSH command injection). */
-const SAFE_SERVICE_NAME = /^[a-zA-Z0-9_\-.]+$/;
 
 /**
  * Perform a single HTTP GET with a hard AbortController timeout.

@@ -17,4 +17,17 @@ function shEscape(value) {
   return String(value).replace(/'/g, "'\\''");
 }
 
-module.exports = { shEscape };
+/**
+ * Whitelist for systemd/pm2 service names used in `systemctl`/`pm2` commands.
+ * Allows only alphanumerics, `_ - . @` — `@` is required for systemd template
+ * units (e.g. `getty@tty1.service`). Blocks every shell metacharacter, so a
+ * validated name is safe to interpolate into a command string.
+ *
+ * Single source of truth — previously duplicated (with drift) in
+ * restart-appliance.js, pause-appliance.js, and cron-scheduler.js.
+ *
+ * @type {RegExp}
+ */
+const SAFE_SERVICE_NAME = /^[a-zA-Z0-9_\-.@]+$/;
+
+module.exports = { shEscape, SAFE_SERVICE_NAME };

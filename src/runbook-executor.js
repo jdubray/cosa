@@ -154,7 +154,7 @@ function checkRunbookRisk(steps, conv, autoApproved) {
  * @throws {Error} `code:'SECURITY_GATE_BLOCKED'` if the gate blocks the call.
  */
 async function dispatchGuarded(toolName, input) {
-  const gate = await securityGate.check({ tool_name: toolName, input });
+  const gate = await securityGate.check({ tool_name: toolName, input, risk_level: resolveRisk(toolName, input ?? {}) });
   if (gate.blocked) {
     const reason = gate.pattern ? `${gate.reason} [pattern: ${gate.pattern}]` : gate.reason;
     const err = new Error(`blocked by security gate: ${reason}`);

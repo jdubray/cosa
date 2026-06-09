@@ -65,6 +65,10 @@ const TIRITH_CONFIG = path.join(os.homedir(), '.cosa', 'tirith.yaml');
 let tirithAvailable = false;
 let tirithConfig    = { mode: 'block', exceptions: [] };
 
+// Count of malformed dangerous_commands patterns rejected at match time. Non-zero
+// means the denylist is running with fewer rules than configured (see check()).
+let _malformedPatternCount = 0;
+
 /**
  * Attempt to locate the Tirith binary and load its YAML config.
  * Called once during boot().  If the binary is absent, COSA falls back to
@@ -134,7 +138,7 @@ function runTirith(toolCall) {
     const child = execFile(TIRITH_BIN, ['--json'], opts, (err, stdout, stderr) => {
       if (!err) {
         // Exit 0 — clean
-        resolve({ blocked: false });
+        resolve({ blocked: false, errored: false });
         return;
       }
 
@@ -151,9 +155,11 @@ function runTirith(toolCall) {
         return;
       }
 
-      // Any other exit (binary crash, timeout, etc.) — fail-open
+      // Any other exit (binary crash, timeout, etc.) — fail-open for availability.
+      // `errored` lets check() escalate to fail-closed for high-risk calls when the
+      // operator has opted into scanner_required mode.
       log.warn(`Tirith invocation error (code=${err.code ?? 'timeout'}): ${err.message}`);
-      resolve({ blocked: false });
+      resolve({ blocked: false, errored: true });
     });
 
     if (child.stdin) {
@@ -162,9 +168,20 @@ function runTirith(toolCall) {
       // stdin unavailable (process error before pipe was created) — fail-open so
       // tool execution is not permanently blocked by a Tirith infrastructure fault.
       log.warn('Tirith stdin unavailable — payload not delivered, treating as clean');
-      resolve({ blocked: false });
+      resolve({ blocked: false, errored: true });
     }
   });
+}
+
+/**
+ * Whether the operator has opted into fail-closed scanner enforcement.
+ * Read lazily so Tirith runs before config is consulted (and a Tirith block
+ * short-circuits without touching config).
+ *
+ * @returns {boolean}
+ */
+function _scannerRequired() {
+  return getConfig().appliance?.security?.scanner_required === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,22 +189,36 @@ function runTirith(toolCall) {
 // ---------------------------------------------------------------------------
 
 /**
- * Check a tool call first against Tirith (when available and not in the
- * exceptions list), then against every dangerous-command pattern defined in
- * `config/appliance.yaml` under `security.dangerous_commands`.
+ * Pre-execution tripwire over an LLM-chosen tool call.
  *
- * The entire tool input is JSON-serialised before matching so that patterns
- * embedded in nested fields are also caught.  Pattern matching is
- * case-insensitive.
+ * IMPORTANT: this is a tripwire, NOT the enforced security boundary. The
+ * boundary is the role gate (read-only roles cannot dispatch mutating tools) +
+ * the approval gate (high/critical require operator approval) + per-tool
+ * argument validation. This function adds a best-effort scan on top.
  *
- * @param {{ tool_name: string, input: object }} toolCall
+ * It runs (1) the Tirith scanner when available and not excepted, then (2) every
+ * dangerous-command regex from `config/appliance.yaml` `security.dangerous_commands`.
+ * The entire tool input is JSON-serialised before matching (case-insensitive).
+ *
+ * Fail policy: by default a missing/erroring scanner fails OPEN (availability
+ * over strictness). When `security.scanner_required: true`, a missing or erroring
+ * scanner fails CLOSED for high/critical-risk calls (read/medium still proceed,
+ * so a scanner fault cannot brick routine operation). Pass the resolved risk via
+ * `risk_level` so this escalation can apply.
+ *
+ * @param {{ tool_name: string, input: object, risk_level?: string }} toolCall
  * @returns {Promise<{ blocked: false }
  *           | { blocked: true, reason: string, pattern?: string }>}
  */
 async function check(toolCall) {
+  const riskLevel  = toolCall.risk_level ?? null;
+  const isHighRisk = riskLevel === 'high' || riskLevel === 'critical';
+  const toolName   = toolCall.tool_name ?? '';
+
   // ── Step 1: Tirith pre-execution scan ────────────────────────────────────
+  // Config is read lazily (Step 2 / the fail-closed branches) so Tirith runs
+  // before any config is consulted and a Tirith block short-circuits cleanly.
   if (tirithAvailable) {
-    const toolName = toolCall.tool_name ?? '';
     const isExcepted = tirithConfig.exceptions.includes(toolName);
 
     if (!isExcepted) {
@@ -196,7 +227,15 @@ async function check(toolCall) {
         log.warn(`Tirith blocked tool call: ${toolName} — ${tirithResult.reason}`);
         return { blocked: true, reason: tirithResult.reason };
       }
+      if (tirithResult.errored && isHighRisk && _scannerRequired()) {
+        log.error(`[security-gate] scanner_required: scanner errored on high-risk "${toolName}" — failing closed`);
+        return { blocked: true, reason: 'Pre-execution scanner unavailable and scanner_required is set (high-risk call blocked)' };
+      }
     }
+  } else if (isHighRisk && _scannerRequired()) {
+    // Scanner mandated but not installed — fail closed for high-risk calls only.
+    log.error(`[security-gate] scanner_required: no scanner present for high-risk "${toolName}" — failing closed`);
+    return { blocked: true, reason: 'Pre-execution scanner required but not installed (high-risk call blocked)' };
   }
 
   // ── Step 2: dangerous-cmd regex detection ─────────────────────────────────
@@ -210,8 +249,11 @@ async function check(toolCall) {
     try {
       regex = new RegExp(entry.pattern, 'i');
     } catch (err) {
-      // Malformed pattern in config — skip and log; don't crash the tool call.
-      log.error(`[security-gate] Skipping malformed dangerous_commands pattern "${entry.pattern}": ${err.message}`);
+      // Malformed pattern in config silently shrinks coverage — make it LOUD.
+      // Log at error and count it so a typo can't quietly remove a rule; surfaced
+      // in the security digest. The call still proceeds to remaining patterns.
+      _malformedPatternCount += 1;
+      log.error(`[security-gate] DEGRADED: malformed dangerous_commands pattern "${entry.pattern}" (rule disabled): ${err.message}`);
       continue;
     }
     if (regex.test(subject)) {
@@ -220,6 +262,16 @@ async function check(toolCall) {
   }
 
   return { blocked: false };
+}
+
+/**
+ * Number of malformed `dangerous_commands` patterns seen since boot — a non-zero
+ * value means the denylist is running degraded. Exposed for the security digest.
+ *
+ * @returns {number}
+ */
+function getMalformedPatternCount() {
+  return _malformedPatternCount;
 }
 
 /**
@@ -240,4 +292,4 @@ function sanitizeOutput(output) {
   );
 }
 
-module.exports = { initTirith, check, sanitizeOutput };
+module.exports = { initTirith, check, sanitizeOutput, getMalformedPatternCount };

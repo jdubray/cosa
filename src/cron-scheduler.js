@@ -2,13 +2,11 @@
 
 const fs     = require('fs');
 const path   = require('path');
+const { SAFE_SERVICE_NAME } = require('./shell-utils');
 
 // ---------------------------------------------------------------------------
 // Security constants
 // ---------------------------------------------------------------------------
-
-/** Allowed characters in a systemd service name (mirrors restart-appliance.js). */
-const SAFE_SERVICE_NAME = /^[a-zA-Z0-9_\-.@]+$/;
 
 /** Valid .env key: starts with letter or underscore, followed by alphanumeric/underscore. */
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
