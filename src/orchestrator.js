@@ -16,6 +16,7 @@ const {
 const { postSessionHook }     = require('./post-session-hook');
 const securityGate   = require('./security-gate');
 const approvalEngine = require('./approval-engine');
+const actionVerifier = require('./action-verifier');
 const toolRegistry   = require('./tool-registry');
 const contextBuilder = require('./context-builder');
 const memoryManager      = require('./memory-manager');
@@ -261,10 +262,12 @@ async function processToolUse(sessionId, toolUse, triggerType, role) {
 
   // ── 3. Dispatch ─────────────────────────────────────────────────────────────
   let rawOutput;
+  let dispatchErrored = false;
   try {
     rawOutput = await toolRegistry.dispatch(name, input);
   } catch (err) {
     rawOutput = { error: err.message, code: err.code ?? 'TOOL_ERROR' };
+    dispatchErrored = true;
   }
 
   // ── 4. Sanitize FIRST, then persist the sanitized form ───────────────────────
@@ -287,10 +290,30 @@ async function processToolUse(sessionId, toolUse, triggerType, role) {
   }
 
   // Guard against runaway tool output bloating the context window.
-  const content =
+  let content =
     typeof sanitized === 'string' && sanitized.length > TOOL_OUTPUT_MAX_BYTES
       ? sanitized.slice(0, TOOL_OUTPUT_MAX_BYTES) + '\n…[output truncated to 50 KB]'
       : sanitized;
+
+  // ── 5. Computational verification (Verification Loop spec, Layer A) ──────────
+  // After an action-role session successfully runs a *mutating* tool, re-probe
+  // the appliance to confirm the action achieved its objective and append the
+  // verdict so the model gets deterministic ground truth on its next turn. The
+  // verifier itself decides (via config policy) whether any check applies; this
+  // gate just limits it to mutating action-tool calls that actually executed.
+  // Appended AFTER the 50 KB truncation so the verdict can never be cut off.
+  if (role === 'action' && riskLevel !== 'read' && !dispatchErrored) {
+    try {
+      const verdict = await actionVerifier.verify(name, input);
+      if (verdict) {
+        content = `${content}\n\n${actionVerifier.formatVerdict(verdict)}`;
+      }
+    } catch (verifyErr) {
+      // Verification is best-effort and must never break the tool result.
+      // eslint-disable-next-line no-console
+      console.warn(`[orchestrator] action verification threw for "${name}": ${verifyErr.message}`);
+    }
+  }
 
   return {
     type:        'tool_result',

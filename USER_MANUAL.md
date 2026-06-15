@@ -227,6 +227,29 @@ and will let you know if it gets worse.
 
 ---
 
+### A change didn't take effect
+
+After COSA makes an approved change, it re-checks your system to confirm the change actually worked. If it didn't, COSA tells you instead of pretending everything is fine:
+
+```
+Subject: [COSA] Alert: action session unresolved
+
+COSA tried to make a change on your behalf, but couldn't confirm
+it actually took effect.
+
+What COSA was trying to do: pause online ordering
+What happened: after the change, the system did not report back as
+expected, so COSA cannot confirm online ordering is paused.
+
+Your data is safe — nothing was lost. But the change may not have
+worked. Reply to this email if you'd like COSA to try again or
+investigate further.
+```
+
+You'll only see this when COSA made (or tried to make) a change and the follow-up check didn't line up. For everyday monitoring, no news is still good news.
+
+---
+
 ### Permission request
 
 When COSA needs to do something that changes your system, it always asks first. See the next section.
@@ -312,6 +335,12 @@ COSA will never take an irreversible action without your approval. The approval 
 ### What COSA can and cannot change
 
 Your system administrator configures which actions COSA is allowed to perform. COSA can only take actions on that pre-approved list — it cannot invent new ones or access systems not on the list.
+
+### COSA double-checks its own work
+
+When COSA makes a change, it doesn't just assume the change worked — it checks. After taking an action like pausing online ordering or restarting the system, COSA re-checks your system to confirm the change actually took effect before telling you it's done.
+
+If the check shows the change *didn't* take effect, COSA won't report success. It will either try again or let you know the result is unconfirmed — so you're never told "all set" when it isn't. If a change quietly fails to do what was intended, COSA emails you about it (see ["A change didn't take effect"](#a-change-didnt-take-effect) below) rather than staying silent.
 
 ---
 
@@ -557,6 +586,9 @@ COSA suppresses repeated alerts for the same condition for 30 minutes. If you re
 
 **What if COSA is wrong about something?**
 COSA can make mistakes. If its assessment doesn't match what you're seeing, just tell it: *"That doesn't seem right — the printer is actually working fine right now."* COSA will re-check and update.
+
+**How do I know a change COSA made actually worked?**
+COSA checks its own work. After making an approved change, it re-checks your system to confirm the change took effect before reporting success. If it can't confirm, it tells you the result is unconfirmed and emails you rather than claiming it's done. You don't have to verify anything yourself.
 
 **Can other people email COSA?**
 No. COSA only responds to the email address configured as the operator. Emails from other addresses are ignored.

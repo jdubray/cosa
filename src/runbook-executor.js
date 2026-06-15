@@ -335,4 +335,4 @@ async function executeRunbook(name, triggerCtx) {
   return { outcome, converged, iterations, stepsLog };
 }
 
-module.exports = { executeRunbook, resolveDotPath, RUNBOOK_FAILURE_CATEGORY };
+module.exports = { executeRunbook, resolveDotPath, resolveRisk, RUNBOOK_FAILURE_CATEGORY };

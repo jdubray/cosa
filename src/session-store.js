@@ -218,6 +218,13 @@ function runMigrations() {
       db.exec('ALTER TABLE sessions ADD COLUMN intent_raw TEXT');
     }
 
+    // Verification Loop spec, Layer B: the LLM-as-judge verdict for an action
+    // session, stored as "<verdict>:<confidence>" (e.g. "unresolved:0.82").
+    // Nullable — only action sessions with mutating tools are judged.
+    if (!cols.some(c => c.name === 'judge_verdict')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN judge_verdict TEXT');
+    }
+
     // Multi-agent harness (2.0): optional runbook binding on a watcher.  When a
     // watcher with a runbook_name fires, the deterministic runbook executor
     // runs instead of an LLM session.  The watchers table is created above, so
@@ -739,6 +746,19 @@ function findLastAlertByCategory(category) {
 }
 
 /**
+ * Record the LLM-as-judge verdict for a session (Verification Loop spec,
+ * Layer B). Stored verbatim, e.g. "resolved:0.91" or "unresolved:0.7".
+ *
+ * @param {string} sessionId
+ * @param {string} verdict - Serialised "<verdict>:<confidence>" string.
+ */
+function recordJudgeVerdict(sessionId, verdict) {
+  getDb()
+    .prepare(`UPDATE sessions SET judge_verdict = ? WHERE session_id = ?`)
+    .run(verdict, sessionId);
+}
+
+/**
  * Mark a session as having had context compression applied.
  * Sets `is_compressed = 1` on the sessions row.
  *
@@ -877,6 +897,7 @@ module.exports = {
   createSession,
   closeSession,
   markSessionCompressed,
+  recordJudgeVerdict,
   // Turns
   saveTurn,
   searchTurns,

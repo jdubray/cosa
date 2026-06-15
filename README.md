@@ -74,6 +74,12 @@ COSA has no inbound ports. It makes outbound connections only: SSH to the applia
 - Approvals expire after 30 minutes (5 minutes for urgent requests)
 - All decisions — approvals, denials, and expirations — are logged permanently
 
+### Action Verification
+- After COSA executes a state-changing action, it confirms the action actually achieved its objective before reporting success — closing the gap between "the command returned 200" and "the system is actually fixed"
+- **Computational re-probe (Layer A):** a configurable read-only probe re-checks live appliance state after a mutating action (e.g. after pausing the store, re-run the health check). The verdict is appended to the tool result and fed back into the agent loop, so when an action does not verify, COSA self-corrects within the same session instead of falsely reporting success. Probes are defined as data in `appliance.yaml` (`verification.policies`), are always read-only (enforced), and are bounded by per-policy attempt and wall-time limits
+- **LLM-as-judge (Layer B):** after an action session closes, a separate cheap model grades whether the objective was genuinely met (`resolved` / `unresolved` / `uncertain`), treating any computational re-probe result in the transcript as ground truth. The verdict is persisted on the session row, gates skill authoring (only genuinely-resolved sessions become reusable skills), and raises an `unresolved_action` operator alert on a silent failure — catching actions that ran cleanly but fixed nothing
+- Both layers are configured under `verification` in `appliance.yaml` and are opt-in per appliance
+
 ### Security Gate
 - Every tool call is checked against configurable dangerous-command patterns before execution
 - Blocked patterns: `rm -rf`, `DROP TABLE`, `DROP DATABASE`, unscoped `DELETE`, `kill -9`, `systemctl stop/disable`, raw disk operations, `chmod 777`, pipe-to-shell, credential exposure
@@ -280,6 +286,8 @@ cosa/
 │   ├── session-store.js            # SQLite persistence layer
 │   ├── tool-registry.js            # Tool registration and dispatch
 │   ├── security-gate.js            # Pre-execution security filter + output sanitizer
+│   ├── action-verifier.js          # Post-action computational re-probe (verification Layer A)
+│   ├── session-judge.js            # LLM-as-judge over closed sessions (verification Layer B)
 │   ├── approval-engine.js          # Operator approval FSM and token lifecycle
 │   ├── appliance-auth.js           # Generic JWT / API-key auth with refresh-on-401
 │   ├── watcher-registry.js         # Watcher storage, sandboxed execution, cooldown
@@ -362,6 +370,15 @@ Every tool call passes through three gates in sequence:
 2. **Approval gate** — routes medium/high/critical risk calls to operator via email; auto-approves read calls and email-triggered medium calls
 3. **Output sanitizer** — strips credentials from tool output before LLM sees it
 
+### Action Verification (Gather–Act–Verify)
+
+State-changing actions are verified in two composing layers, so the agent does not report success on an action that did not actually take effect:
+
+1. **Computational re-probe** (`action-verifier.js`) — after an `action`-role session runs a mutating tool, a configured read-only probe re-checks live appliance state and the verdict is appended to the tool result. The model gets deterministic ground truth on its next turn and self-corrects within its existing iteration budget. Probes reuse the runbook convergence contract (`{ tool_name, check_field, expect_value }`), are enforced read-only, and are bounded by attempt/wall-time caps.
+2. **LLM-as-judge** (`session-judge.js`) — after the session closes, a cheap Haiku reviewer grades whether the objective was genuinely met. The verdict is persisted to the `sessions` row (`judge_verdict`), gates skill authoring, and raises an `unresolved_action` alert on a silent failure.
+
+Both are configured under `verification` in `appliance.yaml` and default to dormant until enabled.
+
 ### Watcher Sandbox (Double Isolation)
 
 Watcher predicates execute inside two nested isolation boundaries:
@@ -375,7 +392,7 @@ Watcher predicates execute inside two nested isolation boundaries:
 
 | Table | Contents |
 |-------|----------|
-| `sessions` | One row per agent invocation — trigger type, status, timing |
+| `sessions` | One row per agent invocation — trigger type, status, timing, agent role, judge verdict |
 | `turns` | Full conversation history per session (FTS5 indexed) |
 | `tool_calls` | Every tool dispatch — input, output, status, risk level, approval ID |
 | `approvals` | Approval request lifecycle — token, expiry, resolution |

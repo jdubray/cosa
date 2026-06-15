@@ -5,10 +5,15 @@ const yaml         = require('js-yaml');
 const { getConfig }           = require('../config/cosa.config');
 const memoryManager           = require('./memory-manager');
 const skillStore              = require('./skill-store');
+const toolRegistry            = require('./tool-registry');
+const sessionJudge            = require('./session-judge');
 const { createSkillCreationFSM } = require('./skill-creation-fsm');
 const { createLogger } = require('./logger');
 
 const log = createLogger('post-session-hook');
+
+/** Alert category for action sessions the judge marks unresolved. */
+const UNRESOLVED_ACTION_CATEGORY = 'unresolved_action';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -278,6 +283,113 @@ function _parseSkillDocument(raw) {
 }
 
 // ---------------------------------------------------------------------------
+// LLM-as-judge (Verification Loop spec, Layer B)
+// ---------------------------------------------------------------------------
+
+/**
+ * A tool call is "mutating" when its registered risk level is not 'read'.
+ * `dynamic` (appliance_api_call) counts as mutating — it can resolve to a write.
+ *
+ * @param {string} toolName
+ * @returns {boolean}
+ */
+function _isMutating(toolName) {
+  return toolRegistry.getRiskLevel(toolName) !== 'read';
+}
+
+/**
+ * Email the operator + record an alert when an action session is judged
+ * unresolved. Best-effort; lazy-requires its collaborators to keep the module
+ * load path free of the session-store native dependency and any require cycle
+ * through email-gateway.
+ *
+ * @param {{ sessionId: string, trigger: object, verdict: object }} p
+ */
+async function _alertUnresolvedAction({ sessionId, trigger, verdict }) {
+  const emailGateway = require('./email-gateway');
+  const sessionStore = require('./session-store');
+  const { appliance } = getConfig();
+
+  const operatorEmail = appliance.operator?.email;
+  const applianceName = appliance.appliance?.name ?? appliance.name ?? 'COSA appliance';
+  const title = `${applianceName} — action session unresolved`;
+  const body  = [
+    `An action session did not achieve its objective (judge verdict: ${verdict.verdict}, confidence ${verdict.confidence}).`,
+    '',
+    `Objective: ${_sanitizeUntrusted(trigger.message ?? '(none)', 500)}`,
+    `Reason: ${_sanitizeUntrusted(verdict.reason ?? '', 500)}`,
+    `Session: ${sessionId}`,
+    '',
+    'Operator review recommended.',
+    '',
+    '--- Automated alert from COSA ---',
+  ].join('\n');
+
+  if (operatorEmail) {
+    await emailGateway.sendEmail({ to: operatorEmail, subject: `[COSA Alert] ${title}`, text: body });
+  }
+  sessionStore.createAlert({
+    session_id: sessionId,
+    severity:   'high',
+    category:   UNRESOLVED_ACTION_CATEGORY,
+    title,
+    body,
+    sent_at:    new Date().toISOString(),
+    email_to:   operatorEmail ?? null,
+  });
+}
+
+/**
+ * Grade a completed action session, persist the verdict, and alert on a silent
+ * failure. Returns the verdict, or null when judging does not apply (judge
+ * disabled, email session, or too few mutating tool calls).
+ *
+ * Opt-in: only runs when `appliance.verification.judge.enabled === true`, so the
+ * feature is dormant until explicitly configured (and stays out of every test
+ * and the staging harness that does not set it).
+ *
+ * @param {{ sessionId: string, trigger: object, toolCalls: Array, finalText: string }} p
+ * @returns {Promise<{ verdict: string, confidence: number, reason: string }|null>}
+ */
+async function _judgeAndRecord({ sessionId, trigger, toolCalls, finalText }) {
+  const { appliance, env } = getConfig();
+  const judgeCfg = appliance.verification?.judge ?? {};
+
+  if (judgeCfg.enabled !== true) return null;
+  if (trigger.type === 'email')  return null; // operator conversations aren't graded
+
+  const minMutating   = judgeCfg.min_mutating_tools ?? 1;
+  const mutatingCount = toolCalls.filter(tc => _isMutating(tc.tool_name)).length;
+  if (mutatingCount < minMutating) return null;
+
+  const verdict = await sessionJudge.judgeSession({
+    objective: trigger.message ?? '',
+    toolCalls,
+    finalText,
+    apiKey:    env.anthropicApiKey,
+    model:     judgeCfg.model,
+  });
+
+  // Persist for audit (lazy-require so module load stays free of better-sqlite3).
+  try {
+    require('./session-store').recordJudgeVerdict(sessionId, `${verdict.verdict}:${verdict.confidence}`);
+  } catch (err) {
+    log.warn(`recordJudgeVerdict failed for ${sessionId}: ${err.message}`);
+  }
+
+  if (verdict.verdict === 'unresolved' && judgeCfg.alert_on_unresolved !== false) {
+    try {
+      await _alertUnresolvedAction({ sessionId, trigger, verdict });
+    } catch (err) {
+      log.warn(`unresolved-action alert failed for ${sessionId}: ${err.message}`);
+    }
+  }
+
+  log.info(`Session ${sessionId} judged: ${verdict.verdict} (confidence ${verdict.confidence})`);
+  return verdict;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -307,6 +419,16 @@ async function postSessionHook({ sessionId, trigger, toolCalls, finalText, statu
     log.error(`Memory update failed for session ${sessionId}: ${err.message}`);
   }
 
+  // ── Layer B: LLM-as-judge. Grades whether an action session actually met its
+  //    objective. Returns null when judging does not apply (disabled, email,
+  //    or no mutating tools), in which case skill gating falls back to `status`.
+  let verdict = null;
+  try {
+    verdict = await _judgeAndRecord({ sessionId, trigger, toolCalls, finalText });
+  } catch (err) {
+    log.error(`Session judge failed for session ${sessionId}: ${err.message}`);
+  }
+
   // ── AC6–8: Skill creation / tracking via SkillCreationFSM ──────────────
   // Each attempt gets its own FSM instance — no shared state between sessions.
   const fsm = createSkillCreationFSM();
@@ -330,12 +452,20 @@ async function postSessionHook({ sessionId, trigger, toolCalls, finalText, statu
     const searchQuery = _buildSkillSearchQuery(toolCalls);
     const existing    = searchQuery ? skillStore.searchSkills(searchQuery, 1) : [];
 
+    // A session is "skill-eligible" when the judge confirms it achieved its
+    // objective (verdict === 'resolved'). When no judge ran (judging disabled,
+    // or a non-action / read-only session), fall back to clean completion —
+    // preserving prior behaviour. This is the gate that stops a session that
+    // ran cleanly but fixed nothing from authoring a runbook-grade skill.
+    const skillEligible = verdict ? verdict.verdict === 'resolved' : status === 'complete';
+
     if (existing.length > 0) {
       log.info(`Skill already exists for pattern '${searchQuery}' — tracking use`);
       // Track the invocation so success-rate degradation can be detected.
-      // Runs for both successful and failed sessions so the rate is accurate.
+      // Runs for both successful and failed sessions so the rate is accurate;
+      // "success" reflects the judge verdict where available, else completion.
       try {
-        skillStore.recordSkillUse(existing[0].id, sessionId, status === 'complete');
+        skillStore.recordSkillUse(existing[0].id, sessionId, skillEligible);
       } catch (err) {
         log.warn(`recordSkillUse failed for skill ${existing[0].id}: ${err.message}`);
       }
@@ -343,8 +473,9 @@ async function postSessionHook({ sessionId, trigger, toolCalls, finalText, statu
       return;
     }
 
-    // No existing skill. Only generate new skills from successfully completed sessions.
-    if (status !== 'complete') {
+    // No existing skill. Only author a skill from a session that genuinely
+    // achieved its objective.
+    if (!skillEligible) {
       fsm.send('not_novel'); // searching → idle (FSM state reuse; no new skill)
       return;
     }

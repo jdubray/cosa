@@ -107,6 +107,40 @@ operator:
   # Gmail's limit is 500/day; 50 leaves headroom and catches runaway loops early.
   daily_send_limit: 50
 
+# Action verification (Verification Loop spec, Layer A) — computational re-probe.
+# After an action-role session executes a *mutating* tool that matches a policy
+# below, COSA runs the named READ-ONLY probe and appends a verdict to the tool
+# result the model sees, so it gets deterministic ground truth (did it actually
+# work?) before reporting success. Tools with no matching policy are unaffected.
+verification:
+  enabled: true
+  # Hard ceiling on added wall-time per mutating call, across all re-probe attempts.
+  max_verify_seconds: 45
+  policies:
+    # After pausing/resuming online ordering, confirm the appliance is still
+    # healthy before claiming success. health_check is read-only.
+    # NOTE: starter policy — refine `check_field`/`expect_value` against the
+    # appliance status poll once a paused-state field is confirmed, to verify
+    # the pause actually took effect rather than just overall health.
+    - tool: appliance_api_call
+      when: { endpoint_name: pause_store }
+      probe:
+        tool_name: health_check
+        check_field: overall_status
+        expect_value: healthy
+        settle_seconds: 5
+        max_attempts: 2
+  # LLM-as-judge (Layer B) — after an action session that ran >=1 mutating tool
+  # closes, a cheap Haiku reviewer grades whether the objective was actually
+  # achieved. The verdict gates skill authoring (only 'resolved' sessions author
+  # a skill), is persisted on the session row, and raises an operator alert when
+  # an action session is judged 'unresolved'. Opt-in: dormant unless enabled.
+  judge:
+    enabled: true
+    model: claude-haiku-4-5-20251001
+    min_mutating_tools: 1
+    alert_on_unresolved: true
+
 # Multi-agent harness (2.0) — autonomous watcher-evaluation loop.
 # The watcher_eval cron task (every 5 min) polls the appliance, evaluates
 # watchers, and runs a bound runbook (deterministic) or opens a Probe session
