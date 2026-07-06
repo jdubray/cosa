@@ -402,9 +402,8 @@ function buildWeeklySecurityDigestTrigger() {
 ${accessLogStep}
 5. Run compliance_verify to get the current compliance posture.
 6. Run credential_audit to check for exposed credentials in the repository.
-7. Run jwt_secret_check to get the current JWT entropy level and last-rotated date.
-8. Run session_search with query "webhook_hmac jwt_secret" for the past 7 days.
-9. Count total security alert sessions from the past 7 days for the incident count.
+7. Run session_search with query "webhook_hmac" for the past 7 days.
+8. Count total security alert sessions from the past 7 days for the incident count.
 
 Then write the complete digest as your response with this exact structure:
 - Header: appliance name, "Weekly Security Digest — week of ${weekOf}"
@@ -412,7 +411,7 @@ Then write the complete digest as your response with this exact structure:
 - Section: PROCESS MONITOR — mark ✓ if all expected processes running, or ⚠ with unexpected/missing process names
 - Section: NETWORK — mark ✓ if all devices known, or ⚠ with unknown device count and MAC addresses
 ${accessLogSection}
-- Section: COMPLIANCE — SAQ-A overall status (from compliance_verify); include JWT entropy level, last-rotated date, and next rotation date (from jwt_secret_check)
+- Section: COMPLIANCE — SAQ-A overall status (from compliance_verify)
 - Section: CREDENTIALS — mark ✓ if no findings, or ⚠ with credential_audit summary; note .gitignore coverage
 - Line: SECURITY INCIDENTS THIS WEEK: N
 - Footer: Next scan: ${nextScanDate} | Next PCI assessment: ${nextPciDate}

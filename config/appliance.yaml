@@ -400,8 +400,13 @@ tools:
     enabled: true
   ips_alert:
     enabled: true
+  # Disabled: this deployment authenticates to the POS via email/password login
+  # (auth.type: jwt → /api/auth/login), receiving short-lived access/refresh
+  # tokens. COSA holds no JWT *signing secret*, so there is nothing local to
+  # audit. The cron task also called the handler with no credential_name and
+  # threw "credential not found: undefined" every Monday. See docs/.
   jwt_secret_check:
-    enabled: true
+    enabled: false
   token_rotation_remind:
     enabled: true
   pause_appliance:
