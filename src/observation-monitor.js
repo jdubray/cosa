@@ -14,6 +14,7 @@
  * monitor definition can never become arbitrary command execution.
  */
 
+const net              = require('net');
 const sshBackend       = require('./ssh-backend');
 const { shEscape }     = require('./shell-utils');
 const { createLogger } = require('./logger');
@@ -105,6 +106,27 @@ const PROBES = {
     const r = await sshBackend.exec(pipe);
     const count = parseInt(String(r.stdout ?? '').trim(), 10) || 0;
     return { value: count, context: { unit, window_minutes: mins, patterns, match_count: count } };
+  },
+
+  /**
+   * LAN reachability of a fixed IPv4 host (e.g. a wired receipt printer) via
+   * `ping` from the appliance. value: packet loss percentage (0-100); a host
+   * that never replies reports 100.
+   * params: { host, count? }
+   */
+  async ping_reachability(params) {
+    const host = String(params.host ?? '');
+    if (net.isIP(host) !== 4) throw invalid(`Invalid host "${host}" — must be an IPv4 address`);
+    const count = clampInt(params.count, 1, 10, 3);
+
+    const r = await sshBackend.exec(`ping -c ${count} -W 2 '${shEscape(host)}' || true`);
+    const m = /(\d+)% packet loss/.exec(String(r.stdout ?? ''));
+    const packetLossPct = m ? parseInt(m[1], 10) : 100;
+
+    return {
+      value: packetLossPct,
+      context: { host, count, packet_loss_pct: packetLossPct },
+    };
   },
 };
 

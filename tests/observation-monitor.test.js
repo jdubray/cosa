@@ -104,6 +104,39 @@ describe('PROBES.log_pattern_count', () => {
   });
 });
 
+describe('PROBES.ping_reachability', () => {
+  it('parses 0% packet loss', async () => {
+    mockExec.mockResolvedValue({
+      stdout: '3 packets transmitted, 3 received, 0% packet loss, time 2003ms', exitCode: 0,
+    });
+    const r = await PROBES.ping_reachability({ host: '192.168.1.179' });
+    expect(r.value).toBe(0);
+    expect(r.context.packet_loss_pct).toBe(0);
+  });
+  it('parses partial packet loss', async () => {
+    mockExec.mockResolvedValue({
+      stdout: '3 packets transmitted, 2 received, 33% packet loss, time 2003ms', exitCode: 0,
+    });
+    const r = await PROBES.ping_reachability({ host: '192.168.1.179' });
+    expect(r.value).toBe(33);
+  });
+  it('defaults to 100% loss when output is unparseable (host fully down)', async () => {
+    mockExec.mockResolvedValue({ stdout: '', exitCode: 1 });
+    const r = await PROBES.ping_reachability({ host: '192.168.1.179' });
+    expect(r.value).toBe(100);
+  });
+  it('rejects a non-IPv4 host (no shell injection surface)', async () => {
+    await expect(PROBES.ping_reachability({ host: '192.168.1.179; rm -rf /' }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+    expect(mockExec).not.toHaveBeenCalled();
+  });
+  it('clamps an out-of-range count', async () => {
+    mockExec.mockResolvedValue({ stdout: '0% packet loss', exitCode: 0 });
+    await PROBES.ping_reachability({ host: '192.168.1.179', count: 999 });
+    expect(mockExec.mock.calls[0][0]).toContain('ping -c 10');
+  });
+});
+
 describe('evaluateMonitor', () => {
   it('evaluates the voltage monitor end-to-end and renders the report', async () => {
     mockExec.mockResolvedValue({ stdout: 'throttled=0x1', exitCode: 0 });

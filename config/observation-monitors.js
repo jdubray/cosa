@@ -57,4 +57,36 @@ module.exports = [
       'is worth raising with Finix or checking the appliance network path. ' +
       'Detected at {{checked_at}}.',
   },
+  {
+    id:          'printer_179_unreachable',
+    enabled:     true,
+    description: 'Sony POS receipt printer (192.168.1.179, wired) LAN reachability via ping.',
+    probe:       'ping_reachability',
+    params:      { host: '192.168.1.179', count: 3 },
+    threshold:   { comparator: 'gte', medium: 34, high: 100 },
+    report_template:
+      'Receipt printer at {{host}} is not responding on the LAN.\n\n' +
+      'Severity:     {{severity}}\n' +
+      'Packet loss:  {{packet_loss_pct}}% ({{count}} pings)\n\n' +
+      'A bad link usually means the Ethernet cable or switch port to this printer ' +
+      'has failed, or the printer has lost power. Check the physical link light on ' +
+      'the printer and the switch before assuming a software issue. ' +
+      'Detected at {{checked_at}}.',
+  },
+  {
+    id:          'printer_217_unreachable',
+    enabled:     true,
+    description: 'Sony POS receipt printer (192.168.1.217, wired) LAN reachability via ping.',
+    probe:       'ping_reachability',
+    params:      { host: '192.168.1.217', count: 3 },
+    threshold:   { comparator: 'gte', medium: 34, high: 100 },
+    report_template:
+      'Receipt printer at {{host}} is not responding on the LAN.\n\n' +
+      'Severity:     {{severity}}\n' +
+      'Packet loss:  {{packet_loss_pct}}% ({{count}} pings)\n\n' +
+      'A bad link usually means the Ethernet cable or switch port to this printer ' +
+      'has failed, or the printer has lost power. Check the physical link light on ' +
+      'the printer and the switch before assuming a software issue. ' +
+      'Detected at {{checked_at}}.',
+  },
 ];
