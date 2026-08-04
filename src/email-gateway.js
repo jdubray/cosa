@@ -59,6 +59,24 @@ const SUPPRESS_RE = /\bSUPPRESS\s+\S+:\S+:\d+/i;
 const HOME_IP_RE = /\bHOME[-\s]*IP\b/i;
 
 /**
+ * Loose match for an IP-change request that did NOT use the HOME-IP keyword.
+ *
+ * Requires a change/update verb within ~30 characters of the word "IP", in
+ * either order, so both "IP Address change" and "my new IP is …" match while
+ * incidental mentions of an IP do not. Callers must ALSO confirm the text
+ * carries a parseable address (see _dispatchMessage) before acting on it.
+ *
+ * Without this branch such a message falls through to the generic orchestrator,
+ * which has no knowledge of the home-IP tool and has told the operator the
+ * change was impossible (observed 2026-08-01). Mirrors SUPPRESS_LOOSE_RE.
+ */
+const HOME_IP_LOOSE_RE = new RegExp(
+  '\\b(?:change|changed|changing|update|updated|updating|new|renew|refresh|rotate|switch)\\b[^\\n]{0,30}?\\bIP\\b' +
+  '|\\bIP\\b(?:\\s+address)?[^\\n]{0,30}?\\b(?:change|changed|changing|update|updated|updating|new|renew|refresh|rotate|switch)\\b',
+  'i'
+);
+
+/**
  * Path where the daily outbound send count is persisted.
  * Survives process restarts within the same calendar day (UTC).
  */
@@ -285,10 +303,59 @@ async function _dispatchMessage(msg) {
     return;
   }
 
+  // Checked BEFORE the loose home-IP branch: an approval reply about an
+  // IP-related action would otherwise be swallowed by the hint below.
   if (APPROVAL_RE.test(text)) {
     await approvalEngine.processInboundReply(msg);
-  } else if (_onNewSession) {
+    return;
+  }
+
+  // Operator clearly asked to change an IP and supplied one, but did not use
+  // the HOME-IP keyword. Reply with the expected syntax rather than handing the
+  // request to the generic orchestrator, which cannot perform the update.
+  if (HOME_IP_LOOSE_RE.test(text)) {
+    const { parseHomeIps } = require('./home-ip-allowlist');
+    const parsed = parseHomeIps(text);
+    if (parsed.v4 || parsed.v6) {
+      log.warn(`Received IP-change request without the HOME-IP keyword from ${msg.from}`);
+      await _sendHomeIpFormatHint(parsed);
+      return;
+    }
+  }
+
+  if (_onNewSession) {
     await _onNewSession(msg);
+  }
+}
+
+/**
+ * Send the operator the exact HOME-IP line that would apply the addresses they
+ * already sent, so the retry is a copy-paste rather than a re-derivation.
+ *
+ * @param {{ v4: string|null, v6: string|null }} parsed - Addresses found in the email.
+ */
+async function _sendHomeIpFormatHint(parsed) {
+  const { appliance } = getConfig();
+  const operatorEmail = appliance.operator?.email;
+  if (!operatorEmail) return;
+
+  const suggested = ['HOME-IP', parsed.v4, parsed.v6].filter(Boolean).join(' ');
+
+  try {
+    await sendEmail({
+      to:      operatorEmail,
+      subject: '[COSA] Home IP update — keyword missing',
+      text:
+        'COSA can update the home entry in ALLOWED_MERCHANT_IPS for you, but the ' +
+        'request must start with the HOME-IP keyword. No change was made.\n\n' +
+        'Reply with:\n\n' +
+        `  ${suggested}\n\n` +
+        'That is the keyword followed by the address(es) found in your message. ' +
+        'You can send just one address family or both.\n\n' +
+        'If you meant something else, resend your message without an IP address in it.',
+    });
+  } catch (err) {
+    log.warn(`Failed to send home-IP format hint email: ${err.message}`);
   }
 }
 

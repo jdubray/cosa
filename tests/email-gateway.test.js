@@ -55,6 +55,14 @@ jest.mock('../src/session-store', () => ({
   saveDeadLetter: jest.fn(),
 }));
 
+// ── ssh-backend ──────────────────────────────────────────────────────────────
+// Pulled in transitively by home-ip-allowlist (lazy-required from the loose
+// home-IP branch). Stubbed so the real parseHomeIps is exercised without
+// opening an SSH connection.
+jest.mock('../src/ssh-backend', () => ({
+  exec: jest.fn(),
+}));
+
 // ── logger ───────────────────────────────────────────────────────────────────
 // Expose warn/error so tests can assert on them without spying on console.*
 // (email-gateway.js calls log.warn / log.error, not console.warn / console.error).
@@ -863,5 +871,110 @@ describe('AC-DKIM — DKIM check config and non-Gmail providers', () => {
     await _runPoll();
 
     expect(mockHandler).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-HOMEIP-LOOSE — IP-change request without the HOME-IP keyword
+//
+// Regression for 2026-08-01: an email with subject "IP Address change" fell
+// through to the generic orchestrator, which replied that COSA had no
+// file-write capability and told the operator to SSH in by hand. Such a message
+// must now get the HOME-IP syntax hint instead of reaching the orchestrator.
+// ---------------------------------------------------------------------------
+
+describe('AC-HOMEIP-LOOSE — IP-change request missing the HOME-IP keyword', () => {
+  /** Drive one operator email through a full poll cycle. */
+  async function deliver({ subject = '', body = '' }) {
+    mockImapSearch.mockResolvedValue([1]);
+    mockImapFetchOne.mockResolvedValue(
+      makeFetched({ from: 'owner@restaurant.com', subject, body })
+    );
+    await _runPoll();
+  }
+
+  /** The text of the single email COSA sent, or null if it sent none. */
+  const sentText = () => mockSendMail.mock.calls[0]?.[0]?.text ?? null;
+
+  it('does not hand the request to the orchestrator', async () => {
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+
+    await deliver({ subject: 'IP Address change', body: 'My new address is 172.56.105.241' });
+
+    expect(mockHandler).not.toHaveBeenCalled();
+  });
+
+  it('replies with a ready-to-send HOME-IP line carrying the parsed IPv4', async () => {
+    await deliver({ subject: 'IP Address change', body: 'My new address is 172.56.105.241' });
+
+    expect(sentText()).toContain('HOME-IP 172.56.105.241');
+  });
+
+  it('normalises an IPv6 host address to its /64 prefix in the suggestion', async () => {
+    await deliver({
+      subject: 'IP Address change',
+      body:    '172.56.105.241 and 2607:fb90:b281:fcbd:127:2d21:c79:94ea',
+    });
+
+    expect(sentText()).toContain('HOME-IP 172.56.105.241 2607:fb90:b281:fcbd::/64');
+  });
+
+  it('matches the verb-before-IP phrasing ("my new IP is …")', async () => {
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+
+    await deliver({ subject: '', body: 'my new IP is 172.56.105.241' });
+
+    expect(mockHandler).not.toHaveBeenCalled();
+    expect(sentText()).toContain('HOME-IP 172.56.105.241');
+  });
+
+  it('logs a warning naming the sender', async () => {
+    await deliver({ subject: 'IP Address change', body: '172.56.105.241' });
+
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      expect.stringContaining('owner@restaurant.com')
+    );
+  });
+
+  // ── Must NOT fire ─────────────────────────────────────────────────────────
+
+  it('leaves a correctly-formatted HOME-IP email on the real handler path', async () => {
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+
+    await deliver({ subject: 'HOME-IP', body: 'HOME-IP 172.56.105.241' });
+
+    // Routed to home-ip-allowlist, so neither the orchestrator nor the hint ran.
+    expect(mockHandler).not.toHaveBeenCalled();
+    expect(sentText()).not.toContain('keyword');
+  });
+
+  it('does not swallow an approval reply that mentions an IP change', async () => {
+    await deliver({
+      subject: 'Re: Approval Required',
+      body:    'APPROVE-A1B2C3D4 — yes, apply the IP address change to 172.56.105.241',
+    });
+
+    expect(mockProcessInboundReply).toHaveBeenCalled();
+  });
+
+  it('ignores an IP-change phrase that carries no parseable address', async () => {
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+
+    await deliver({ subject: 'IP Address change', body: 'Did our public IP change last night?' });
+
+    expect(mockHandler).toHaveBeenCalled();
+  });
+
+  it('ignores an incidental IP mention with no change intent', async () => {
+    const mockHandler = jest.fn().mockResolvedValue(undefined);
+    setNewSessionHandler(mockHandler);
+
+    await deliver({ subject: 'Status', body: 'Is 172.56.105.241 still reaching the terminal?' });
+
+    expect(mockHandler).toHaveBeenCalled();
   });
 });
