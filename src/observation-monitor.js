@@ -120,8 +120,11 @@ const PROBES = {
     const count = clampInt(params.count, 1, 10, 3);
 
     const r = await sshBackend.exec(`ping -c ${count} -W 2 '${shEscape(host)}' || true`);
-    const m = /(\d+)% packet loss/.exec(String(r.stdout ?? ''));
-    const packetLossPct = m ? parseInt(m[1], 10) : 100;
+    // iputils prints loss with %g, so partial loss is fractional ("33.3333%").
+    // The capture must include the decimal part or the digits after the dot
+    // are matched alone ("3333% packet loss" → false high alert, 2026-08-11).
+    const m = /(\d+(?:\.\d+)?)% packet loss/.exec(String(r.stdout ?? ''));
+    const packetLossPct = m ? Math.round(parseFloat(m[1])) : 100;
 
     return {
       value: packetLossPct,

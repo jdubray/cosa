@@ -120,6 +120,23 @@ describe('PROBES.ping_reachability', () => {
     const r = await PROBES.ping_reachability({ host: '192.168.1.179' });
     expect(r.value).toBe(33);
   });
+  it('parses fractional packet loss as printed by iputils %g (regression 2026-08-11)', async () => {
+    // 1 of 3 pings lost: iputils prints "33.3333% packet loss". The old integer
+    // regex captured only the digits after the dot → value 3333 → false high alert.
+    mockExec.mockResolvedValue({
+      stdout: '3 packets transmitted, 2 received, 33.3333% packet loss, time 2005ms', exitCode: 0,
+    });
+    const r = await PROBES.ping_reachability({ host: '192.168.1.217' });
+    expect(r.value).toBe(33);
+    expect(r.context.packet_loss_pct).toBe(33);
+  });
+  it('parses fractional loss with duplicate/error annotations', async () => {
+    mockExec.mockResolvedValue({
+      stdout: '3 packets transmitted, 1 received, +2 errors, 66.6667% packet loss, time 2010ms', exitCode: 0,
+    });
+    const r = await PROBES.ping_reachability({ host: '192.168.1.217' });
+    expect(r.value).toBe(67);
+  });
   it('defaults to 100% loss when output is unparseable (host fully down)', async () => {
     mockExec.mockResolvedValue({ stdout: '', exitCode: 1 });
     const r = await PROBES.ping_reachability({ host: '192.168.1.179' });
