@@ -11,6 +11,10 @@ jest.mock('../src/ssh-backend', () => ({ exec: (...a) => mockExec(...a) }));
 jest.mock('../src/logger', () => ({
   createLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
 }));
+const mockDbPath = jest.fn(() => '/home/baanbaan/baan-baan-merchant/v2/data/merchant.db');
+jest.mock('../config/cosa.config', () => ({
+  getConfig: () => ({ appliance: { database: { path: mockDbPath() } } }),
+}));
 
 const om = require('../src/observation-monitor');
 const { classify, renderTemplate, PROBES, evaluateMonitor } = om;
@@ -179,5 +183,81 @@ describe('evaluateMonitor', () => {
   it('throws on an unknown probe type', async () => {
     await expect(evaluateMonitor({ id: 'x', probe: 'nope' }))
       .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+  });
+});
+
+describe('PROBES.sqlite_scalar', () => {
+  const COUNT_SQL = "SELECT COUNT(*) FROM payments WHERE processor_fee_cents IS NULL";
+
+  it('runs the query read-only on stdin against the configured DB path', async () => {
+    mockExec.mockResolvedValue({ stdout: '1627\n', exitCode: 0 });
+    const r = await PROBES.sqlite_scalar({ sql: COUNT_SQL });
+    expect(r.value).toBe(1627);
+    expect(r.context.value).toBe(1627);
+
+    const [cmd, stdin] = mockExec.mock.calls[0];
+    expect(cmd).toBe('sqlite3 -readonly "/home/baanbaan/baan-baan-merchant/v2/data/merchant.db"');
+    expect(stdin).toBe(COUNT_SQL);          // SQL never reaches the command line
+  });
+
+  it('parses only the first row of output', async () => {
+    mockExec.mockResolvedValue({ stdout: '42\n99\n', exitCode: 0 });
+    expect((await PROBES.sqlite_scalar({ sql: COUNT_SQL })).value).toBe(42);
+  });
+
+  it('throws when sqlite3 exits non-zero (e.g. no such table)', async () => {
+    mockExec.mockResolvedValue({ stdout: '', stderr: 'Error: no such table: settings', exitCode: 1 });
+    await expect(PROBES.sqlite_scalar({ sql: COUNT_SQL }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+  });
+
+  it('throws when the query returns a non-numeric value', async () => {
+    mockExec.mockResolvedValue({ stdout: 'banana', exitCode: 0 });
+    await expect(PROBES.sqlite_scalar({ sql: COUNT_SQL }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+  });
+
+  it.each([
+    ['no sql',            undefined],
+    ['not a SELECT',      'PRAGMA table_info(payments)'],
+    ['multiple statements', "SELECT 1; DROP TABLE payments"],
+    ['a comment',         "SELECT 1 -- DROP TABLE payments"],
+    ['a write keyword',   "SELECT 1 FROM payments WHERE id IN (DELETE FROM payments)"],
+    ['ATTACH',            "SELECT 1 FROM payments WHERE ATTACH DATABASE 'x'"],
+    ['load_extension',    "SELECT load_extension('evil.so')"],
+  ])('rejects %s without touching the appliance', async (_label, sql) => {
+    await expect(PROBES.sqlite_scalar({ sql }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+    expect(mockExec).not.toHaveBeenCalled();
+  });
+
+  it('throws when appliance.database.path is not configured', async () => {
+    mockDbPath.mockReturnValueOnce(undefined);
+    await expect(PROBES.sqlite_scalar({ sql: COUNT_SQL }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+    expect(mockExec).not.toHaveBeenCalled();
+  });
+});
+
+describe('config/observation-monitors.js — payments_missing_processor_fee', () => {
+  const defs = require('../config/observation-monitors');
+  const def  = defs.find(d => d.id === 'payments_missing_processor_fee');
+
+  it('is enabled and wired to the sqlite_scalar probe', () => {
+    expect(def).toBeDefined();
+    expect(def.enabled).toBe(true);
+    expect(def.probe).toBe('sqlite_scalar');
+    expect(PROBES[def.probe]).toBeInstanceOf(Function);
+  });
+
+  it('its SQL passes the probe validator', async () => {
+    mockExec.mockResolvedValue({ stdout: '0', exitCode: 0 });
+    await expect(PROBES.sqlite_scalar(def.params)).resolves.toMatchObject({ value: 0 });
+  });
+
+  it('classifies a healthy backlog as none and a stalled one as high', () => {
+    expect(classify(3,    def.threshold)).toBe('none');
+    expect(classify(25,   def.threshold)).toBe('medium');
+    expect(classify(1627, def.threshold)).toBe('high');
   });
 });

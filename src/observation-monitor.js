@@ -17,6 +17,7 @@
 const net              = require('net');
 const sshBackend       = require('./ssh-backend');
 const { shEscape }     = require('./shell-utils');
+const { getConfig }    = require('../config/cosa.config');
 const { createLogger } = require('./logger');
 
 const log = createLogger('observation-monitor');
@@ -26,6 +27,15 @@ const log = createLogger('observation-monitor');
 // ---------------------------------------------------------------------------
 
 const UNIT_RE = /^[A-Za-z0-9_.@-]+\.service$/;
+
+/**
+ * Statement keywords a read-only observation query must never contain.
+ * `sqlite3 -readonly` already blocks writes at the engine level; this is the
+ * belt-and-braces layer, and it also blocks the file-touching extensions
+ * (ATTACH / readfile / writefile / load_extension) that read-only mode allows.
+ */
+const FORBIDDEN_SQL_RE =
+  /\b(attach|detach|pragma|insert|update|delete|drop|create|alter|replace|vacuum|begin|commit|rollback|load_extension|readfile|writefile|edit)\b/i;
 
 function invalid(msg) {
   const err = new Error(msg);
@@ -130,6 +140,49 @@ const PROBES = {
       value: packetLossPct,
       context: { host, count, packet_loss_pct: packetLossPct },
     };
+  },
+
+  /**
+   * Single numeric value from a read-only SELECT against the appliance's
+   * SQLite database. value: the scalar the query returns.
+   *
+   * This is the probe for "a number that only the POS database knows" —
+   * backlog sizes, row counts, staleness. It exists because a silent data
+   * stall (e.g. the processor-fee backfill that died 2026-07-08 and produced
+   * no error line for two months) is invisible to both the log-pattern probe
+   * and the snapshot watchers.
+   *
+   * Safety: the DB path comes from config, never from the monitor definition;
+   * `sqlite3 -readonly` makes writes impossible at the engine level; the SQL
+   * is passed on stdin (never interpolated into the command line); and the
+   * statement must be a single bare SELECT. A monitor definition therefore
+   * still cannot become arbitrary command execution.
+   *
+   * params: { sql }
+   */
+  async sqlite_scalar(params) {
+    const { appliance } = getConfig();
+    const dbPath = appliance.database?.path;
+    if (!dbPath) throw invalid('appliance.database.path is not configured');
+
+    const sql = String(params.sql ?? '').trim();
+    if (!sql) throw invalid('sqlite_scalar requires a sql param');
+    if (!/^SELECT\s/i.test(sql)) throw invalid('sqlite_scalar sql must start with SELECT');
+    if (sql.includes(';')) throw invalid('sqlite_scalar sql must be a single statement (no ";")');
+    if (/--|\/\*/.test(sql)) throw invalid('sqlite_scalar sql must not contain comments');
+    if (FORBIDDEN_SQL_RE.test(sql)) throw invalid('sqlite_scalar sql contains a forbidden keyword');
+
+    const escapedPath = String(dbPath).replace(/"/g, '\\"');
+    const r = await sshBackend.exec(`sqlite3 -readonly "${escapedPath}"`, sql, 10000);
+    if (r.exitCode !== 0) {
+      throw invalid(`sqlite3 exited ${r.exitCode}: ${String(r.stderr ?? '').trim()}`);
+    }
+
+    const raw   = String(r.stdout ?? '').trim().split(/\r?\n/)[0] ?? '';
+    const value = Number(raw);
+    if (!Number.isFinite(value)) throw invalid(`Query returned a non-numeric value: "${raw}"`);
+
+    return { value, context: { value, db_path: dbPath } };
   },
 };
 

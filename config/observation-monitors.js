@@ -89,4 +89,35 @@ module.exports = [
       'the printer and the switch before assuming a software issue. ' +
       'Detected at {{checked_at}}.',
   },
+  {
+    id:          'payments_missing_processor_fee',
+    enabled:     true,
+    description: 'Card payments with a Finix transfer that still have no processor fee 48h on.',
+    probe:       'sqlite_scalar',
+    params:      {
+      // 48h: the sweep itself only considers payments older than 24h, and Finix
+      // populates fee records during settlement (~24h after SUCCEEDED), so
+      // anything past 48h that is still NULL means the backfill is not working.
+      sql:
+        "SELECT COUNT(*) FROM payments " +
+        "WHERE processor_fee_cents IS NULL " +
+        "AND finix_transfer_id IS NOT NULL AND finix_transfer_id != '' " +
+        "AND created_at < datetime('now', '-48 hours')",
+    },
+    // A healthy day settles every card payment, so the steady state is single
+    // digits (only the most recent, not-yet-settled rows). 25 means a couple of
+    // days have gone unfilled; 100 means it has been broken for a week+.
+    threshold:   { comparator: 'gte', medium: 25, high: 100 },
+    report_template:
+      'Processor fees are not being recorded for card payments on the POS.\n\n' +
+      'Severity:                {{severity}}\n' +
+      'Payments missing a fee:  {{value}} (older than 48h, Finix transfer present)\n\n' +
+      'The nightly [processor-fees] sweep fills payments.processor_fee_cents from ' +
+      'Finix. When this number climbs, the sweep is running but getting nothing ' +
+      'back — the sweep logs no error in that case, so this monitor is the only ' +
+      'signal. Effective-rate and net-revenue figures in the dashboard and reports ' +
+      'are understated for every payment counted here. ' +
+      'See docs/baanbaan_processor_fee_backfill_stall_spec.md. ' +
+      'Detected at {{checked_at}}.',
+  },
 ];

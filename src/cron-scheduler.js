@@ -3228,17 +3228,25 @@ async function runApplicationMetricsTask() {
   const escapedPath  = dbPath.replace(/"/g, '\\"');
   const cmd          = `sqlite3 -json -readonly "${escapedPath}"`;
 
-  // Single query returns three rows using UNION ALL — one exec via stdin.
+  // Single query returns two rows using UNION ALL — one exec via stdin.
+  //
+  // Schema notes (verified against merchant.db 2026-09-06): the appliance has
+  // no `settings` table — the earlier query referenced one, so sqlite3 exited 1
+  // and every metric came back null. Pause state lives on
+  // `merchants.online_orders_paused_until` (a timestamp; paused while it is in
+  // the future), and the in-flight order statuses are 'received'/'confirmed'
+  // ('paid', 'picked_up', 'completed' and 'cancelled' are terminal).
   const sql = [
     `SELECT 'active_orders' AS k,`,
     `  CAST(COUNT(*) AS TEXT) AS v`,
-    `  FROM orders WHERE status IN ('open','in_progress','ready')`,
+    `  FROM orders WHERE status IN ('received','confirmed')`,
     `UNION ALL`,
     `SELECT 'paused' AS k,`,
-    `  COALESCE((SELECT value FROM settings WHERE key='online_ordering_paused' LIMIT 1), '0') AS v`,
-    `UNION ALL`,
-    `SELECT 'bun_version' AS k,`,
-    `  COALESCE((SELECT value FROM settings WHERE key='bun_version' LIMIT 1), '') AS v`,
+    `  CASE WHEN EXISTS (`,
+    `    SELECT 1 FROM merchants`,
+    `     WHERE online_orders_paused_until IS NOT NULL`,
+    `       AND online_orders_paused_until > datetime('now')`,
+    `  ) THEN '1' ELSE '0' END AS v`,
   ].join(' ');
 
   const data = {
@@ -3255,12 +3263,14 @@ async function runApplicationMetricsTask() {
     const { stdout, exitCode, stderr } = await sshBackend.exec(cmd, sql, 10000);
     if (exitCode !== 0) {
       data.error = `sqlite3 exited ${exitCode}: ${stderr.trim()}`;
+      // Surface it: a silently-swallowed error here left every metric null for
+      // an unknown period with nothing but "orders=null, db=null" in the log.
+      log.warn(`[app-metrics] SQL query failed: ${data.error}`);
     } else {
       const rows = stdout.trim() ? JSON.parse(stdout.trim()) : [];
       for (const row of rows) {
         if (row.k === 'active_orders') data.active_orders = parseInt(row.v, 10) || 0;
         if (row.k === 'paused')        data.online_ordering_paused = row.v === '1' || row.v === 'true';
-        if (row.k === 'bun_version')   data.bun_version = row.v || null;
       }
     }
   } catch (err) {
@@ -3271,14 +3281,22 @@ async function runApplicationMetricsTask() {
   // ── 2. DB file size (stat is cheaper than PRAGMA page_count) ─────────────
   if (!data.error) {
     try {
+      // Two cheap facts in one round trip: DB size, then the Bun runtime
+      // version (there is no `settings` row carrying it, contrary to the
+      // earlier query's assumption). Bun is not on the non-interactive SSH
+      // PATH, so call it by absolute path — same binary the unit's ExecStart
+      // uses.
       const { stdout: szOut, exitCode: szCode } = await sshBackend.exec(
-        `stat -c %s "${escapedPath}"`,
+        `stat -c %s "${escapedPath}"; "$HOME/.bun/bin/bun" --version 2>/dev/null || true`,
         undefined,
         5000
       );
       if (szCode === 0) {
-        const bytes = parseInt(szOut.trim(), 10);
+        const [sizeLine, versionLine] = szOut.trim().split(/\r?\n/);
+        const bytes = parseInt((sizeLine || '').trim(), 10);
         if (!isNaN(bytes)) data.db_size_bytes = bytes;
+        const version = (versionLine || '').trim();
+        if (version) data.bun_version = version;
       }
     } catch (err) {
       log.warn(`[app-metrics] stat failed: ${err.message}`);
@@ -3286,7 +3304,7 @@ async function runApplicationMetricsTask() {
   }
 
   applianceStateMachine.applyProbe('application', data);
-  log.info(`[app-metrics] complete — orders=${data.active_orders}, db=${data.db_size_bytes}`);
+  log.info(`[app-metrics] complete — orders=${data.active_orders}, db=${data.db_size_bytes}, paused=${data.online_ordering_paused}`);
 }
 
 // ---------------------------------------------------------------------------
