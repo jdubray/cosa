@@ -1,0 +1,286 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Inside one session",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    },
+    "views": [
+      {
+        "id": "answer",
+        "label": "Inside one session",
+        "focus": [
+          "orchestrator",
+          "session_fsm",
+          "context_compressor"
+        ],
+        "note": "A session is one SAM instance. Its prompt is assembled from the role persona, operator memory, and the compact skill index; then the loop a…"
+      },
+      {
+        "id": "cosa_host",
+        "label": "COSA Pi",
+        "focus": [
+          "cli",
+          "orchestrator",
+          "context_builder",
+          "context_compressor",
+          "session_store"
+        ],
+        "note": "Runs in the COSA Node process on its own Raspberry Pi and accepts no inbound network connections; every link to the outside is an outbound…"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "CLI REPL",
+      "pos": [
+        60,
+        111
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "--cli, dev only",
+      "sources": [
+        {
+          "path": "src/cli.js",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "orchestrator",
+      "type": "backend",
+      "label": "Orchestrator",
+      "pos": [
+        380,
+        111
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "SAM agent loop",
+      "sources": [
+        {
+          "path": "src/orchestrator.js",
+          "line": 577,
+          "label": "runSession"
+        },
+        {
+          "path": "src/orchestrator.js",
+          "line": 410,
+          "end_line": 513,
+          "label": "acceptors"
+        }
+      ]
+    },
+    {
+      "id": "session_fsm",
+      "type": "backend",
+      "label": "Session FSM",
+      "pos": [
+        700,
+        360
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "7-state lifecycle",
+      "sources": [
+        {
+          "path": "src/session-fsm.js",
+          "line": 276
+        }
+      ]
+    },
+    {
+      "id": "context_builder",
+      "type": "backend",
+      "label": "Context builder",
+      "pos": [
+        700,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "role persona + memory",
+      "sources": [
+        {
+          "path": "src/context-builder.js",
+          "line": 246
+        }
+      ]
+    },
+    {
+      "id": "context_compressor",
+      "type": "backend",
+      "label": "Context compressor",
+      "pos": [
+        700,
+        174
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "Haiku rolling summary",
+      "sources": [
+        {
+          "path": "src/context-compressor.js",
+          "line": 221
+        }
+      ]
+    },
+    {
+      "id": "claude_api",
+      "type": "external",
+      "label": "Claude API",
+      "pos": [
+        700,
+        486
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "Sonnet + Haiku",
+      "sources": [
+        {
+          "path": "src/orchestrator.js",
+          "line": 76,
+          "label": "MODEL_BY_ROLE"
+        }
+      ]
+    },
+    {
+      "id": "session_store",
+      "type": "database",
+      "label": "Session store",
+      "pos": [
+        1020,
+        111
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "session.db, FTS5",
+      "sources": [
+        {
+          "path": "src/session-store.js",
+          "line": 179,
+          "label": "data/session.db"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "cli",
+        "orchestrator",
+        "context_builder",
+        "context_compressor",
+        "session_store"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "cli",
+      "to": "orchestrator",
+      "label": "typed line as session",
+      "labelAt": [
+        295,
+        126
+      ]
+    },
+    {
+      "from": "orchestrator",
+      "to": "claude_api",
+      "label": "turn + tool schemas · HTTPS",
+      "labelAt": [
+        697,
+        126
+      ],
+      "variant": "security"
+    },
+    {
+      "from": "orchestrator",
+      "to": "context_builder",
+      "label": "build system prompt",
+      "labelAt": [
+        615,
+        63
+      ]
+    },
+    {
+      "from": "orchestrator",
+      "to": "context_compressor",
+      "label": "summarize middle turns",
+      "labelAt": [
+        685,
+        160
+      ],
+      "variant": "emphasis"
+    },
+    {
+      "from": "orchestrator",
+      "to": "session_fsm",
+      "label": "guard status transition",
+      "labelAt": [
+        687,
+        250
+      ],
+      "variant": "emphasis"
+    },
+    {
+      "from": "orchestrator",
+      "to": "session_store",
+      "label": "session, turns, tool calls · SQL",
+      "labelAt": [
+        709,
+        250
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "A session is one SAM instance",
+        "Its prompt is assembled from the role persona, operator memory, and the compact skill index",
+        "then the loop alternates between calling Claude and dispatching the tools it asks for"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "The guard pipeline around each tool call, and everything after the session closes",
+        "Connected but out of scope: Email gateway, Cron scheduler, Memory manager, Skill store, Tool registry, Security gate"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Doctrine",
+      "items": [
+        "A session's role picks its model, token budget, iteration cap, persona, and visible tool set together, in lockstep. — Mixing an action model with a read-only tool schema produces a session that is neither, so an unknown role normalises to the full action profile rather than a half-configured one."
+      ]
+    }
+  ]
+}

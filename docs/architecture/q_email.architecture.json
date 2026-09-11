@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "How an email becomes an action",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    },
+    "views": [
+      {
+        "id": "answer",
+        "label": "How an email becomes an action",
+        "focus": [
+          "email_gateway",
+          "intent_classifier"
+        ],
+        "note": "The gateway polls IMAP every 60 seconds and keyword-routes first: approvals, suppressions and HOME-IP updates never reach the agent. What i…"
+      },
+      {
+        "id": "cosa_host",
+        "label": "COSA Pi",
+        "focus": [
+          "email_gateway",
+          "intent_classifier",
+          "orchestrator",
+          "approval_engine",
+          "home_ip_allowlist"
+        ],
+        "note": "Runs in the COSA Node process on its own Raspberry Pi and accepts no inbound network connections; every link to the outside is an outbound…"
+      },
+      {
+        "id": "internet",
+        "label": "Internet",
+        "focus": [
+          "email_provider",
+          "operator"
+        ],
+        "note": "Third-party services COSA dials out to over TLS; none of them can initiate a connection back."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Operator",
+      "pos": [
+        60,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "restaurant owner"
+    },
+    {
+      "id": "email_provider",
+      "type": "external",
+      "label": "Gmail (IMAP/SMTP)",
+      "pos": [
+        380,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "the only UI",
+      "sources": [
+        {
+          "path": "src/email-gateway.js",
+          "line": 31,
+          "label": "60s IMAP poll"
+        }
+      ]
+    },
+    {
+      "id": "email_gateway",
+      "type": "security",
+      "label": "Email gateway",
+      "pos": [
+        60,
+        247
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "IMAP poll, SMTP send",
+      "sources": [
+        {
+          "path": "src/email-gateway.js",
+          "line": 38,
+          "label": "APPROVAL_RE"
+        },
+        {
+          "path": "src/email-gateway.js",
+          "line": 59,
+          "label": "HOME_IP_RE"
+        },
+        {
+          "path": "src/main.js",
+          "line": 251,
+          "label": "setNewSessionHandler"
+        }
+      ]
+    },
+    {
+      "id": "intent_classifier",
+      "type": "backend",
+      "label": "Intent classifier",
+      "pos": [
+        380,
+        298
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "query vs action",
+      "sources": [
+        {
+          "path": "src/intent-classifier.js",
+          "line": 125
+        }
+      ]
+    },
+    {
+      "id": "home_ip_allowlist",
+      "type": "backend",
+      "label": "Home-IP updater",
+      "pos": [
+        700,
+        247
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "HOME-IP <ip> email",
+      "sources": [
+        {
+          "path": "src/home-ip-allowlist.js",
+          "line": 482
+        }
+      ]
+    },
+    {
+      "id": "approval_engine",
+      "type": "backend",
+      "label": "Approval engine",
+      "pos": [
+        1020,
+        247
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "one-time token, 30min",
+      "sources": [
+        {
+          "path": "src/approval-engine.js",
+          "line": 647
+        }
+      ]
+    },
+    {
+      "id": "orchestrator",
+      "type": "backend",
+      "label": "Orchestrator",
+      "pos": [
+        380,
+        197
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "SAM agent loop",
+      "sources": [
+        {
+          "path": "src/orchestrator.js",
+          "line": 577,
+          "label": "runSession"
+        },
+        {
+          "path": "src/orchestrator.js",
+          "line": 410,
+          "end_line": 513,
+          "label": "acceptors"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "email_gateway",
+        "intent_classifier",
+        "orchestrator",
+        "approval_engine",
+        "home_ip_allowlist"
+      ],
+      "pad": 20
+    },
+    {
+      "kind": "region",
+      "label": "Internet",
+      "wraps": [
+        "email_provider",
+        "operator"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "operator",
+      "to": "email_provider",
+      "label": "plain-text email · manual",
+      "labelAt": [
+        295,
+        60
+      ],
+      "variant": "security"
+    },
+    {
+      "from": "email_gateway",
+      "to": "email_provider",
+      "label": "IMAP poll / SMTP send · HTTPS",
+      "labelAt": [
+        295,
+        108
+      ],
+      "variant": "security"
+    },
+    {
+      "from": "email_gateway",
+      "to": "intent_classifier",
+      "label": "classify the message",
+      "labelAt": [
+        360,
+        366
+      ],
+      "variant": "emphasis"
+    },
+    {
+      "from": "email_gateway",
+      "to": "orchestrator",
+      "label": "start session (role)",
+      "labelAt": [
+        360,
+        216
+      ]
+    },
+    {
+      "from": "email_gateway",
+      "to": "approval_engine",
+      "label": "APPROVE / DENY reply",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          135,
+          466
+        ],
+        [
+          1095,
+          466
+        ]
+      ],
+      "labelAt": [
+        615,
+        399
+      ]
+    },
+    {
+      "from": "email_gateway",
+      "to": "home_ip_allowlist",
+      "label": "HOME-IP keyword route",
+      "labelAt": [
+        362,
+        286
+      ]
+    },
+    {
+      "from": "orchestrator",
+      "to": "approval_engine",
+      "label": "3 hold for operator",
+      "labelAt": [
+        615,
+        209
+      ]
+    },
+    {
+      "from": "approval_engine",
+      "to": "email_gateway",
+      "label": "send APPROVE-XXXX token",
+      "labelAt": [
+        615,
+        399
+      ],
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          1095,
+          466
+        ],
+        [
+          135,
+          466
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "The gateway polls IMAP every 60 seconds and keyword-routes first: approvals, suppressions and HOME-IP updates never reach the agent",
+        "What is left is classified as question or command, and that answer picks the role — which picks the model, the budget, the iteration cap, and the tools the session is even shown"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "The Claude API call itself, the guard pipeline, and the session internals — each has its own question",
+        "Connected but out of scope: Cron scheduler, CLI REPL, Claude API, Context builder, Context compressor, Session FSM"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Doctrine",
+      "items": [
+        "The inbox is the entire user interface — no dashboard, no app, no port to open. — The operator is a restaurant owner, not an administrator; email is the one tool they already use every day.",
+        "A session's role picks its model, token budget, iteration cap, persona, and visible tool set together, in lockstep. — Mixing an action model with a read-only tool schema produces a session that is neither, so an unknown role normalises to the full action profile rather than a half-configured one.",
+        "An email the classifier cannot read confidently routes to the action agent, which can read state and ask for clarification. — The conservative default is the one that can still ask, not the one that silently does less."
+      ]
+    }
+  ]
+}

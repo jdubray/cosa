@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "What stops a tool call doing damage",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    },
+    "views": [
+      {
+        "id": "answer",
+        "label": "What stops a tool call doing damage",
+        "focus": [
+          "tool_registry",
+          "security_gate",
+          "approval_engine"
+        ],
+        "note": "Five stages in fixed order: the role gate refuses tools above the session risk ceiling even if the model hallucinated one; the security gat…"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "orchestrator",
+      "type": "backend",
+      "label": "Orchestrator",
+      "pos": [
+        60,
+        113
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "SAM agent loop",
+      "sources": [
+        {
+          "path": "src/orchestrator.js",
+          "line": 577,
+          "label": "runSession"
+        },
+        {
+          "path": "src/orchestrator.js",
+          "line": 410,
+          "end_line": 513,
+          "label": "acceptors"
+        }
+      ]
+    },
+    {
+      "id": "tool_registry",
+      "type": "backend",
+      "label": "Tool registry",
+      "pos": [
+        380,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "schema + role gate",
+      "sources": [
+        {
+          "path": "src/tool-registry.js",
+          "line": 37,
+          "label": "ROLE_PERMITTED_RISK"
+        },
+        {
+          "path": "src/tool-registry.js",
+          "line": 219
+        }
+      ]
+    },
+    {
+      "id": "security_gate",
+      "type": "security",
+      "label": "Security gate",
+      "pos": [
+        380,
+        113
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "pattern block + redact",
+      "sources": [
+        {
+          "path": "src/security-gate.js",
+          "line": 295
+        }
+      ]
+    },
+    {
+      "id": "approval_engine",
+      "type": "backend",
+      "label": "Approval engine",
+      "pos": [
+        380,
+        178
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "one-time token, 30min",
+      "sources": [
+        {
+          "path": "src/approval-engine.js",
+          "line": 647
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "type": "backend",
+      "label": "Tool handlers",
+      "pos": [
+        700,
+        113
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "37 registered",
+      "sources": [
+        {
+          "path": "src/main.js",
+          "line": 216,
+          "end_line": 232,
+          "label": "registration list"
+        },
+        {
+          "path": "src/tools/health-check.js",
+          "line": 1
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "orchestrator",
+        "tool_registry",
+        "security_gate",
+        "approval_engine",
+        "tools"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "orchestrator",
+      "to": "tool_registry",
+      "label": "1 role gate, then dispatch",
+      "labelAt": [
+        295,
+        56
+      ]
+    },
+    {
+      "from": "orchestrator",
+      "to": "security_gate",
+      "label": "2 pattern check, 4 redact",
+      "labelAt": [
+        372,
+        254
+      ]
+    },
+    {
+      "from": "orchestrator",
+      "to": "approval_engine",
+      "label": "3 hold for operator",
+      "labelAt": [
+        295,
+        190
+      ]
+    },
+    {
+      "from": "tool_registry",
+      "to": "tools",
+      "label": "validated input",
+      "labelAt": [
+        615,
+        56
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "Five stages in fixed order: the role gate refuses tools above the session risk ceiling even if the model hallucinated one",
+        "the security gate blocks dangerous argument patterns",
+        "the approval gate mails a one-time token and blocks"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "The approval email round-trip to the operator, the audit rows written on the way through, and the post-action verification that follows",
+        "Connected but out of scope: Email gateway, Cron scheduler, CLI REPL, Claude API, Context builder, Context compressor"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "What it guarantees",
+      "items": [
+        "Every tool call passes role gate, security gate, approval gate, dispatch, and output sanitizer — in that order, with no bypass.",
+        "Tool output is sanitized before it is written to session.db, not only before it reaches the model. — session.db is reachable through session_search and archive_search, so persisting raw output would leak any secret a tool emitted in an error string even though the model's copy was clean.",
+        "Filtering which tools a role is shown is not the control; the registry re-checks at execution time, so a hallucinated or injected tool_use block still cannot run a mutating tool from a read-only role."
+      ]
+    }
+  ]
+}

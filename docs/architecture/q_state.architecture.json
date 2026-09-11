@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "What COSA remembers, and where",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    },
+    "views": [
+      {
+        "id": "answer",
+        "label": "What COSA remembers, and where",
+        "focus": [
+          "session_store",
+          "skill_store",
+          "memory_manager"
+        ],
+        "note": "Four stores with different jobs. session.db is the audit trail and also hosts the appliance-state and runbook tables, with FTS5 over every…"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "orchestrator",
+      "type": "backend",
+      "label": "Orchestrator",
+      "pos": [
+        60,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "SAM agent loop",
+      "sources": [
+        {
+          "path": "src/orchestrator.js",
+          "line": 577,
+          "label": "runSession"
+        },
+        {
+          "path": "src/orchestrator.js",
+          "line": 410,
+          "end_line": 513,
+          "label": "acceptors"
+        }
+      ]
+    },
+    {
+      "id": "context_builder",
+      "type": "backend",
+      "label": "Context builder",
+      "pos": [
+        380,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "role persona + memory",
+      "sources": [
+        {
+          "path": "src/context-builder.js",
+          "line": 246
+        }
+      ]
+    },
+    {
+      "id": "session_store",
+      "type": "database",
+      "label": "Session store",
+      "pos": [
+        380,
+        174
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "session.db, FTS5",
+      "sources": [
+        {
+          "path": "src/session-store.js",
+          "line": 179,
+          "label": "data/session.db"
+        }
+      ]
+    },
+    {
+      "id": "skill_store",
+      "type": "database",
+      "label": "Skill store",
+      "pos": [
+        700,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "skills.db",
+      "sources": [
+        {
+          "path": "src/skill-store.js",
+          "line": 107,
+          "label": "data/skills.db"
+        }
+      ]
+    },
+    {
+      "id": "credential_store",
+      "type": "database",
+      "label": "Credential store",
+      "pos": [
+        60,
+        174
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "encrypted, ~/.cosa",
+      "sources": [
+        {
+          "path": "src/credential-store.js",
+          "line": 16,
+          "label": "credentials.enc.db"
+        }
+      ]
+    },
+    {
+      "id": "memory_manager",
+      "type": "database",
+      "label": "Memory manager",
+      "pos": [
+        700,
+        174
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "operator preferences",
+      "sources": [
+        {
+          "path": "src/memory-manager.js",
+          "line": 394
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "orchestrator",
+        "context_builder",
+        "session_store",
+        "skill_store",
+        "credential_store",
+        "memory_manager"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "orchestrator",
+      "to": "context_builder",
+      "label": "build system prompt",
+      "labelAt": [
+        295,
+        63
+      ]
+    },
+    {
+      "from": "context_builder",
+      "to": "memory_manager",
+      "label": "load operator memory",
+      "labelAt": [
+        615,
+        63
+      ]
+    },
+    {
+      "from": "context_builder",
+      "to": "skill_store",
+      "label": "compact skill index",
+      "labelAt": [
+        678,
+        124
+      ]
+    },
+    {
+      "from": "orchestrator",
+      "to": "session_store",
+      "label": "session, turns, tool calls · SQL",
+      "labelAt": [
+        295,
+        97
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "Four stores with different jobs",
+        "session.db is the audit trail and also hosts the appliance-state and runbook tables, with FTS5 over every turn",
+        "skills.db holds seed and self-authored procedures and feeds the compact index in each prompt"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "The appliance state machine and runbook tables, which also live in session.db but are shown where they are used",
+        "Connected but out of scope: Email gateway, Cron scheduler, CLI REPL, Claude API, Context compressor, Session FSM"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "What it guarantees",
+      "items": [
+        "Every session, turn, tool call, approval, alert, and expiry is persisted, with FTS5 search across the whole conversation history."
+      ]
+    }
+  ]
+}

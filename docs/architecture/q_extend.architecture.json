@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Adding a monitor without adding code",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    },
+    "views": [
+      {
+        "id": "answer",
+        "label": "Adding a monitor without adding code",
+        "focus": [
+          "observation_defs",
+          "monitor_authoring"
+        ],
+        "note": "A data row, not a deploy. A monitor names a read-only probe, its parameters, the thresholds that make a result medium or high, and an email…"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "cron_scheduler",
+      "type": "backend",
+      "label": "Cron scheduler",
+      "pos": [
+        60,
+        98
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "~30 scheduled tasks",
+      "sources": [
+        {
+          "path": "src/cron-scheduler.js",
+          "line": 966,
+          "label": "runHealthCheckTask"
+        },
+        {
+          "path": "src/cron-scheduler.js",
+          "line": 3500,
+          "label": "cron.schedule wiring"
+        }
+      ]
+    },
+    {
+      "id": "observation_defs",
+      "type": "database",
+      "label": "observation-monitors.js",
+      "pos": [
+        380,
+        149
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "monitors as data rows",
+      "sources": [
+        {
+          "path": "config/observation-monitors.js",
+          "line": 21,
+          "label": "the monitor rows"
+        },
+        {
+          "path": "src/cron-scheduler.js",
+          "line": 3561,
+          "label": "evaluated every 15 min"
+        }
+      ]
+    },
+    {
+      "id": "observation_monitor",
+      "type": "backend",
+      "label": "Observation monitor",
+      "pos": [
+        380,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "monitors as data",
+      "sources": [
+        {
+          "path": "src/observation-monitor.js",
+          "line": 248
+        },
+        {
+          "path": "config/observation-monitors.js",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "ssh_backend",
+      "type": "security",
+      "label": "SSH backend",
+      "pos": [
+        700,
+        149
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "pooled, host-key pinned",
+      "sources": [
+        {
+          "path": "src/ssh-backend.js",
+          "line": 357
+        }
+      ]
+    },
+    {
+      "id": "monitor_authoring",
+      "type": "backend",
+      "label": "Monitor self-authoring",
+      "pos": [
+        60,
+        199
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "Phase 2, not built",
+      "tag": "planned",
+      "sources": [
+        {
+          "path": "src/observation-monitor.js",
+          "line": 9,
+          "label": "Phase 2, approval-gated"
+        },
+        {
+          "path": "config/observation-monitors.js",
+          "line": 10,
+          "label": "substrate COSA will write to"
+        }
+      ]
+    },
+    {
+      "id": "approval_engine",
+      "type": "backend",
+      "label": "Approval engine",
+      "pos": [
+        380,
+        250
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "one-time token, 30min",
+      "sources": [
+        {
+          "path": "src/approval-engine.js",
+          "line": 647
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "cron_scheduler",
+        "approval_engine",
+        "ssh_backend",
+        "observation_monitor",
+        "observation_defs",
+        "monitor_authoring"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "cron_scheduler",
+      "to": "observation_monitor",
+      "label": "evaluate data monitors",
+      "labelAt": [
+        295,
+        60
+      ]
+    },
+    {
+      "from": "cron_scheduler",
+      "to": "observation_defs",
+      "label": "read enabled monitor rows · file",
+      "labelAt": [
+        389,
+        124
+      ]
+    },
+    {
+      "from": "observation_monitor",
+      "to": "ssh_backend",
+      "label": "run the read-only probe",
+      "labelAt": [
+        615,
+        60
+      ]
+    },
+    {
+      "from": "monitor_authoring",
+      "to": "observation_defs",
+      "label": "write a proposed monitor · file",
+      "labelAt": [
+        386,
+        225
+      ],
+      "variant": "dashed"
+    },
+    {
+      "from": "monitor_authoring",
+      "to": "approval_engine",
+      "label": "operator approves first",
+      "labelAt": [
+        367,
+        225
+      ],
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "A data row, not a deploy",
+        "A monitor names a read-only probe, its parameters, the thresholds that make a result medium or high, and an email template",
+        "the scheduler runs the enabled rows every fifteen minutes"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "Watchers — the other no-deploy route, for conditions visible in the status snapshot — are drawn with their sandbox on the unattended-detection view, and the alerting path once a monitor fires is there too",
+        "Connected but out of scope: Email gateway, Orchestrator, Tool handlers, Appliance host, Watcher registry, Anomaly classifier"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Doctrine",
+      "items": [
+        "A new observation monitor is a new data row — probe, params, thresholds, template — never new code. — It is the precondition for COSA eventually authoring its own monitors under an approval gate."
+      ]
+    }
+  ]
+}

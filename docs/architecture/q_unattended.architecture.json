@@ -1,0 +1,345 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Noticing trouble unasked",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    },
+    "views": [
+      {
+        "id": "answer",
+        "label": "Noticing trouble unasked",
+        "focus": [
+          "watcher_registry",
+          "observation_monitor"
+        ],
+        "note": "The cron scheduler drives roughly thirty tasks under a mutex. Some run probe-role agent sessions; others call tools directly, fold the resu…"
+      },
+      {
+        "id": "cosa_host",
+        "label": "COSA Pi",
+        "focus": [
+          "email_gateway",
+          "cron_scheduler",
+          "watcher_registry",
+          "watcher_sandbox",
+          "observation_monitor",
+          "appliance_state_machine"
+        ],
+        "note": "Runs in the COSA Node process on its own Raspberry Pi and accepts no inbound network connections; every link to the outside is an outbound…"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "cron_scheduler",
+      "type": "backend",
+      "label": "Cron scheduler",
+      "pos": [
+        60,
+        98
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "~30",
+      "sources": [
+        {
+          "path": "src/cron-scheduler.js",
+          "line": 966,
+          "label": "runHealthCheckTask"
+        },
+        {
+          "path": "src/cron-scheduler.js",
+          "line": 3500,
+          "label": "cron.schedule wiring"
+        }
+      ]
+    },
+    {
+      "id": "watcher_registry",
+      "type": "backend",
+      "label": "Watcher registry",
+      "pos": [
+        338,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "store, run, cooldown",
+      "sources": [
+        {
+          "path": "src/watcher-registry.js",
+          "line": 425
+        }
+      ]
+    },
+    {
+      "id": "watcher_sandbox",
+      "type": "security",
+      "label": "Watcher sandbox worker",
+      "pos": [
+        1171,
+        98
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "child proc + vm ctx",
+      "sources": [
+        {
+          "path": "src/watcher-sandbox-worker.js",
+          "line": 79
+        }
+      ]
+    },
+    {
+      "id": "observation_monitor",
+      "type": "backend",
+      "label": "Observation monitor",
+      "pos": [
+        338,
+        149
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "monitors as data",
+      "sources": [
+        {
+          "path": "src/observation-monitor.js",
+          "line": 248
+        },
+        {
+          "path": "config/observation-monitors.js",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "appliance_state_machine",
+      "type": "backend",
+      "label": "Appliance state machine",
+      "pos": [
+        616,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "5 dims + staleness",
+      "sources": [
+        {
+          "path": "src/appliance-state-machine.js",
+          "line": 14,
+          "label": "DIMENSIONS"
+        },
+        {
+          "path": "src/appliance-state-machine.js",
+          "line": 17,
+          "label": "STALENESS_MS"
+        }
+      ]
+    },
+    {
+      "id": "security_fsm",
+      "type": "backend",
+      "label": "Security FSM",
+      "pos": [
+        893,
+        298
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "6-state escalation",
+      "sources": [
+        {
+          "path": "src/security-fsm.js",
+          "line": 469
+        }
+      ]
+    },
+    {
+      "id": "anomaly_classifier",
+      "type": "backend",
+      "label": "Anomaly classifier",
+      "pos": [
+        893,
+        398
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "severity rollup",
+      "sources": [
+        {
+          "path": "src/anomaly-classifier.js",
+          "line": 241
+        }
+      ]
+    },
+    {
+      "id": "email_gateway",
+      "type": "security",
+      "label": "Email gateway",
+      "pos": [
+        616,
+        149
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "IMAP poll, SMTP send",
+      "sources": [
+        {
+          "path": "src/email-gateway.js",
+          "line": 38,
+          "label": "APPROVAL_RE"
+        },
+        {
+          "path": "src/email-gateway.js",
+          "line": 59,
+          "label": "HOME_IP_RE"
+        },
+        {
+          "path": "src/main.js",
+          "line": 251,
+          "label": "setNewSessionHandler"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "email_gateway",
+        "cron_scheduler",
+        "watcher_registry",
+        "watcher_sandbox",
+        "observation_monitor",
+        "appliance_state_machine"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "cron_scheduler",
+      "to": "watcher_registry",
+      "label": "evaluate on each poll",
+      "labelAt": [
+        264,
+        60
+      ]
+    },
+    {
+      "from": "watcher_registry",
+      "to": "watcher_sandbox",
+      "label": "fresh child per run · spawn",
+      "labelAt": [
+        820,
+        13
+      ],
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "top",
+      "via": [
+        [
+          413,
+          4
+        ],
+        [
+          1246,
+          4
+        ]
+      ]
+    },
+    {
+      "from": "cron_scheduler",
+      "to": "observation_monitor",
+      "label": "evaluate data monitors",
+      "labelAt": [
+        555,
+        49
+      ]
+    },
+    {
+      "from": "cron_scheduler",
+      "to": "anomaly_classifier",
+      "label": "roll findings to severity",
+      "labelAt": [
+        426,
+        225
+      ]
+    },
+    {
+      "from": "cron_scheduler",
+      "to": "email_gateway",
+      "label": "alert, deduplicated",
+      "labelAt": [
+        418,
+        225
+      ]
+    },
+    {
+      "from": "cron_scheduler",
+      "to": "appliance_state_machine",
+      "label": "apply probe result",
+      "labelAt": [
+        262,
+        49
+      ]
+    },
+    {
+      "from": "cron_scheduler",
+      "to": "security_fsm",
+      "label": "escalate incident",
+      "labelAt": [
+        264,
+        196
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "The cron scheduler drives roughly thirty tasks under a mutex",
+        "Some run probe-role agent sessions",
+        "others call tools directly, fold the result into the appliance state machine, and alert on severity"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "Probe-role agent sessions and the runbook remediation path, which have their own questions",
+        "Connected but out of scope: Gmail (IMAP/SMTP), Intent classifier, Orchestrator, Approval engine, Home-IP updater, Tool handlers"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "What it guarantees",
+      "items": [
+        "Watcher predicates run inside two nested boundaries: a fresh child process per invocation, and a vm context with require, process, and fetch stripped. — Watcher code is generated from an email; escaping the inner sandbox must still leave the attacker outside COSA's credentials, databases, and in-memory state.",
+        "Repeat alerts for the same condition are suppressed for a cooldown window rather than mailed. — A sustained spike that floods the inbox trains the operator to ignore alerts."
+      ]
+    }
+  ]
+}

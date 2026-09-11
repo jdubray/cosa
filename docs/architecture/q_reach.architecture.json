@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "What crosses the network boundary",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    },
+    "views": [
+      {
+        "id": "answer",
+        "label": "What crosses the network boundary",
+        "focus": [
+          "ssh_backend",
+          "appliance_auth",
+          "appliance_config"
+        ],
+        "note": "Four outbound paths and nothing else: SSH to the appliance with a pinned host key, LAN HTTP to allowlisted endpoints resolved from config,…"
+      },
+      {
+        "id": "cosa_host",
+        "label": "COSA Pi",
+        "focus": [
+          "tools",
+          "ssh_backend",
+          "appliance_auth",
+          "appliance_config"
+        ],
+        "note": "Runs in the COSA Node process on its own Raspberry Pi and accepts no inbound network connections; every link to the outside is an outbound…"
+      },
+      {
+        "id": "appliance_lan",
+        "label": "Appliance (LAN)",
+        "focus": [
+          "appliance_api",
+          "appliance_host"
+        ],
+        "note": "Lives on the managed Raspberry Pi, reachable only across the local network and never exposed to COSA's internet path."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "tools",
+      "type": "backend",
+      "label": "Tool handlers",
+      "pos": [
+        60,
+        98
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "37 registered",
+      "sources": [
+        {
+          "path": "src/main.js",
+          "line": 216,
+          "end_line": 232,
+          "label": "registration list"
+        },
+        {
+          "path": "src/tools/health-check.js",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "ssh_backend",
+      "type": "security",
+      "label": "SSH backend",
+      "pos": [
+        380,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "pooled, host-key pinned",
+      "sources": [
+        {
+          "path": "src/ssh-backend.js",
+          "line": 357
+        }
+      ]
+    },
+    {
+      "id": "appliance_auth",
+      "type": "backend",
+      "label": "Appliance auth",
+      "pos": [
+        380,
+        149
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "JWT refresh on 401",
+      "sources": [
+        {
+          "path": "src/appliance-auth.js",
+          "line": 323
+        }
+      ]
+    },
+    {
+      "id": "appliance_config",
+      "type": "database",
+      "label": "appliance.yaml",
+      "pos": [
+        700,
+        98
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "zero hardcoding",
+      "sources": [
+        {
+          "path": "config/appliance.yaml",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "appliance_host",
+      "type": "external",
+      "label": "Appliance host",
+      "pos": [
+        1020,
+        298
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "systemd + SQLite",
+      "sources": [
+        {
+          "path": "src/ssh-backend.js",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "appliance_api",
+      "type": "backend",
+      "label": "Appliance REST API",
+      "pos": [
+        1020,
+        398
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "BaanBaan POS",
+      "sources": [
+        {
+          "path": "config/appliance.yaml",
+          "label": "endpoint allowlist"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "tools",
+        "ssh_backend",
+        "appliance_auth",
+        "appliance_config"
+      ],
+      "pad": 20
+    },
+    {
+      "kind": "region",
+      "label": "Appliance (LAN)",
+      "wraps": [
+        "appliance_api",
+        "appliance_host"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "tools",
+      "to": "ssh_backend",
+      "label": "remote command",
+      "labelAt": [
+        295,
+        60
+      ]
+    },
+    {
+      "from": "ssh_backend",
+      "to": "appliance_host",
+      "label": "SSH, host key pinned · stdio",
+      "labelAt": [
+        615,
+        60
+      ],
+      "variant": "security"
+    },
+    {
+      "from": "tools",
+      "to": "appliance_auth",
+      "label": "attach bearer token",
+      "labelAt": [
+        358,
+        142
+      ]
+    },
+    {
+      "from": "appliance_auth",
+      "to": "appliance_api",
+      "label": "allowlisted endpoint only · HTTP",
+      "labelAt": [
+        615,
+        161
+      ],
+      "variant": "security"
+    },
+    {
+      "from": "tools",
+      "to": "appliance_config",
+      "label": "endpoints, risks, paths · file",
+      "labelAt": [
+        384,
+        138
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "Four outbound paths and nothing else: SSH to the appliance with a pinned host key, LAN HTTP to allowlisted endpoints resolved from config, IMAP/SMTP to the mail provider, and HTTPS to the Claude API",
+        "No appliance-specific knowledge is compiled in — endpoints, risk ratings and paths all live in appliance.yaml"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "Mail and the Claude API — the other two outbound paths — and the credential store that auth reads from",
+        "Connected but out of scope: Action verifier, Tool registry, Credential store, Appliance state machine, Home-IP updater, Observation monitor"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "What it guarantees",
+      "items": [
+        "COSA opens no listening port; SSH, appliance HTTP, mail, and the Claude API are all connections it initiates. — The managed appliance must never be reachable through COSA's internet connection.",
+        "The appliance SSH host key fingerprint is verified on every connection and a mismatch is refused and logged as a possible MITM.",
+        "Path parameters are either static, resolved from the credential store, or explicitly designated caller-supplied; the model cannot override a static one. — Otherwise a merchant id in a URL becomes a parameter the model can choose."
+      ]
+    }
+  ]
+}
