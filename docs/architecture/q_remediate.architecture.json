@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Replaying a known fix",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    }
+  },
+  "components": [
+    {
+      "id": "runbook_engine",
+      "type": "backend",
+      "label": "Runbook engine",
+      "pos": [
+        60,
+        111
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "steps to convergence",
+      "sources": [
+        {
+          "path": "src/runbook-executor.js",
+          "line": 338
+        },
+        {
+          "path": "src/runbook-store.js",
+          "line": 246
+        }
+      ]
+    },
+    {
+      "id": "tool_registry",
+      "type": "backend",
+      "label": "Tool registry",
+      "pos": [
+        380,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "schema + role gate",
+      "sources": [
+        {
+          "path": "src/tool-registry.js",
+          "line": 37,
+          "label": "ROLE_PERMITTED_RISK"
+        },
+        {
+          "path": "src/tool-registry.js",
+          "line": 219
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "type": "backend",
+      "label": "Tool handlers",
+      "pos": [
+        700,
+        111
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "37 registered",
+      "sources": [
+        {
+          "path": "src/main.js",
+          "line": 216,
+          "end_line": 232,
+          "label": "registration list"
+        },
+        {
+          "path": "src/tools/health-check.js",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "session_store",
+      "type": "database",
+      "label": "Session store",
+      "pos": [
+        380,
+        174
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "session.db, FTS5",
+      "sources": [
+        {
+          "path": "src/session-store.js",
+          "line": 179,
+          "label": "data/session.db"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "tool_registry",
+        "tools",
+        "runbook_engine",
+        "session_store"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "tool_registry",
+      "to": "tools",
+      "label": "validated input",
+      "labelAt": [
+        615,
+        63
+      ]
+    },
+    {
+      "from": "runbook_engine",
+      "to": "tool_registry",
+      "label": "step, then check field",
+      "labelAt": [
+        295,
+        63
+      ]
+    },
+    {
+      "from": "runbook_engine",
+      "to": "session_store",
+      "label": "runbooks + run log · SQL",
+      "labelAt": [
+        370,
+        126
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "The procedure is stored as a runbook and executed step by step, each step dispatched through the same registry every agent tool call goes through",
+        "Between steps a convergence contract of tool, field, and expected value — the same contract the action verifier uses — must be satisfied before the next step runs, so a step that silently did nothing stops the runbook instead of being built on",
+        "Every run and its per-step status is logged to session.db"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "What decides to run a runbook in the first place — severity roll-up and incident escalation live on the detection side, and no scheduled task invokes a runbook directly",
+        "Connected but out of scope: Orchestrator, Action verifier, SSH backend, Appliance auth, appliance.yaml, Appliance state machine"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Doctrine",
+      "items": [
+        "An action is not done when the command returns; it is done when a read-only probe confirms the state changed. — The gap between 'returned 200' and 'is actually fixed' is where silent failures live, and the model cannot close it by reasoning about its own output."
+      ]
+    }
+  ]
+}

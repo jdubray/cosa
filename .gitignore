@@ -56,3 +56,6 @@ coverage/
 
 # Local scratch / drafts (one-off scripts, draft posts, throwaway notes)
 dev/tmp/
+
+# archlens render QA artifacts (regenerated on every render)
+docs/architecture/*.visual-check.*

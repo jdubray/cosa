@@ -1,0 +1,365 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Proving the action actually worked",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jdubray/cosa",
+      "revision": "097de38a346158f76e61b7b02618414bd09a1bf9"
+    },
+    "views": [
+      {
+        "id": "answer",
+        "label": "Proving the action actually worked",
+        "focus": [
+          "action_verifier",
+          "session_judge"
+        ],
+        "note": "It does not trust the return code. Layer A re-probes live appliance state with a configured read-only check and appends the verdict to the…"
+      },
+      {
+        "id": "cosa_host",
+        "label": "COSA Pi",
+        "focus": [
+          "orchestrator",
+          "action_verifier",
+          "session_judge",
+          "post_session_hook",
+          "session_store",
+          "skill_store",
+          "appliance_config"
+        ],
+        "note": "Runs in the COSA Node process on its own Raspberry Pi and accepts no inbound network connections; every link to the outside is an outbound…"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "orchestrator",
+      "type": "backend",
+      "label": "Orchestrator",
+      "pos": [
+        60,
+        149
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "SAM agent loop",
+      "sources": [
+        {
+          "path": "src/orchestrator.js",
+          "line": 577,
+          "label": "runSession"
+        },
+        {
+          "path": "src/orchestrator.js",
+          "line": 410,
+          "end_line": 513,
+          "label": "acceptors"
+        }
+      ]
+    },
+    {
+      "id": "action_verifier",
+      "type": "backend",
+      "label": "Action verifier",
+      "pos": [
+        380,
+        98
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "read-only re-probe",
+      "sources": [
+        {
+          "path": "src/action-verifier.js",
+          "line": 209
+        },
+        {
+          "path": "src/orchestrator.js",
+          "line": 297,
+          "label": "verify gate in pipeline"
+        }
+      ]
+    },
+    {
+      "id": "appliance_config",
+      "type": "database",
+      "label": "appliance.yaml",
+      "pos": [
+        700,
+        48
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "zero hardcoding",
+      "sources": [
+        {
+          "path": "config/appliance.yaml",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "post_session_hook",
+      "type": "backend",
+      "label": "Post-session hook",
+      "pos": [
+        380,
+        199
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "judge, memory, skills",
+      "sources": [
+        {
+          "path": "src/post-session-hook.js",
+          "line": 414
+        }
+      ]
+    },
+    {
+      "id": "session_judge",
+      "type": "backend",
+      "label": "Session judge",
+      "pos": [
+        700,
+        149
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "Haiku, post-session",
+      "sources": [
+        {
+          "path": "src/session-judge.js",
+          "line": 140
+        }
+      ]
+    },
+    {
+      "id": "claude_api",
+      "type": "external",
+      "label": "Claude API",
+      "pos": [
+        1020,
+        398
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "Sonnet + Haiku",
+      "sources": [
+        {
+          "path": "src/orchestrator.js",
+          "line": 76,
+          "label": "MODEL_BY_ROLE"
+        }
+      ]
+    },
+    {
+      "id": "session_store",
+      "type": "database",
+      "label": "Session store",
+      "pos": [
+        1020,
+        149
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "session.db, FTS5",
+      "sources": [
+        {
+          "path": "src/session-store.js",
+          "line": 179,
+          "label": "data/session.db"
+        }
+      ]
+    },
+    {
+      "id": "skill_store",
+      "type": "database",
+      "label": "Skill store",
+      "pos": [
+        700,
+        250
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sublabel": "skills.db",
+      "sources": [
+        {
+          "path": "src/skill-store.js",
+          "line": 107,
+          "label": "data/skills.db"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "COSA Pi",
+      "wraps": [
+        "orchestrator",
+        "action_verifier",
+        "session_judge",
+        "post_session_hook",
+        "session_store",
+        "skill_store",
+        "appliance_config"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "orchestrator",
+      "to": "claude_api",
+      "label": "turn + tool schemas · HTTPS",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          135,
+          580
+        ],
+        [
+          1095,
+          580
+        ]
+      ],
+      "labelAt": [
+        615,
+        474
+      ],
+      "variant": "security"
+    },
+    {
+      "from": "orchestrator",
+      "to": "action_verifier",
+      "label": "5 re-probe the result",
+      "labelAt": [
+        295,
+        110
+      ]
+    },
+    {
+      "from": "action_verifier",
+      "to": "appliance_config",
+      "label": "verification policies · file",
+      "labelAt": [
+        615,
+        119
+      ]
+    },
+    {
+      "from": "orchestrator",
+      "to": "session_store",
+      "label": "session, turns, tool calls · SQL",
+      "fromSide": "top",
+      "toSide": "top",
+      "via": [
+        [
+          135,
+          4
+        ],
+        [
+          1095,
+          4
+        ]
+      ],
+      "labelAt": [
+        615,
+        13
+      ]
+    },
+    {
+      "from": "orchestrator",
+      "to": "post_session_hook",
+      "label": "fire and forget",
+      "labelAt": [
+        348,
+        174
+      ]
+    },
+    {
+      "from": "post_session_hook",
+      "to": "session_judge",
+      "label": "grade the objective",
+      "labelAt": [
+        615,
+        161
+      ]
+    },
+    {
+      "from": "session_judge",
+      "to": "claude_api",
+      "label": "Haiku verdict tool · HTTPS",
+      "labelAt": [
+        935,
+        161
+      ],
+      "variant": "security"
+    },
+    {
+      "from": "session_judge",
+      "to": "session_store",
+      "label": "persist judge_verdict · SQL",
+      "labelAt": [
+        1017,
+        225
+      ]
+    },
+    {
+      "from": "post_session_hook",
+      "to": "skill_store",
+      "label": "author skill if resolved · SQL",
+      "labelAt": [
+        704,
+        225
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The short answer",
+      "items": [
+        "It does not trust the return code",
+        "Layer A re-probes live appliance state with a configured read-only check and appends the verdict to the tool result, so the model gets deterministic ground truth and can self-correct inside its remaining iterations",
+        "Layer B grades the closed session with a cheap Haiku reviewer that treats any re-probe verdict as ground truth"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Not shown here",
+      "items": [
+        "Runbook convergence checks, which reuse the same contract from a different entry point, and the skill-creation lifecycle the hook drives once a verdict is in",
+        "Connected but out of scope: Email gateway, Cron scheduler, CLI REPL, Context builder, Context compressor, Session FSM"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Doctrine",
+      "items": [
+        "An action is not done when the command returns; it is done when a read-only probe confirms the state changed. — The gap between 'returned 200' and 'is actually fixed' is where silent failures live, and the model cannot close it by reasoning about its own output."
+      ]
+    }
+  ]
+}

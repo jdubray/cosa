@@ -12,9 +12,12 @@ jest.mock('../src/logger', () => ({
   createLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
 }));
 const mockDbPath = jest.fn(() => '/home/baanbaan/baan-baan-merchant/v2/data/merchant.db');
+const mockDnsMonitorCfg = jest.fn(() => ({ pihole_db_path: '/etc/pihole/pihole-FTL.db' }));
 jest.mock('../config/cosa.config', () => ({
-  getConfig: () => ({ appliance: { database: { path: mockDbPath() } } }),
+  getConfig: () => ({ appliance: { database: { path: mockDbPath() }, dns_monitor: mockDnsMonitorCfg() } }),
 }));
+const mockExecFile = jest.fn();
+jest.mock('child_process', () => ({ execFile: (...a) => mockExecFile(...a) }));
 
 const om = require('../src/observation-monitor');
 const { classify, renderTemplate, PROBES, evaluateMonitor } = om;
@@ -259,5 +262,112 @@ describe('config/observation-monitors.js — payments_missing_processor_fee', ()
     expect(classify(3,    def.threshold)).toBe('none');
     expect(classify(25,   def.threshold)).toBe('medium');
     expect(classify(1627, def.threshold)).toBe('high');
+  });
+});
+
+describe('PROBES.pihole_dns_scalar', () => {
+  const TOP_CLIENT_SQL =
+    "SELECT COUNT(*) AS n, client FROM queries WHERE timestamp >= strftime('%s','now') - 900 " +
+    "GROUP BY client ORDER BY n DESC LIMIT 1";
+
+  /** Simulate a local sqlite3 child: capture stdin, reply with the given output. */
+  function stubSqlite({ stdout = '', stderr = '', code = 0 } = {}) {
+    let stdinData = '';
+    mockExecFile.mockImplementation((file, args, opts, cb) => {
+      const child = {
+        stdin: { write: (d) => { stdinData += d; }, end: () => {} },
+      };
+      setImmediate(() => {
+        const err = code === 0 ? null : Object.assign(new Error(`exit ${code}`), { code });
+        cb(err, stdout, stderr);
+      });
+      return child;
+    });
+    return { stdin: () => stdinData };
+  }
+
+  it('runs the query read-only on the local Pi-hole DB with SQL on stdin', async () => {
+    const stub = stubSqlite({ stdout: '4210\t192.168.1.229\n' });
+    const r = await PROBES.pihole_dns_scalar({ sql: TOP_CLIENT_SQL });
+    expect(r.value).toBe(4210);
+    expect(r.context).toMatchObject({ value: 4210, label: '192.168.1.229', db_path: '/etc/pihole/pihole-FTL.db' });
+
+    const [file, args] = mockExecFile.mock.calls[0];
+    expect(file).toBe('sqlite3');
+    expect(args).toEqual(['-readonly', '-separator', '\t', '/etc/pihole/pihole-FTL.db']);
+    expect(stub.stdin()).toBe(TOP_CLIENT_SQL);   // SQL never reaches the command line
+    expect(mockExec).not.toHaveBeenCalled();      // never touches the POS appliance
+  });
+
+  it('reports value 0 and no label when the window has no rows', async () => {
+    stubSqlite({ stdout: '' });
+    const r = await PROBES.pihole_dns_scalar({ sql: TOP_CLIENT_SQL });
+    expect(r.value).toBe(0);
+    expect(r.context.label).toBe('');
+  });
+
+  it('parses only the first row and tolerates a single-column result', async () => {
+    stubSqlite({ stdout: '17\n99\n' });
+    const r = await PROBES.pihole_dns_scalar({ sql: TOP_CLIENT_SQL });
+    expect(r.value).toBe(17);
+    expect(r.context.label).toBe('');
+  });
+
+  it('throws when sqlite3 exits non-zero (e.g. DB unreadable)', async () => {
+    stubSqlite({ stderr: 'Error: unable to open database', code: 1 });
+    await expect(PROBES.pihole_dns_scalar({ sql: TOP_CLIENT_SQL }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+  });
+
+  it('throws when the first column is not numeric', async () => {
+    stubSqlite({ stdout: '192.168.1.229\t4210\n' });
+    await expect(PROBES.pihole_dns_scalar({ sql: TOP_CLIENT_SQL }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+  });
+
+  it.each([
+    ['no sql',              undefined],
+    ['not a SELECT',        'PRAGMA table_info(queries)'],
+    ['multiple statements', "SELECT 1; DELETE FROM queries"],
+    ['a comment',           "SELECT 1 /* x */"],
+    ['ATTACH',              "SELECT 1 WHERE ATTACH DATABASE 'x'"],
+  ])('rejects %s without spawning sqlite3', async (_label, sql) => {
+    await expect(PROBES.pihole_dns_scalar({ sql }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  it('throws when dns_monitor.pihole_db_path is not configured', async () => {
+    mockDnsMonitorCfg.mockReturnValueOnce(undefined);
+    await expect(PROBES.pihole_dns_scalar({ sql: TOP_CLIENT_SQL }))
+      .rejects.toMatchObject({ code: 'OBSERVATION_INVALID' });
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('config/observation-monitors.js — DNS visibility monitors', () => {
+  const defs = require('../config/observation-monitors');
+  const DNS_IDS = ['dns_client_query_flood', 'dns_client_domain_spread', 'dns_client_nxdomain_burst', 'dns_blocked_spike'];
+
+  it.each(DNS_IDS)('%s exists, is wired to pihole_dns_scalar, and ships disabled until Pi-hole is deployed', (id) => {
+    const def = defs.find(d => d.id === id);
+    expect(def).toBeDefined();
+    expect(def.enabled).toBe(false);
+    expect(def.probe).toBe('pihole_dns_scalar');
+    expect(def.threshold.medium).toBeLessThan(def.threshold.high);
+    expect(def.report_template).toContain('{{label}}');
+  });
+
+  it.each(DNS_IDS)('%s SQL passes the probe validator and excludes the resolver host itself', async (id) => {
+    const def = defs.find(d => d.id === id);
+    mockExecFile.mockImplementation((f, a, o, cb) => { setImmediate(() => cb(null, '0\n', '')); return { stdin: { write() {}, end() {} } }; });
+    await expect(PROBES.pihole_dns_scalar(def.params)).resolves.toMatchObject({ value: 0 });
+    expect(def.params.sql).toContain("client NOT IN ('127.0.0.1', '::1')");
+  });
+
+  it('a residential-proxy-style client trips the flood monitor high', () => {
+    const def = defs.find(d => d.id === 'dns_client_query_flood');
+    expect(classify(200,  def.threshold)).toBe('none');
+    expect(classify(6000, def.threshold)).toBe('high');
   });
 });

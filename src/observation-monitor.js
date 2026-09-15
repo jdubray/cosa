@@ -15,6 +15,7 @@
  */
 
 const net              = require('net');
+const { execFile }     = require('child_process');
 const sshBackend       = require('./ssh-backend');
 const { shEscape }     = require('./shell-utils');
 const { getConfig }    = require('../config/cosa.config');
@@ -41,6 +42,49 @@ function invalid(msg) {
   const err = new Error(msg);
   err.code  = 'OBSERVATION_INVALID';
   return err;
+}
+
+/**
+ * Validate that a monitor-supplied query is a single bare read-only SELECT.
+ * Shared by every SQLite-backed probe so a monitor definition can never become
+ * arbitrary command execution, whichever database it targets.
+ *
+ * @param {unknown} rawSql
+ * @param {string}  probeName  used in error messages
+ * @returns {string} the trimmed SQL
+ */
+function validateReadOnlySelect(rawSql, probeName) {
+  const sql = String(rawSql ?? '').trim();
+  if (!sql) throw invalid(`${probeName} requires a sql param`);
+  if (!/^SELECT\s/i.test(sql)) throw invalid(`${probeName} sql must start with SELECT`);
+  if (sql.includes(';')) throw invalid(`${probeName} sql must be a single statement (no ";")`);
+  if (/--|\/\*/.test(sql)) throw invalid(`${probeName} sql must not contain comments`);
+  if (FORBIDDEN_SQL_RE.test(sql)) throw invalid(`${probeName} sql contains a forbidden keyword`);
+  return sql;
+}
+
+/**
+ * Run `sqlite3 -readonly` on the COSA host itself (not the appliance) with the
+ * SQL on stdin, tab-separated output. Resolves { stdout, stderr, exitCode }.
+ *
+ * @param {string} dbPath
+ * @param {string} sql
+ * @param {number} timeoutMs
+ * @returns {Promise<{ stdout: string, stderr: string, exitCode: number }>}
+ */
+function execLocalSqlite(dbPath, sql, timeoutMs) {
+  return new Promise((resolve) => {
+    const child = execFile(
+      'sqlite3', ['-readonly', '-separator', '\t', dbPath],
+      { timeout: timeoutMs, maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        const exitCode = err ? (typeof err.code === 'number' ? err.code : 1) : 0;
+        resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? err?.message ?? ''), exitCode });
+      }
+    );
+    child.stdin.write(sql);
+    child.stdin.end();
+  });
 }
 
 /** Clamp to an integer in [min, max], falling back to def for non-finite input. */
@@ -165,12 +209,7 @@ const PROBES = {
     const dbPath = appliance.database?.path;
     if (!dbPath) throw invalid('appliance.database.path is not configured');
 
-    const sql = String(params.sql ?? '').trim();
-    if (!sql) throw invalid('sqlite_scalar requires a sql param');
-    if (!/^SELECT\s/i.test(sql)) throw invalid('sqlite_scalar sql must start with SELECT');
-    if (sql.includes(';')) throw invalid('sqlite_scalar sql must be a single statement (no ";")');
-    if (/--|\/\*/.test(sql)) throw invalid('sqlite_scalar sql must not contain comments');
-    if (FORBIDDEN_SQL_RE.test(sql)) throw invalid('sqlite_scalar sql contains a forbidden keyword');
+    const sql = validateReadOnlySelect(params.sql, 'sqlite_scalar');
 
     const escapedPath = String(dbPath).replace(/"/g, '\\"');
     const r = await sshBackend.exec(`sqlite3 -readonly "${escapedPath}"`, sql, 10000);
@@ -183,6 +222,52 @@ const PROBES = {
     if (!Number.isFinite(value)) throw invalid(`Query returned a non-numeric value: "${raw}"`);
 
     return { value, context: { value, db_path: dbPath } };
+  },
+
+  /**
+   * Numeric value (plus an optional label) from a read-only SELECT against
+   * the Pi-hole FTL query log on the COSA host. value: first column of the
+   * first row; label: second column when present (typically the client IP or
+   * domain the number belongs to, so the alert can name the offender).
+   *
+   * This is the probe for "what is the LAN asking the resolver" — per-client
+   * query floods, domain spread, NXDOMAIN bursts, blocklist hits — the signals
+   * a compromised IoT device (residential-proxy / botnet firmware) produces
+   * and that the appliance-side probes cannot see. Runs locally because the
+   * resolver lives on the COSA Pi 5, not the PCI-scoped POS appliance.
+   *
+   * Safety: the DB path comes from config (dns_monitor.pihole_db_path), never
+   * from the monitor definition; `sqlite3 -readonly` blocks writes at the
+   * engine level; SQL is passed on stdin via execFile (no shell); and the
+   * statement must be a single bare SELECT (validateReadOnlySelect).
+   *
+   * params: { sql }
+   */
+  async pihole_dns_scalar(params) {
+    const { appliance } = getConfig();
+    const dbPath = appliance.dns_monitor?.pihole_db_path;
+    if (!dbPath) throw invalid('dns_monitor.pihole_db_path is not configured');
+
+    const sql = validateReadOnlySelect(params.sql, 'pihole_dns_scalar');
+
+    const r = await execLocalSqlite(String(dbPath), sql, 10000);
+    if (r.exitCode !== 0) {
+      throw invalid(`sqlite3 exited ${r.exitCode}: ${r.stderr.trim()}`);
+    }
+
+    const firstRow = r.stdout.trim().split(/\r?\n/)[0] ?? '';
+    // An aggregate over an empty window yields no row at all — that is a
+    // healthy zero, not a probe failure.
+    if (firstRow === '') return { value: 0, context: { value: 0, label: '', db_path: dbPath } };
+
+    const [rawValue, rawLabel = ''] = firstRow.split('\t');
+    const value = Number(rawValue);
+    if (rawValue.trim() === '' || !Number.isFinite(value)) {
+      throw invalid(`Query returned a non-numeric first column: "${rawValue}"`);
+    }
+    const label = rawLabel.trim();
+
+    return { value, context: { value, label, db_path: dbPath } };
   },
 };
 
