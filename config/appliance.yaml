@@ -79,6 +79,14 @@ database:
   path: "/home/baanbaan/baan-baan-merchant/v2/data/merchant.db"
   read_only: true
 
+# DNS visibility — Pi-hole running on the COSA Pi 5 itself (192.168.1.144),
+# advertised to the LAN as the resolver via the router's DHCP settings. The
+# pihole_dns_scalar observation probe reads the FTL query log locally with
+# `sqlite3 -readonly`; the `cosa` user must be in the `pihole` group to read it.
+# See docs/dns-visibility-monitor-spec.md for the install + validation runbook.
+dns_monitor:
+  pihole_db_path: "/etc/pihole/pihole-FTL.db"
+
 process_supervisor:
   type: "systemd"
   service_name: "baanbaan"
