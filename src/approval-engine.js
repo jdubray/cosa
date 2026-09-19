@@ -151,13 +151,22 @@ function buildRequestEmailText(token, toolCall, timeoutMinutes) {
  * @returns {{ approve: Function, deny: Function, expire: Function }}
  */
 function _buildApprovalMachine(approvalId, onTerminal) {
-  // Derive pc0 and the `actions` map required by sam-fsm so that
-  // machine.addAction() can validate action names.
-  const { pc0, actions: fsmActions } = fsm.actionsAndStatesFor(APPROVAL_TRANSITIONS);
+  // Derive pc0, the `actions` map (so machine.addAction() can validate action
+  // names) AND the `states` map. `states` MUST be passed explicitly: sam-fsm
+  // 1.0.0's fsm() builds its NAPs without forwarding `transitions`, so when
+  // `states` is omitted it calls actionsAndStatesFor(undefined) and throws
+  // "Cannot read properties of undefined (reading 'from')". That throw happened
+  // inside requestApproval()'s Promise executor, rejecting the tool call after
+  // the approval email had already been sent — the orchestrator re-dispatched
+  // the same tool, the retry hit the resend rate limit, and every approval
+  // ever requested was orphaned ("Approval Reply Received but Session Gone").
+  const { pc0, actions: fsmActions, states: fsmStates } =
+    fsm.actionsAndStatesFor(APPROVAL_TRANSITIONS);
 
   const machine = fsm({
     pc0,
     actions:                  fsmActions,
+    states:                   fsmStates,
     transitions:              APPROVAL_TRANSITIONS,
     deterministic:            true,
     enforceAllowedTransitions: true,
@@ -329,20 +338,28 @@ function _grantsUnattendedAutomation(toolCall) {
  * action intents in `_pending` so that processInboundReply() and
  * _runExpiryCheck() can drive the machine forward.
  *
+ * Quiet hours and the resend rate limit exist to stop UNATTENDED (cron /
+ * watcher) sessions from spamming the operator's inbox. They are skipped when
+ * `toolCall.triggerType === 'email'`: the operator just wrote in asking for
+ * this action, so they are awake, waiting for the request, and a second
+ * approval within the hour is the operator's own follow-up — not noise.
+ *
  * @param {string} sessionId
- * @param {{ tool_name: string, input: object, riskLevel: string, action_summary?: string }} toolCall
+ * @param {{ tool_name: string, input: object, riskLevel: string,
+ *           action_summary?: string, triggerType?: string }} toolCall
  * @param {'once' | 'urgent'} [policy='once']
  * @returns {Promise<{ approved: boolean, note: string | null }>}
  */
 async function requestApproval(sessionId, toolCall, policy = 'once') {
   const { appliance } = getConfig();
+  const operatorInitiated = toolCall.triggerType === 'email';
 
   // ── Quiet-hours gate ────────────────────────────────────────────────────────
   // Suppress ALL approval emails before operator.quiet_hours_start (local time).
   // The session will receive an auto-denied result; the cron task will retry on
   // its next scheduled run (e.g. the following night's backup window).
   const tz = appliance.appliance?.timezone ?? 'UTC';
-  if (_isQuietHours(appliance.operator, tz)) {
+  if (!operatorInitiated && _isQuietHours(appliance.operator, tz)) {
     const start = appliance.operator?.quiet_hours_start ?? 0;
     log.info(
       `[approval-engine] quiet hours: suppressing ${policy} approval for ` +
@@ -354,7 +371,9 @@ async function requestApproval(sessionId, toolCall, policy = 'once') {
   // ── Rate-limit gate ─────────────────────────────────────────────────────────
   // Non-urgent (medium risk, cron): at most 1 email per non_urgent_resend_interval_minutes.
   // Urgent (high/critical): at most 1 email per urgent_resend_interval_minutes.
-  const rl = _isRateLimited(policy, appliance.operator);
+  const rl = operatorInitiated
+    ? { limited: false, remainingMinutes: 0 }
+    : _isRateLimited(policy, appliance.operator);
   if (rl.limited) {
     log.info(
       `[approval-engine] rate limit: suppressing ${policy} approval for ` +
@@ -633,6 +652,16 @@ function stopExpiryCheck() {
  * Discard all in-memory pending intents.
  * **For use in tests only.**
  */
+/**
+ * Return the in-memory intents for a pending approval (tests only).
+ *
+ * @param {string} approvalId
+ * @returns {{ approve: Function, deny: Function, expire: Function } | undefined}
+ */
+function _pendingFor(approvalId) {
+  return _pending.get(approvalId);
+}
+
 function _clearPending() {
   _pending.clear();
   // Reset rate-limit timestamps so tests start from a clean state.
@@ -652,4 +681,8 @@ module.exports = {
   stopExpiryCheck,
   _runExpiryCheck,
   _clearPending,
+  // Exposed for regression tests (the per-approval FSM was previously never
+  // exercised outside production because every test mocks requestApproval).
+  _buildApprovalMachine,
+  _pendingFor,
 };
