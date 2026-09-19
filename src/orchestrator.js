@@ -232,6 +232,7 @@ async function processToolUse(sessionId, toolUse, triggerType, role) {
         input,
         riskLevel,
         action_summary: actionSummary,
+        triggerType,
       },
       'once'
     );
@@ -395,8 +396,28 @@ async function callClaudeAction({ messages, systemPrompt, tools, apiKey, session
  * @returns {Promise<object>} proposal containing `{ toolResult }`
  */
 async function processToolAction({ toolUse, sessionId, triggerType, role }) {
-  const toolResult = await processToolUse(sessionId, toolUse, triggerType, role);
-  return { toolResult };
+  try {
+    const toolResult = await processToolUse(sessionId, toolUse, triggerType, role);
+    return { toolResult };
+  } catch (err) {
+    // A rejected processToolUse must still yield a tool_result. sam-pattern
+    // turns a thrown action into present({ __error }) — which re-runs the NAPs,
+    // and makeProcessToolNap would then dispatch the SAME tool_use again
+    // (processingIndex never advanced). For an approval-gated tool that meant a
+    // second approval request (rate-limited → "denied") while the first, already
+    // emailed, request was left orphaned. Convert the failure into an error
+    // result so the batch advances exactly once per tool_use block.
+    // eslint-disable-next-line no-console
+    console.error(`[orchestrator] processToolUse threw for ${toolUse.name}: ${err.message}`);
+    return {
+      toolResult: {
+        type:        'tool_result',
+        tool_use_id: toolUse.id,
+        content:     `Tool call failed: ${err.message}`,
+        is_error:    true,
+      },
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
