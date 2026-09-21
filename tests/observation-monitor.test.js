@@ -246,9 +246,9 @@ describe('config/observation-monitors.js — payments_missing_processor_fee', ()
   const defs = require('../config/observation-monitors');
   const def  = defs.find(d => d.id === 'payments_missing_processor_fee');
 
-  it('is enabled and wired to the sqlite_scalar probe', () => {
+  it('is paused (Finix-side issue, 2026-09-21) but stays wired to the sqlite_scalar probe', () => {
     expect(def).toBeDefined();
-    expect(def.enabled).toBe(true);
+    expect(def.enabled).toBe(false);
     expect(def.probe).toBe('sqlite_scalar');
     expect(PROBES[def.probe]).toBeInstanceOf(Function);
   });

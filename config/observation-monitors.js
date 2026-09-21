@@ -91,7 +91,10 @@ module.exports = [
   },
   {
     id:          'payments_missing_processor_fee',
-    enabled:     true,
+    // Paused 2026-09-21: Finix (the processor) has an outstanding problem on
+    // their side, so the fee backfill cannot succeed and this alert is pure
+    // noise until they resolve it. Re-enable once fees start populating again.
+    enabled:     false,
     description: 'Card payments with a Finix transfer that still have no processor fee 48h on.',
     probe:       'sqlite_scalar',
     params:      {
