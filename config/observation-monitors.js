@@ -92,6 +92,10 @@ module.exports = [
   {
     id:          'payments_missing_processor_fee',
     enabled:     true,
+    // About one email a day for a sustained backlog (default is every 3h). Kept
+    // just under 24h on purpose: the task ticks every 15 min, so an exact 24h
+    // window would push the send time ~15 min later each day.
+    dedup_window_minutes: 23 * 60,
     description: 'Card payments with a Finix transfer that still have no processor fee 48h on.',
     probe:       'sqlite_scalar',
     params:      {

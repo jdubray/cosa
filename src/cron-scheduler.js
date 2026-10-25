@@ -123,6 +123,20 @@ const FINIX_LATENCY_CATEGORY      = 'finix_latency';
 const OBSERVATION_MONITOR_CATEGORY = 'observation_monitor';
 /** Suppress repeat observation-monitor alerts (per monitor) within this window. */
 const OBSERVATION_DEDUP_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Dedup window for one observation monitor. A monitor def may set
+ * `dedup_window_minutes` to override the 3 h default (e.g. a slow-moving
+ * backlog that should email about once a day); invalid values are ignored.
+ * @param {{dedup_window_minutes?: number}} def
+ * @returns {number} Window in milliseconds.
+ */
+function observationDedupWindowMs(def) {
+  const minutes = def?.dedup_window_minutes;
+  return Number.isFinite(minutes) && minutes > 0
+    ? minutes * 60 * 1000
+    : OBSERVATION_DEDUP_WINDOW_MS;
+}
 /** Suppress repeat Finix-latency alerts within this window (a sustained spike = one email). */
 const FINIX_LATENCY_DEDUP_WINDOW_MS = 3 * 60 * 60 * 1000;
 const NETWORK_SCAN_CATEGORY       = 'network_scan';
@@ -1911,7 +1925,7 @@ async function runObservationMonitorsTask() {
 
     // Per-monitor dedup: one email per sustained episode.
     const category = `${OBSERVATION_MONITOR_CATEGORY}:${def.id}`;
-    const sinceIso = new Date(Date.now() - OBSERVATION_DEDUP_WINDOW_MS).toISOString();
+    const sinceIso = new Date(Date.now() - observationDedupWindowMs(def)).toISOString();
     const recent   = findMostRecentAlertByCategories([category]);
     if (recent && recent.sent_at >= sinceIso) {
       log.info(`[observation] ${def.id} suppressed duplicate (last sent: ${recent.sent_at})`);
@@ -3630,6 +3644,7 @@ module.exports = {
   runProcessMonitorTask,
   runFinixLatencyMonitorTask,
   runObservationMonitorsTask,
+  observationDedupWindowMs,
   runNetworkScanTask,
   runAccessLogScanTask,
   runTunnelHealthCheckTask,
