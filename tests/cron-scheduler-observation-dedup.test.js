@@ -109,8 +109,8 @@ describe('runObservationMonitorsTask — dedup window', () => {
 describe('config — payments_missing_processor_fee', () => {
   const def = realDefs.find(d => d.id === 'payments_missing_processor_fee');
 
-  test('stays enabled but emails at most about once a day', () => {
-    expect(def.enabled).toBe(true);
+  test('is paused (Finix issue) and, once re-enabled, emails about once a day', () => {
+    expect(def.enabled).toBe(false);
     // Under 24h on purpose: the task ticks every 15 min, so a 24h window would
     // make the send time creep ~15 min later each day.
     expect(def.dedup_window_minutes).toBeGreaterThanOrEqual(22 * 60);

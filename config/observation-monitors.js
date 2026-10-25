@@ -91,7 +91,11 @@ module.exports = [
   },
   {
     id:          'payments_missing_processor_fee',
-    enabled:     true,
+    // Paused 2026-10-25 at the operator's request: Finix (the processor) has an
+    // outstanding problem, so fees cannot be backfilled and this alert is noise.
+    // Re-enable once fees populate again (dedup_window_minutes below then keeps
+    // it to ~1 email/day).
+    enabled:     false,
     // About one email a day for a sustained backlog (default is every 3h). Kept
     // just under 24h on purpose: the task ticks every 15 min, so an exact 24h
     // window would push the send time ~15 min later each day.
