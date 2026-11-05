@@ -339,6 +339,37 @@ describe('backup_verify — backup_path validation', () => {
     const result = await handler({ backup_path: '/tmp/cosa-backups/readings_001.jsonl' });
     expect(result.verified).toBe(true);
   });
+
+  it('accepts a valid path when backup_dir has a trailing slash', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: { tools: { backup_run: { backup_dir: '/tmp/cosa-backups/' } } },
+    });
+    mockExec.mockResolvedValueOnce({
+      stdout:   makeVerifyOutput({ backupPath: '/tmp/cosa-backups/readings_001.jsonl' }),
+      stderr:   '',
+      exitCode: 0,
+    });
+
+    const result = await handler({ backup_path: '/tmp/cosa-backups/readings_001.jsonl' });
+    expect(result.verified).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSH timeout timer
+// ---------------------------------------------------------------------------
+
+describe('backup_verify — timeout timer', () => {
+  it('clears the timeout timer once the SSH exec settles', async () => {
+    jest.useFakeTimers();
+    try {
+      mockExec.mockResolvedValueOnce({ stdout: makeVerifyOutput(), stderr: '', exitCode: 0 });
+      await handler();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -376,6 +407,11 @@ describe('backup_verify — prefix scoping (multi-DB)', () => {
     // The glob should be scoped to a sanitized prefix — the original metacharacters
     // (space, semicolon, slash) must not survive into the bash script's glob.
     expect(script).toMatch(/'\/tmp\/cosa-backups'\/evilrm-rf[a-zA-Z0-9_.\-]*\*\.jsonl/);
+  });
+
+  it('rejects a prefix that sanitizes to empty instead of widening to all DBs', async () => {
+    await expect(handler({ prefix: ';; /' })).rejects.toThrow(/invalid prefix/);
+    expect(mockExec).not.toHaveBeenCalled();
   });
 
   it('omitting prefix preserves the legacy unscoped glob', async () => {

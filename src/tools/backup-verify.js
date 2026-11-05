@@ -83,6 +83,10 @@ function buildScript(backupDir, backupPathOverride, prefix = '') {
   // pipe buffer, `head` exits early, `ls` dies of SIGPIPE and the whole script
   // exits 141. An unmatched glob stays literal and is skipped by the -f test.
   const safePrefix = prefix.replace(/[^A-Za-z0-9_.\-]/g, '');
+  if (prefix && !safePrefix) {
+    // Falling back to the unscoped glob would verify another DB's backup.
+    throw new Error(`backup_verify: invalid prefix (got: ${JSON.stringify(prefix)})`);
+  }
   const glob = safePrefix
     ? `${qDir}/${safePrefix}*.jsonl`
     : `${qDir}/*.jsonl`;
@@ -160,14 +164,15 @@ function parseOutput(stdout) {
  * @returns {Promise<{ stdout: string, stderr: string, exitCode: number }>}
  */
 function execWithTimeout(command, stdin, timeoutMs) {
+  let timer;
   const execPromise    = sshBackend.exec(command, stdin);
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(
       () => reject(new Error(`backup_verify timed out after ${timeoutMs}ms`)),
       timeoutMs
-    )
-  );
-  return Promise.race([execPromise, timeoutPromise]);
+    );
+  });
+  return Promise.race([execPromise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +214,9 @@ async function handler({ backup_path: backupPathArg, prefix } = {}) {
         `backup_verify: backup_path must end with .jsonl (got: ${backupPathArg})`
       );
     }
-    const safeDir = path.posix.normalize(backupDir);
+    // normalize() keeps a trailing slash; strip it so the '/' join below
+    // doesn't produce '//' and reject every valid path.
+    const safeDir = path.posix.normalize(backupDir).replace(/\/+$/, '');
     if (!normalisedPath.startsWith(safeDir + '/')) {
       throw new Error(
         `backup_verify: backup_path must be inside ${safeDir} (got: ${backupPathArg})`
