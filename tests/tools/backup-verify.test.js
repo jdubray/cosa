@@ -4,6 +4,8 @@
 // Mocks — `mock` prefix exempts them from Jest's hoisting TDZ rule.
 // ---------------------------------------------------------------------------
 
+const { spawnSync } = require('child_process');
+
 const mockExec      = jest.fn();
 const mockGetConfig = jest.fn();
 
@@ -387,5 +389,70 @@ describe('backup_verify — prefix scoping (multi-DB)', () => {
 
     const [, script] = mockExec.mock.calls[0];
     expect(script).toContain("'/tmp/cosa-backups'/*.jsonl");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression — SIGPIPE (exit 141) once the backup directory grows large
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a bash script for real, returning the same shape as sshBackend.exec.
+ * @param {string} script
+ * @returns {{ stdout: string, stderr: string, exitCode: number }}
+ */
+function runBash(script) {
+  const r = spawnSync('bash', ['-s'], { input: script, encoding: 'utf8' });
+  return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', exitCode: r.status };
+}
+
+const hasBash = (() => {
+  try {
+    return runBash('command -v sha256sum >/dev/null && stat -c%s /dev/null >/dev/null').exitCode === 0;
+  } catch {
+    return false;
+  }
+})();
+
+(hasBash ? describe : describe.skip)('backup_verify — large backup directory (real bash)', () => {
+  // Enough files that the `ls -t` listing (~70 KB) overruns the pipe buffer,
+  // which is what made `ls -t … | head -1` under pipefail exit 141 in prod.
+  const FILE_COUNT = 1000;
+  const newestName = `merchant__payment_errors_2026-10-01T10-00-00-${FILE_COUNT}Z.jsonl`;
+  let dir;
+
+  beforeAll(() => {
+    // Build the fixture inside bash so the path is valid for the same bash
+    // that runs the script (native Linux, or WSL on a Windows dev box).
+    const setup = runBash([
+      'set -e',
+      'D=$(mktemp -d)',
+      'cd "$D"',
+      `for i in $(seq -w 1 ${FILE_COUNT}); do`,
+      '  f="merchant__payment_errors_2026-10-01T10-00-00-${i}Z.jsonl"',
+      '  echo "{}" > "$f"',
+      '  touch -d "@$((1790000000 + 10#$i))" "$f"',
+      'done',
+      `sha256sum '${newestName}' > '${newestName}.sha256'`,
+      'printf "%s" "$D"',
+    ].join('\n'));
+    expect(setup.exitCode).toBe(0);
+    dir = setup.stdout.trim();
+  });
+
+  afterAll(() => {
+    if (dir) runBash(`rm -rf '${dir}'`);
+  });
+
+  it('picks the newest file without dying of SIGPIPE', async () => {
+    mockGetConfig.mockReturnValue({
+      appliance: { tools: { backup_run: { backup_dir: dir } } },
+    });
+    mockExec.mockImplementation((_cmd, script) => Promise.resolve(runBash(script)));
+
+    const result = await handler({ prefix: 'merchant__' });
+
+    expect(result.backup_path).toBe(`${dir}/${newestName}`);
+    expect(result.verified).toBe(true);
   });
 });

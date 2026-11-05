@@ -77,6 +77,11 @@ function buildScript(backupDir, backupPathOverride, prefix = '') {
 
   // Locate the target file — either the explicit override or the most recent
   // glob, optionally scoped to one database via a filename prefix.
+  //
+  // The newest file is picked with a pure-bash `-nt` loop rather than
+  // `ls -t | head -1`: under `set -o pipefail`, once the listing outgrows the
+  // pipe buffer, `head` exits early, `ls` dies of SIGPIPE and the whole script
+  // exits 141. An unmatched glob stays literal and is skipped by the -f test.
   const safePrefix = prefix.replace(/[^A-Za-z0-9_.\-]/g, '');
   const glob = safePrefix
     ? `${qDir}/${safePrefix}*.jsonl`
@@ -85,9 +90,10 @@ function buildScript(backupDir, backupPathOverride, prefix = '') {
     ? `BACKUP_PATH='${shEscape(backupPathOverride)}'`
     : [
         `BACKUP_PATH=""`,
-        `if ls ${glob} 1>/dev/null 2>&1; then`,
-        `  BACKUP_PATH=$(ls -t ${glob} | head -1)`,
-        `fi`,
+        `for f in ${glob}; do`,
+        `  [ -f "$f" ] || continue`,
+        `  if [ -z "$BACKUP_PATH" ] || [ "$f" -nt "$BACKUP_PATH" ]; then BACKUP_PATH="$f"; fi`,
+        `done`,
       ].join('\n');
 
   return [
